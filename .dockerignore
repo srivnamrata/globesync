@@ -1,0 +1,15 @@
+.git
+.env
+**/.env
+**/node_modules
+**/.next
+**/venv
+**/.venv-*
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+tmp
+backend/tmp
+frontend/tsconfig.tsbuildinfo
+*.service-account.json
+*credentials*.json

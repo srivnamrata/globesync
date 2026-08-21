@@ -1,0 +1,13 @@
+# Local environment and service-account credentials
+backend/.env
+backend/*.service-account.json
+backend/*service-account*.json
+backend/*credentials*.json
+
+# Generated files
+__pycache__/
+*.py[cod]
+venv/
+backend/venv/
+frontend/node_modules/
+frontend/.next/

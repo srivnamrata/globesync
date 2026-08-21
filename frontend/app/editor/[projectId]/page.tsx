@@ -1,0 +1,300 @@
+'use client';
+
+import React, { ChangeEvent, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useProjectStore } from '../../../store/projectStore';
+import { useMediaStore } from '../../../store/mediaStore';
+import { useTranslationStore } from '../../../store/translationStore';
+import { storageService } from '../../../services/storageService';
+import { useProjectAutoSave } from '../../../hooks/useProject';
+import { useTimeline } from '../../../hooks/useTimeline';
+import { useHistory } from '../../../hooks/useHistory';
+import { projectService } from '../../../services/projectService';
+
+export default function TranslationEditor() {
+  const params = useParams();
+  const router = useRouter();
+  const projectId = params?.projectId as string;
+
+  const { currentProject, setCurrentProject } = useProjectStore();
+  const { segments, setSegments, updateSegmentText } = useMediaStore();
+  const { translations, setTranslations, updateTranslationText } = useTranslationStore();
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+
+  const timeline = useTimeline();
+  const history = useHistory();
+
+  // Activate 30-second IndexedDB auto-save loop
+  useProjectAutoSave();
+
+  useEffect(() => {
+    async function loadProjectData() {
+      if (!projectId) return;
+      try {
+        const draft = await storageService.getDraft(projectId);
+        if (!draft) {
+          router.push('/');
+          return;
+        }
+
+        // Hydrate stores
+        setCurrentProject({
+          id: draft.projectMetadata.id,
+          name: draft.projectMetadata.name,
+          sourceLanguage: draft.projectMetadata.sourceLanguage,
+          targetLanguage: draft.projectMetadata.targetLanguage,
+          status: 'draft',
+          createdAt: draft.projectMetadata.createdAt,
+          updatedAt: draft.projectMetadata.updatedAt,
+        });
+
+        setSegments(draft.mediaReferences.originalTranscriptSegments || []);
+        setTranslations(draft.translations || []);
+      } catch (err) {
+        console.error('Failed to load project draft in editor:', err);
+      }
+    }
+    loadProjectData();
+  }, [projectId, setCurrentProject, setSegments, setTranslations, router]);
+
+  const handleTextChange = (segId: string, text: string) => {
+    const oldText = segments.find((s) => s.id === segId)?.text || '';
+    history.pushHistory({
+      type: 'edit_transcript',
+      targetId: segId,
+      before: oldText,
+      after: text,
+      description: `Edit transcript segment text`,
+    });
+    updateSegmentText(segId, text);
+  };
+
+  const handleTranslationChange = (segId: string, text: string) => {
+    const oldText = translations[segId]?.translatedText || '';
+    history.pushHistory({
+      type: 'edit_translation',
+      targetId: segId,
+      before: oldText,
+      after: text,
+      description: `Edit translation text`,
+    });
+    updateTranslationText(segId, text);
+  };
+
+  const handleMediaSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !currentProject) return;
+
+    if (!file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
+      setUploadMessage('Choose an audio or video file.');
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setUploadMessage('This first UI integration supports files up to 100 MB. Larger files need the resumable-upload flow.');
+      return;
+    }
+
+    try {
+      setUploadState('uploading');
+      setUploadMessage(`Uploading ${file.name}…`);
+      const media = await projectService.uploadMedia(file);
+      setUploadState('transcribing');
+      setUploadMessage('Upload complete. Starting transcription…');
+      const job = await projectService.startTranscription(media.media_id, currentProject.sourceLanguage);
+
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const transcript = await projectService.getTranscription(job.transcript_id);
+        if (transcript.status === 'failed') {
+          throw new Error('Transcription failed. Check the backend and Celery worker logs.');
+        }
+        if (transcript.status !== 'completed') {
+          setUploadMessage(`Transcription ${transcript.status.replace('_', ' ')}…`);
+          continue;
+        }
+
+        const loadedSegments = transcript.segments.map((segment, index) => ({
+          id: segment.id || `segment-${index}`,
+          sequenceOrder: segment.sequence_order,
+          startTimeSeconds: segment.start_time,
+          endTimeSeconds: segment.end_time,
+          durationSeconds: segment.duration,
+          speakerTag: segment.speaker,
+          text: segment.text,
+          confidence: segment.confidence ?? 0,
+        }));
+        setSegments(loadedSegments);
+        await storageService.saveDraft({
+          version: '1.2.0',
+          projectMetadata: {
+            id: currentProject.id,
+            name: currentProject.name,
+            sourceLanguage: currentProject.sourceLanguage,
+            targetLanguage: currentProject.targetLanguage,
+            createdAt: currentProject.createdAt,
+            updatedAt: new Date().toISOString(),
+          },
+          mediaReferences: {
+            videoFilename: media.filename,
+            durationSeconds: media.duration_seconds,
+            originalTranscriptSegments: loadedSegments,
+          },
+          translations: Object.values(translations),
+        });
+        setUploadMessage(`Transcription complete — ${loadedSegments.length} segments loaded.`);
+        break;
+      }
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Unable to upload and transcribe the media.');
+    } finally {
+      setUploadState('idle');
+    }
+  };
+
+  if (!currentProject) {
+    return (
+      <div className="h-full flex items-center justify-center bg-slate-950 text-slate-400">
+        Loading translation project resources...
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-slate-950 text-white">
+      {/* Editor Header Bar */}
+      <header className="h-14 border-b border-slate-800 bg-slate-900/50 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push('/')} className="text-slate-400 hover:text-white transition">
+            &larr; Projects
+          </button>
+          <span className="text-slate-600">/</span>
+          <h1 className="text-md font-bold text-white">{currentProject.name}</h1>
+          <span className="bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded font-mono uppercase">
+            {currentProject.sourceLanguage} &rarr; {currentProject.targetLanguage}
+          </span>
+        </div>
+
+        {/* History & Mux Export Triggers */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 transition text-sm"
+          >
+            Undo
+          </button>
+          <button
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 transition text-sm"
+          >
+            Redo
+          </button>
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition">
+            Build Dub & Lip-Sync
+          </button>
+        </div>
+      </header>
+
+      {/* Main Workspace Layout Grid */}
+      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
+        {/* Left Grid: Transcript & Translation Edit Workspace */}
+        <div className="md:col-span-2 border-r border-slate-800 flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
+            <div className="flex items-center gap-3">
+              <label className={`cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition ${uploadState !== 'idle' ? 'pointer-events-none opacity-50' : ''}`}>
+                {uploadState === 'uploading' ? 'Uploading…' : uploadState === 'transcribing' ? 'Transcribing…' : 'Upload & Transcribe'}
+                <input type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle'} />
+              </label>
+              <span className="text-xs text-slate-500">{segments.length} segments loaded</span>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {segments.length === 0 ? (
+              <div className="text-center text-slate-600 py-12">
+                <p>No transcript segments available.</p>
+                <p className="mt-2 text-sm">Upload an audio or video file to generate a transcript.</p>
+              </div>
+            ) : (
+              segments.map((seg) => {
+                const trans = translations[seg.id];
+                return (
+                  <div
+                    key={seg.id}
+                    onClick={() => timeline.setSelectedSegmentId(seg.id)}
+                    className={`border rounded-xl p-4 transition grid grid-cols-2 gap-4 cursor-pointer ${
+                      timeline.selectedSegmentId === seg.id
+                        ? 'border-indigo-500 bg-indigo-950/10'
+                        : 'border-slate-800 bg-slate-900/30'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
+                        <span className="text-xs font-mono text-slate-500">{timeline.formatTimecode(seg.startTimeSeconds)}</span>
+                      </div>
+                      <textarea
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-slate-700 resize-none h-16"
+                        value={seg.text}
+                        onChange={(e) => handleTextChange(seg.id, e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-indigo-400 uppercase">Translation ({currentProject.targetLanguage})</span>
+                        {trans && (
+                          <span className={`text-xs px-2 py-0.5 rounded font-bold ${
+                            trans.durationRatio > 1.1 ? 'bg-red-950 text-red-400' : 'bg-green-950 text-green-400'
+                          }`}>
+                            Speed: {trans.speedAdjustmentFactor}x
+                          </span>
+                        )}
+                      </div>
+                      <textarea
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-indigo-100 focus:outline-none focus:border-slate-700 resize-none h-16"
+                        value={trans?.translatedText || ''}
+                        onChange={(e) => handleTranslationChange(seg.id, e.target.value)}
+                        placeholder="Translating segment text..."
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {uploadMessage && (
+            <div className="px-6 pb-4 text-sm text-slate-400" role="status">{uploadMessage}</div>
+          )}
+        </div>
+
+        {/* Right Grid: Video Preview Player */}
+        <div className="bg-slate-950 p-6 flex flex-col justify-between overflow-hidden">
+          <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500">
+            Preview Media Player Placeholder
+          </div>
+
+          <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Audio Waveform Timeline</h3>
+            <div className="h-24 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center text-slate-600 text-xs">
+              Zoom Level: {timeline.zoomLevel}%
+            </div>
+            <div className="flex justify-between items-center mt-4">
+              <span className="text-sm font-mono text-slate-400">{timeline.formatTimecode(timeline.currentTimeSeconds)}</span>
+              <button
+                onClick={() => timeline.setPlaying(!timeline.isPlaying)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition"
+              >
+                {timeline.isPlaying ? '⏸' : '▶'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
