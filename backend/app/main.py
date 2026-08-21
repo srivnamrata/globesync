@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import async_engine
-from app.routers import export, internal_tasks, lipsync, transcription, translation, tts, upload
+from app.routers import internal_tasks, translation, upload
 from app.utils.error_codes import ErrorCode, MediaAppException
 
 
@@ -128,9 +128,6 @@ async def readiness_check():
 
 # Mount API Routers
 app.include_router(upload.router, prefix=settings.API_V1_STR)
-app.include_router(transcription.router, prefix=settings.API_V1_STR)
 app.include_router(translation.router, prefix=settings.API_V1_STR)
-app.include_router(tts.router, prefix=settings.API_V1_STR)
-app.include_router(lipsync.router, prefix=settings.API_V1_STR)
-app.include_router(export.router, prefix=settings.API_V1_STR)
 app.include_router(internal_tasks.router, prefix=settings.API_V1_STR)
+

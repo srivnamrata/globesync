@@ -33,7 +33,6 @@ from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.duration_matcher import duration_matcher
 from app.services.pipeline_availability import require_background_pipelines
 from app.services.translation_service import translation_service
-from app.tasks.translation_tasks import translate_project_batch_task
 from app.utils.speech_rate import speech_rate_estimator
 
 router = APIRouter(prefix="/translation", tags=["Translation & Duration Matching"])
@@ -123,6 +122,8 @@ async def translate_project(
         )
 
     require_background_pipelines()
+    from app.tasks.translation_tasks import translate_project_batch_task
+
     task = translate_project_batch_task.apply_async(
         kwargs={
             "transcript_id_str": str(req.transcript_id),
