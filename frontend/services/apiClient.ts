@@ -85,6 +85,11 @@ export class ApiClient {
   }
 }
 
-export const apiClient = new ApiClient(
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/v1'
-);
+const resolvedApiBaseUrl = (() => {
+  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  return configuredBaseUrl.endsWith('/v1')
+    ? configuredBaseUrl
+    : `${configuredBaseUrl.replace(/\/$/, '')}/v1`;
+})();
+
+export const apiClient = new ApiClient(resolvedApiBaseUrl);
