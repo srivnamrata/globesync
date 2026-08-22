@@ -5,6 +5,13 @@ from app.schemas.transcription_schema import SegmentResponse, WordDetail
 class TranscriptParser:
     """Parses, normalizes, and exports Deepgram Nova-2 STT & Diarization responses."""
 
+    @staticmethod
+    def _coerce_speaker_index(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     @classmethod
     def parse_deepgram_response(
         cls,
@@ -44,25 +51,30 @@ class TranscriptParser:
         if paragraphs_data:
             seq = 0
             for para in paragraphs_data:
-                speaker_id = para.get("speaker", 0)
+                speaker_id = cls._coerce_speaker_index(para.get("speaker"))
                 speaker_tag = f"Speaker {speaker_id + 1}"
                 speaker_set.add(speaker_tag)
 
-                para_sentences = para.get("sentences", [])
+                para_sentences = para.get("sentences", []) or []
                 for sent in para_sentences:
                     s_text = sent.get("text", "").strip()
                     s_start = float(sent.get("start", 0.0)) + time_offset_seconds
                     s_end = float(sent.get("end", 0.0)) + time_offset_seconds
                     s_duration = max(0.0, round(s_end - s_start, 3))
 
-                    # Filter matching words for this sentence range
+                    # Filter matching words for this sentence range and speaker.
                     sent_words: List[WordDetail] = []
                     sent_conf_sum = 0.0
 
                     for w in words_data:
                         w_start = float(w.get("start", 0.0)) + time_offset_seconds
                         w_end = float(w.get("end", 0.0)) + time_offset_seconds
-                        if s_start - 0.05 <= w_start and w_end <= s_end + 0.05:
+                        w_speaker = cls._coerce_speaker_index(w.get("speaker"), default=speaker_id)
+                        if (
+                            s_start - 0.05 <= w_start
+                            and w_end <= s_end + 0.05
+                            and w_speaker == speaker_id
+                        ):
                             w_conf = float(w.get("confidence", 0.95))
                             sent_words.append(
                                 WordDetail(
@@ -74,6 +86,13 @@ class TranscriptParser:
                                 )
                             )
                             sent_conf_sum += w_conf
+
+                    if sent_words:
+                        total_confidence += sent_conf_sum
+
+                    segment_text = s_text or " ".join(word.text for word in sent_words).strip()
+                    if not segment_text:
+                        continue
 
                     avg_sent_conf = (
                         round(sent_conf_sum / len(sent_words), 4)
@@ -87,7 +106,7 @@ class TranscriptParser:
                             end_time=round(s_end, 3),
                             duration=s_duration,
                             speaker=speaker_tag,
-                            text=s_text,
+                            text=segment_text,
                             confidence=avg_sent_conf,
                             words=sent_words,
                             sequence_order=seq,
@@ -96,13 +115,14 @@ class TranscriptParser:
                     seq += 1
 
         # Fallback: Group sequential words by speaker tag if paragraphs are not provided
-        elif words_data:
+        # or when paragraph metadata is present but did not yield usable sentence segments.
+        if not segments and words_data:
             current_speaker: Optional[int] = None
             current_words: List[WordDetail] = []
             seq = 0
 
             for w in words_data:
-                spk = w.get("speaker", 0)
+                spk = cls._coerce_speaker_index(w.get("speaker"))
                 w_start = float(w.get("start", 0.0)) + time_offset_seconds
                 w_end = float(w.get("end", 0.0)) + time_offset_seconds
                 w_conf = float(w.get("confidence", 0.95))
@@ -173,7 +193,7 @@ class TranscriptParser:
                     )
                 )
 
-        avg_confidence = round(total_confidence / word_count, 4) if word_count > 0 else 0.95
+        avg_confidence = round(total_confidence / word_count, 4) if total_confidence > 0 and word_count > 0 else 0.95
         speaker_count = len(speaker_set) if speaker_set else 1
 
         return segments, full_transcript, avg_confidence, word_count, speaker_count
@@ -222,7 +242,10 @@ class TranscriptParser:
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        ms = int(round((seconds - int(seconds)) * 1000))
+        total_milliseconds = int(round(seconds * 1000))
+        h, remainder = divmod(total_milliseconds, 3_600_000)
+        m, remainder = divmod(remainder, 60_000)
+        s, ms = divmod(remainder, 1_000)
         return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
     @staticmethod
@@ -230,7 +253,10 @@ class TranscriptParser:
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        ms = int(round((seconds - int(seconds)) * 1000))
+        total_milliseconds = int(round(seconds * 1000))
+        h, remainder = divmod(total_milliseconds, 3_600_000)
+        m, remainder = divmod(remainder, 60_000)
+        s, ms = divmod(remainder, 1_000)
         return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
 
 
