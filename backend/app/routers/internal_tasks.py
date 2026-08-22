@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -66,7 +67,8 @@ async def run_transcribe_task(
     payload: TranscribeTaskPayload,
     _: None = Depends(_verify_cloud_tasks_request),
 ):
-    result = run_transcription_pipeline(
+    result = await asyncio.to_thread(
+        run_transcription_pipeline,
         media_id_str=str(payload.media_id),
         transcript_id_str=str(payload.transcript_id),
         language=payload.language,
