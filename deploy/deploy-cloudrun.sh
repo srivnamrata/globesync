@@ -145,4 +145,4 @@ echo
 echo "Deploy complete."
 echo "  API: $API_URL"
 echo "  Web: $WEB_URL"
-echo "Enable CLOUD_TASKS_ENABLED=true after creating queue '${CLOUD_TASKS_QUEUE:-translation-jobs}'."
+echo "Create queue '${CLOUD_TASKS_QUEUE:-translation-jobs}' before testing Cloud Tasks-backed routes."
