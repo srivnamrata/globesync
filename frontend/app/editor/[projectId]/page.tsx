@@ -3,8 +3,8 @@
 import React, { ChangeEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useProjectStore } from '../../../store/projectStore';
-import { useMediaStore } from '../../../store/mediaStore';
-import { useTranslationStore } from '../../../store/translationStore';
+import { useMediaStore, type TranscriptSegment } from '../../../store/mediaStore';
+import { useTranslationStore, type TranslatedSegment } from '../../../store/translationStore';
 import { storageService } from '../../../services/storageService';
 import { useProjectAutoSave } from '../../../hooks/useProject';
 import { useTimeline } from '../../../hooks/useTimeline';
@@ -19,7 +19,7 @@ export default function TranslationEditor() {
   const { currentProject, setCurrentProject } = useProjectStore();
   const { segments, setSegments, updateSegmentText } = useMediaStore();
   const { translations, setTranslations, updateTranslationText } = useTranslationStore();
-  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing' | 'translating'>('idle');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   const timeline = useTimeline();
@@ -47,16 +47,116 @@ export default function TranslationEditor() {
           status: 'draft',
           createdAt: draft.projectMetadata.createdAt,
           updatedAt: draft.projectMetadata.updatedAt,
+          transcriptId: draft.mediaReferences.transcriptId,
+          mediaId: draft.mediaReferences.mediaId,
+          originalVideoUrl: draft.mediaReferences.videoFilename,
         });
 
-        setSegments(draft.mediaReferences.originalTranscriptSegments || []);
-        setTranslations(draft.translations || []);
+        const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
+        const draftTranslations = draft.translations || [];
+
+        setSegments(draftSegments);
+        setTranslations(draftTranslations);
+
+        if (
+          draft.mediaReferences.transcriptId &&
+          draftSegments.length > 0 &&
+          draftTranslations.length < draftSegments.length
+        ) {
+          try {
+            const fetchedTranslations = await projectService.fetchTranslations(
+              draft.mediaReferences.transcriptId,
+              draft.projectMetadata.targetLanguage,
+            );
+
+            if (fetchedTranslations.length > 0) {
+              setTranslations(fetchedTranslations);
+              await storageService.saveDraft({
+                ...draft,
+                translations: fetchedTranslations,
+              });
+            }
+          } catch (translationErr) {
+            console.warn('No persisted translations available yet for this transcript:', translationErr);
+          }
+        }
       } catch (err) {
         console.error('Failed to load project draft in editor:', err);
       }
     }
     loadProjectData();
   }, [projectId, setCurrentProject, setSegments, setTranslations, router]);
+
+  const persistDraft = async ({
+    projectOverride,
+    segmentsOverride,
+    translationsOverride,
+    videoFilename,
+    durationSeconds,
+    transcriptId,
+    mediaId,
+  }: {
+    projectOverride?: typeof currentProject;
+    segmentsOverride?: TranscriptSegment[];
+    translationsOverride?: TranslatedSegment[];
+    videoFilename?: string;
+    durationSeconds?: number;
+    transcriptId?: string;
+    mediaId?: string;
+  } = {}) => {
+    const project = projectOverride ?? currentProject;
+    if (!project) {
+      return;
+    }
+
+    await storageService.saveDraft({
+      version: '1.2.0',
+      projectMetadata: {
+        id: project.id,
+        name: project.name,
+        sourceLanguage: project.sourceLanguage,
+        targetLanguage: project.targetLanguage,
+        createdAt: project.createdAt,
+        updatedAt: new Date().toISOString(),
+      },
+      mediaReferences: {
+        videoFilename: videoFilename ?? project.originalVideoUrl ?? 'source_video.mp4',
+        durationSeconds:
+          durationSeconds ??
+          (segmentsOverride ?? segments).reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
+        originalTranscriptSegments: segmentsOverride ?? segments,
+        transcriptId: transcriptId ?? project.transcriptId,
+        mediaId: mediaId ?? project.mediaId,
+      },
+      translations: translationsOverride ?? Object.values(translations),
+    });
+  };
+
+  const pollForTranslations = async (
+    transcriptId: string,
+    targetLanguage: string,
+    expectedCount: number,
+  ): Promise<TranslatedSegment[]> => {
+    let latestTranslations: TranslatedSegment[] = [];
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        const fetchedTranslations = await projectService.fetchTranslations(transcriptId, targetLanguage);
+        if (fetchedTranslations.length > 0) {
+          latestTranslations = fetchedTranslations;
+        }
+        if (fetchedTranslations.length >= expectedCount) {
+          return fetchedTranslations;
+        }
+      } catch (error) {
+        console.warn('Translation polling attempt failed:', error);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+
+    return latestTranslations;
+  };
 
   const handleTextChange = (segId: string, text: string) => {
     const oldText = segments.find((s) => s.id === segId)?.text || '';
@@ -125,25 +225,61 @@ export default function TranslationEditor() {
           text: segment.text,
           confidence: segment.confidence ?? 0,
         }));
+        const updatedProject = {
+          ...currentProject,
+          transcriptId: job.transcript_id,
+          mediaId: media.media_id,
+          originalVideoUrl: media.filename,
+          updatedAt: new Date().toISOString(),
+        };
+
+        setCurrentProject(updatedProject);
         setSegments(loadedSegments);
-        await storageService.saveDraft({
-          version: '1.2.0',
-          projectMetadata: {
-            id: currentProject.id,
-            name: currentProject.name,
-            sourceLanguage: currentProject.sourceLanguage,
-            targetLanguage: currentProject.targetLanguage,
-            createdAt: currentProject.createdAt,
-            updatedAt: new Date().toISOString(),
-          },
-          mediaReferences: {
+        await persistDraft({
+          projectOverride: updatedProject,
+          segmentsOverride: loadedSegments,
+          translationsOverride: Object.values(translations),
+          videoFilename: media.filename,
+          durationSeconds: media.duration_seconds,
+          transcriptId: job.transcript_id,
+          mediaId: media.media_id,
+        });
+
+        setUploadState('translating');
+        setUploadMessage('Transcription complete. Starting translation…');
+
+        const translationJob = await projectService.triggerProjectTranslation(
+          job.transcript_id,
+          updatedProject.sourceLanguage,
+          updatedProject.targetLanguage,
+        );
+        setUploadMessage(translationJob.message || 'Translation queued. Waiting for translated segments…');
+
+        const fetchedTranslations = await pollForTranslations(
+          job.transcript_id,
+          updatedProject.targetLanguage,
+          loadedSegments.length,
+        );
+
+        if (fetchedTranslations.length > 0) {
+          setTranslations(fetchedTranslations);
+          await persistDraft({
+            projectOverride: updatedProject,
+            segmentsOverride: loadedSegments,
+            translationsOverride: fetchedTranslations,
             videoFilename: media.filename,
             durationSeconds: media.duration_seconds,
-            originalTranscriptSegments: loadedSegments,
-          },
-          translations: Object.values(translations),
-        });
-        setUploadMessage(`Transcription complete — ${loadedSegments.length} segments loaded.`);
+            transcriptId: job.transcript_id,
+            mediaId: media.media_id,
+          });
+          setUploadMessage(
+            fetchedTranslations.length >= loadedSegments.length
+              ? `Translation complete — ${fetchedTranslations.length} segments loaded.`
+              : `Translation is still running — ${fetchedTranslations.length} of ${loadedSegments.length} segments are available.`
+          );
+        } else {
+          setUploadMessage('Translation was queued, but no translated segments were available yet. Please retry in a few moments.');
+        }
         break;
       }
     } catch (error) {
@@ -206,7 +342,13 @@ export default function TranslationEditor() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
             <div className="flex items-center gap-3">
               <label className={`cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition ${uploadState !== 'idle' ? 'pointer-events-none opacity-50' : ''}`}>
-                {uploadState === 'uploading' ? 'Uploading…' : uploadState === 'transcribing' ? 'Transcribing…' : 'Upload & Transcribe'}
+                {uploadState === 'uploading'
+                  ? 'Uploading…'
+                  : uploadState === 'transcribing'
+                    ? 'Transcribing…'
+                    : uploadState === 'translating'
+                      ? 'Translating…'
+                      : 'Upload & Transcribe'}
                 <input type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle'} />
               </label>
               <span className="text-xs text-slate-500">{segments.length} segments loaded</span>

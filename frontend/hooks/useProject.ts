@@ -35,6 +35,8 @@ export function useProjectAutoSave() {
             videoFilename: currentProject.originalVideoUrl || 'source_video.mp4',
             durationSeconds: segments.reduce((acc, s) => Math.max(acc, s.endTimeSeconds), 0),
             originalTranscriptSegments: segments,
+            transcriptId: currentProject.transcriptId,
+            mediaId: currentProject.mediaId,
           },
           translations: Object.values(translations),
         };

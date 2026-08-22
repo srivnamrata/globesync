@@ -12,6 +12,8 @@ export interface HeygenXFile {
     videoFilename: string;
     durationSeconds: number;
     originalTranscriptSegments: any[];
+    transcriptId?: string;
+    mediaId?: string;
   };
   translations: any[];
   timelineState?: {

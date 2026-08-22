@@ -1,7 +1,7 @@
 import { apiClient } from './apiClient';
-import { Project } from '../store/projectStore';
-import { TranscriptSegment } from '../store/mediaStore';
-import { TranslatedSegment } from '../store/translationStore';
+import type { Project } from '../store/projectStore';
+import type { TranscriptSegment } from '../store/mediaStore';
+import type { TranslatedSegment } from '../store/translationStore';
 
 export interface UploadedMedia {
   media_id: string;
@@ -25,6 +25,57 @@ export interface TranscriptStatus {
     confidence: number | null;
     sequence_order: number;
   }>;
+}
+
+export interface TranslationJobStatus {
+  job_id: string;
+  transcript_id: string;
+  target_language: string;
+  status: 'queued' | 'completed' | 'failed';
+  message: string;
+}
+
+export interface TranslationItemResponse {
+  translation_id: string;
+  segment_id: string;
+  sequence_order: number;
+  speaker_tag: string;
+  start_time_seconds: number;
+  end_time_seconds: number;
+  source_text: string;
+  translated_text: string;
+  original_duration_ms: number;
+  estimated_duration_ms: number;
+  duration_ratio: number;
+  duration_status: string;
+  iterations_count: number;
+  confidence_score: number;
+  is_cached: boolean;
+  is_user_edited: boolean;
+  created_at: string;
+}
+
+export interface ProjectTranslationResponse {
+  transcript_id: string;
+  target_language: string;
+  total_segments: number;
+  average_duration_ratio: number;
+  overall_confidence: number;
+  translations: TranslationItemResponse[];
+}
+
+function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
+  return {
+    id: item.translation_id,
+    transcriptSegmentId: item.segment_id,
+    translatedText: item.translated_text,
+    originalDurationMs: item.original_duration_ms,
+    estimatedDurationMs: item.estimated_duration_ms,
+    durationRatio: item.duration_ratio,
+    speedAdjustmentFactor: Math.max(0.8, Math.min(1.25, item.duration_ratio || 1)),
+    qualityScore: item.confidence_score,
+    status: 'completed',
+  };
 }
 
 export class ProjectService {
@@ -60,14 +111,28 @@ export class ProjectService {
     return apiClient.get<TranscriptSegment[]>(`/transcription/${mediaId}/segments`);
   }
 
+  async triggerProjectTranslation(transcriptId: string, sourceLanguage: string, targetLanguage: string): Promise<TranslationJobStatus> {
+    return apiClient.post<TranslationJobStatus>('/translation/translate-project', {
+      transcript_id: transcriptId,
+      source_language: sourceLanguage,
+      target_language: targetLanguage,
+    });
+  }
+
+  async fetchProjectTranslations(transcriptId: string, lang: string): Promise<ProjectTranslationResponse> {
+    return apiClient.get<ProjectTranslationResponse>(`/translation/${transcriptId}?target_language=${lang}`);
+  }
+
   async fetchTranslations(transcriptId: string, lang: string): Promise<TranslatedSegment[]> {
-    return apiClient.get<TranslatedSegment[]>(`/translation/segments?transcript_id=${transcriptId}&lang=${lang}`);
+    const response = await this.fetchProjectTranslations(transcriptId, lang);
+    return response.translations.map(mapTranslationItem);
   }
 
   async updateTranslationSegment(translationId: string, text: string): Promise<TranslatedSegment> {
-    return apiClient.post<TranslatedSegment>(`/translation/segment/${translationId}/edit`, {
+    const response = await apiClient.put<TranslationItemResponse>(`/translation/segment/${translationId}`, {
       translated_text: text,
     });
+    return mapTranslationItem(response);
   }
 
   async triggerTtsSynthesis(transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {

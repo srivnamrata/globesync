@@ -8,6 +8,8 @@ export interface Project {
   status: 'draft' | 'processing' | 'completed' | 'failed';
   createdAt: string;
   updatedAt: string;
+  transcriptId?: string;
+  mediaId?: string;
   originalVideoUrl?: string;
   dubbedAudioUrl?: string;
 }
