@@ -39,21 +39,82 @@ class TranscriptParser:
 
         alt = alternatives[0]
         words_data = alt.get("words", [])
-        paragraphs_data = alt.get("paragraphs", {}).get("paragraphs", [])
-        full_transcript = alt.get("transcript", "").strip()
+        utterances_data = results.get("utterances", []) or []
+        paragraphs_data = alt.get("paragraphs", {}).get("paragraphs", []) or []
 
         segments: List[SegmentResponse] = []
         speaker_set = set()
         total_confidence = 0.0
-        word_count = len(words_data)
+        matched_word_count = 0
+        fallback_confidence_total = 0.0
+        fallback_confidence_count = 0
 
-        # If Deepgram returned formatted paragraphs with diarization
-        if paragraphs_data:
+        # Priority 1: Deepgram utterances already represent pause- and speaker-bounded speech units.
+        if utterances_data:
+            seq = 0
+            for utterance in utterances_data:
+                speaker_id = cls._coerce_speaker_index(utterance.get("speaker"))
+                speaker_tag = f"Speaker {speaker_id + 1}"
+
+                utterance_words_raw = utterance.get("words", []) or []
+                utterance_words: List[WordDetail] = []
+                utterance_conf_sum = 0.0
+
+                for w in utterance_words_raw:
+                    w_start = float(w.get("start", 0.0)) + time_offset_seconds
+                    w_end = float(w.get("end", 0.0)) + time_offset_seconds
+                    w_conf = float(w.get("confidence", 0.95))
+                    utterance_words.append(
+                        WordDetail(
+                            text=w.get("punctuated_word") or w.get("word", ""),
+                            start=round(w_start, 3),
+                            end=round(w_end, 3),
+                            confidence=round(w_conf, 4),
+                            speaker=speaker_tag,
+                        )
+                    )
+                    utterance_conf_sum += w_conf
+
+                if utterance_words:
+                    total_confidence += utterance_conf_sum
+                    matched_word_count += len(utterance_words)
+
+                segment_text = (utterance.get("transcript") or " ".join(word.text for word in utterance_words)).strip()
+                if not segment_text:
+                    continue
+
+                s_start = float(utterance.get("start", 0.0)) + time_offset_seconds
+                s_end = float(utterance.get("end", 0.0)) + time_offset_seconds
+                avg_conf = (
+                    round(utterance_conf_sum / len(utterance_words), 4)
+                    if utterance_words
+                    else round(float(utterance.get("confidence", 0.95)), 4)
+                )
+                if not utterance_words:
+                    fallback_confidence_total += avg_conf
+                    fallback_confidence_count += 1
+
+                speaker_set.add(speaker_tag)
+                segments.append(
+                    SegmentResponse(
+                        start_time=round(s_start, 3),
+                        end_time=round(s_end, 3),
+                        duration=max(0.0, round(s_end - s_start, 3)),
+                        speaker=speaker_tag,
+                        text=segment_text,
+                        confidence=avg_conf,
+                        words=utterance_words,
+                        sequence_order=seq,
+                    )
+                )
+                seq += 1
+
+        # Priority 2: paragraph sentence structure, used only when utterances are absent or empty.
+        if not segments and paragraphs_data:
             seq = 0
             for para in paragraphs_data:
                 speaker_id = cls._coerce_speaker_index(para.get("speaker"))
                 speaker_tag = f"Speaker {speaker_id + 1}"
-                speaker_set.add(speaker_tag)
 
                 para_sentences = para.get("sentences", []) or []
                 for sent in para_sentences:
@@ -62,7 +123,6 @@ class TranscriptParser:
                     s_end = float(sent.get("end", 0.0)) + time_offset_seconds
                     s_duration = max(0.0, round(s_end - s_start, 3))
 
-                    # Filter matching words for this sentence range and speaker.
                     sent_words: List[WordDetail] = []
                     sent_conf_sum = 0.0
 
@@ -89,6 +149,7 @@ class TranscriptParser:
 
                     if sent_words:
                         total_confidence += sent_conf_sum
+                        matched_word_count += len(sent_words)
 
                     segment_text = s_text or " ".join(word.text for word in sent_words).strip()
                     if not segment_text:
@@ -99,7 +160,11 @@ class TranscriptParser:
                         if sent_words
                         else 0.95
                     )
+                    if not sent_words:
+                        fallback_confidence_total += avg_sent_conf
+                        fallback_confidence_count += 1
 
+                    speaker_set.add(speaker_tag)
                     segments.append(
                         SegmentResponse(
                             start_time=round(s_start, 3),
@@ -114,8 +179,7 @@ class TranscriptParser:
                     )
                     seq += 1
 
-        # Fallback: Group sequential words by speaker tag if paragraphs are not provided
-        # or when paragraph metadata is present but did not yield usable sentence segments.
+        # Priority 3: group contiguous words by speaker and pause length.
         if not segments and words_data:
             current_speaker: Optional[int] = None
             current_words: List[WordDetail] = []
@@ -129,6 +193,7 @@ class TranscriptParser:
                 w_text = w.get("punctuated_word") or w.get("word", "")
 
                 total_confidence += w_conf
+                matched_word_count += 1
 
                 if current_speaker is None:
                     current_speaker = spk
@@ -139,10 +204,10 @@ class TranscriptParser:
                     if current_words:
                         seg_speaker_tag = f"Speaker {current_speaker + 1}"
                         speaker_set.add(seg_speaker_tag)
-                        seg_text = " ".join([cw.text for cw in current_words])
+                        seg_text = " ".join(cw.text for cw in current_words)
                         seg_start = current_words[0].start
                         seg_end = current_words[-1].end
-                        seg_conf = round(sum([cw.confidence for cw in current_words]) / len(current_words), 4)
+                        seg_conf = round(sum(cw.confidence for cw in current_words) / len(current_words), 4)
 
                         segments.append(
                             SegmentResponse(
@@ -171,14 +236,13 @@ class TranscriptParser:
                     )
                 )
 
-            # Flush final segment
             if current_words:
                 seg_speaker_tag = f"Speaker {current_speaker + 1}"
                 speaker_set.add(seg_speaker_tag)
-                seg_text = " ".join([cw.text for cw in current_words])
+                seg_text = " ".join(cw.text for cw in current_words)
                 seg_start = current_words[0].start
                 seg_end = current_words[-1].end
-                seg_conf = round(sum([cw.confidence for cw in current_words]) / len(current_words), 4)
+                seg_conf = round(sum(cw.confidence for cw in current_words) / len(current_words), 4)
 
                 segments.append(
                     SegmentResponse(
@@ -193,7 +257,15 @@ class TranscriptParser:
                     )
                 )
 
-        avg_confidence = round(total_confidence / word_count, 4) if total_confidence > 0 and word_count > 0 else 0.95
+        word_count = matched_word_count or sum(len(seg.words) for seg in segments) or len(words_data)
+        full_transcript = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+        avg_confidence = (
+            round(total_confidence / word_count, 4)
+            if total_confidence > 0 and word_count > 0
+            else round(fallback_confidence_total / fallback_confidence_count, 4)
+            if fallback_confidence_count > 0
+            else 0.95
+        )
         speaker_count = len(speaker_set) if speaker_set else 1
 
         return segments, full_transcript, avg_confidence, word_count, speaker_count

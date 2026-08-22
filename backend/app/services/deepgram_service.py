@@ -66,6 +66,7 @@ class DeepgramSTT:
 
         if max_speakers:
             params["diarize_version"] = "latest"
+            params["max_speakers"] = str(int(max_speakers))
 
         # headers = {
         #     "Authorization": f"Token {self.api_key}",
