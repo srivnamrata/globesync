@@ -23,6 +23,8 @@ from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
 from app.schemas.translation_schema import (
     ProjectTranslationResponse,
+    SupportedLanguagesResponse,
+    SupportedLanguageResponse,
     TranslateProjectRequest,
     TranslateSegmentRequest,
     TranslationItemResponse,
@@ -33,9 +35,28 @@ from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.duration_matcher import duration_matcher
 from app.services.pipeline_availability import require_background_pipelines
 from app.services.translation_service import translation_service
+from app.utils.language_configs import get_supported_languages
 from app.utils.speech_rate import speech_rate_estimator
 
 router = APIRouter(prefix="/translation", tags=["Translation & Duration Matching"])
+
+
+@router.get(
+    "/languages",
+    response_model=SupportedLanguagesResponse,
+    summary="List Supported Translation Languages",
+)
+async def list_supported_translation_languages():
+    return SupportedLanguagesResponse(
+        languages=[
+            SupportedLanguageResponse(
+                code=language.code,
+                name=language.name,
+                native_name=language.native_name,
+            )
+            for language in get_supported_languages()
+        ]
+    )
 
 
 @router.post(

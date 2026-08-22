@@ -1,29 +1,76 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.utils.language_configs import get_supported_language_codes, is_supported_language_code, normalize_language_code
+
+
+SUPPORTED_LANGUAGE_CODES = get_supported_language_codes()
+SUPPORTED_LANGUAGE_CODES_MESSAGE = ", ".join(SUPPORTED_LANGUAGE_CODES)
 
 
 class TranslateProjectRequest(BaseModel):
     transcript_id: UUID
-    target_language: str = Field(..., example="es", description="Target ISO 639-1 language code")
-    source_language: str = Field("en", example="en", description="Source language code")
-    tone: str = Field("natural", example="natural", description="Tone (natural, formal, casual, emotive)")
+    target_language: str = Field(
+        ...,
+        description="Target ISO 639-1 language code",
+        json_schema_extra={"example": "es"},
+    )
+    source_language: str = Field(
+        "en",
+        description="Source language code",
+        json_schema_extra={"example": "en"},
+    )
+    tone: str = Field(
+        "natural",
+        description="Tone (natural, formal, casual, emotive)",
+        json_schema_extra={"example": "natural"},
+    )
+
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_supported_language(cls, value: str) -> str:
+        normalized = normalize_language_code(value)
+        if not is_supported_language_code(value):
+            raise ValueError(f"Unsupported language code '{value}'. Supported codes: {SUPPORTED_LANGUAGE_CODES_MESSAGE}")
+        return normalized
 
 
 class TranslateSegmentRequest(BaseModel):
     segment_id: UUID
-    source_text: str = Field(..., example="Welcome to our global conference.")
-    original_duration_ms: int = Field(..., gt=0, example=3500)
-    source_language: str = Field("en", example="en")
-    target_language: str = Field(..., example="es")
-    speaker_tag: str = Field("Speaker 1", example="Speaker 1")
+    source_text: str = Field(..., json_schema_extra={"example": "Welcome to our global conference."})
+    original_duration_ms: int = Field(..., gt=0, json_schema_extra={"example": 3500})
+    source_language: str = Field("en", json_schema_extra={"example": "en"})
+    target_language: str = Field(..., json_schema_extra={"example": "es"})
+    speaker_tag: str = Field("Speaker 1", json_schema_extra={"example": "Speaker 1"})
     previous_context: Optional[str] = None
     next_context: Optional[str] = None
 
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_supported_language(cls, value: str) -> str:
+        normalized = normalize_language_code(value)
+        if not is_supported_language_code(value):
+            raise ValueError(f"Unsupported language code '{value}'. Supported codes: {SUPPORTED_LANGUAGE_CODES_MESSAGE}")
+        return normalized
+
 
 class UpdateTranslationRequest(BaseModel):
-    translated_text: str = Field(..., example="Bienvenidos a nuestra conferencia global.")
+    translated_text: str = Field(
+        ...,
+        json_schema_extra={"example": "Bienvenidos a nuestra conferencia global."},
+    )
+
+
+class SupportedLanguageResponse(BaseModel):
+    code: str
+    name: str
+    native_name: str
+
+
+class SupportedLanguagesResponse(BaseModel):
+    languages: List[SupportedLanguageResponse]
 
 
 class TranslationItemResponse(BaseModel):

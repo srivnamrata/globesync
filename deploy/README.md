@@ -55,6 +55,29 @@ The script:
 4. Deploys `translation-api` with Cloud SQL, secrets, concurrency/max-instance caps
 5. Deploys `translation-web` with `NEXT_PUBLIC_API_URL` baked at build time
 
+## API-only deploy
+
+Use this when backend-only changes should go live without rebuilding `translation-web`.
+
+From the repository root:
+
+```bash
+chmod +x deploy/deploy-api-only.sh
+export CLOUDSQL_INSTANCE=... RAW_BUCKET=... EXPORTS_BUCKET=...
+./deploy/deploy-api-only.sh
+```
+
+The API-only script:
+
+1. Enables the same required APIs
+2. Builds and pushes only the `translation-api` image
+3. Runs `alembic upgrade head` as the `translation-migrate` Cloud Run Job
+4. Deploys only `translation-api`
+5. Updates runtime variables that depend on the final API URL
+6. Runs `/health` and `/healthz` smoke checks
+
+Use this path for backend-only changes such as translation logic, task handlers, cache behavior, or internal API routes.
+
 ## Smoke test
 
 ```bash

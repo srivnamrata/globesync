@@ -3,13 +3,53 @@
 import React, { useEffect, useState } from 'react';
 import { useProjectStore, Project } from '../store/projectStore';
 import { storageService } from '../services/storageService';
+import { apiClient } from '../services/apiClient';
 import Link from 'next/link';
+
+type LanguageOption = {
+  value: string;
+  label: string;
+};
+
+type SupportedLanguagesResponse = {
+  languages: Array<{
+    code: string;
+    name: string;
+    native_name: string;
+  }>;
+};
+
+const fallbackLanguageOptions: LanguageOption[] = [
+  { value: 'ar', label: 'Arabic' },
+  { value: 'de', label: 'German' },
+  { value: 'el', label: 'Greek' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'he', label: 'Hebrew' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'id', label: 'Indonesian' },
+  { value: 'it', label: 'Italian' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'th', label: 'Thai' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'vi', label: 'Vietnamese' },
+  { value: 'zh', label: 'Chinese (Simplified)' },
+];
 
 export default function ProjectBrowser() {
   const { projects, setProjects, addProject } = useProjectStore();
   const [newProjectName, setNewProjectName] = useState('');
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('es');
+  const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
 
   useEffect(() => {
     // Load local project drafts from IndexedDB
@@ -30,7 +70,35 @@ export default function ProjectBrowser() {
         console.error('Failed to load project drafts:', err);
       }
     }
+
+    async function loadSupportedLanguages() {
+      try {
+        const response = await apiClient.get<SupportedLanguagesResponse>('/translation/languages');
+        const options = response.languages.map((language) => ({
+          value: language.code,
+          label: language.name,
+        }));
+
+        if (options.length === 0) {
+          return;
+        }
+
+        setLanguageOptions(options);
+        setSourceLang((current) => (options.some((option) => option.value === current) ? current : 'en'));
+        setTargetLang((current) => {
+          if (options.some((option) => option.value === current)) {
+            return current;
+          }
+
+          return options.some((option) => option.value === 'es') ? 'es' : options[0].value;
+        });
+      } catch (err) {
+        console.error('Failed to load supported languages:', err);
+      }
+    }
+
     loadDrafts();
+    loadSupportedLanguages();
   }, [setProjects]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -103,8 +171,11 @@ export default function ProjectBrowser() {
                   value={sourceLang}
                   onChange={(e) => setSourceLang(e.target.value)}
                 >
-                  <option value="en">English</option>
-                  <option value="fr">French</option>
+                  {languageOptions.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -114,9 +185,11 @@ export default function ProjectBrowser() {
                   value={targetLang}
                   onChange={(e) => setTargetLang(e.target.value)}
                 >
-                  <option value="es">Spanish</option>
-                  <option value="de">German</option>
-                  <option value="fr">French</option>
+                  {languageOptions.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

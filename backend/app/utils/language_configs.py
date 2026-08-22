@@ -61,7 +61,31 @@ FEW_SHOT_TRANSLATION_EXAMPLES = {
 }
 
 
+def normalize_language_code(code: str) -> str:
+    """Normalizes regional language codes to the backend-supported base code."""
+    return code.strip().lower().replace("_", "-").split("-")[0]
+
+
+
+def is_supported_language_code(code: str) -> bool:
+    """Returns whether the normalized language code is supported by the backend."""
+    return normalize_language_code(code) in SUPPORTED_LANGUAGES
+
+
+
+def get_supported_language_codes() -> List[str]:
+    """Returns the sorted set of backend-supported language codes."""
+    return sorted(SUPPORTED_LANGUAGES.keys())
+
+
+
+def get_supported_languages() -> List[LanguageSpec]:
+    """Returns backend-supported languages sorted by code."""
+    return [SUPPORTED_LANGUAGES[code] for code in get_supported_language_codes()]
+
+
+
 def get_language_spec(code: str) -> LanguageSpec:
     """Returns LanguageSpec or default English fallback."""
-    normalized = code.lower().split("-")[0]
+    normalized = normalize_language_code(code)
     return SUPPORTED_LANGUAGES.get(normalized, SUPPORTED_LANGUAGES["en"])

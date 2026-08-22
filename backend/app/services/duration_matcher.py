@@ -70,10 +70,16 @@ class DurationMatcher:
         """
         # Step 1: Check Redis cache
         cache_key = cls._generate_cache_key(
-            source_text,
-            source_language,
-            target_language,
-            settings.TRANSLATION_PROVIDER,
+            text=source_text,
+            src=source_language,
+            tgt=target_language,
+            provider=settings.TRANSLATION_PROVIDER,
+            original_duration_ms=original_duration_ms,
+            speaker_tag=speaker_tag,
+            previous_context=previous_context,
+            next_context=next_context,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
         )
         cached_data = await cls._get_from_cache(cache_key)
 
@@ -218,9 +224,34 @@ class DurationMatcher:
         )
 
     @staticmethod
-    def _generate_cache_key(text: str, src: str, tgt: str, provider: str = "openai") -> str:
-        text_hash = hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
-        return f"cache:trans:{provider.lower()}:{src}:{tgt}:{text_hash}"
+    def _generate_cache_key(
+        text: str,
+        src: str,
+        tgt: str,
+        provider: str = "openai",
+        original_duration_ms: int = 0,
+        speaker_tag: str = "Speaker 1",
+        previous_context: Optional[str] = None,
+        next_context: Optional[str] = None,
+        tolerance: float = 0.10,
+        max_iterations: int = 3,
+    ) -> str:
+        payload = {
+            "text": text.strip(),
+            "src": src,
+            "tgt": tgt,
+            "provider": provider.lower(),
+            "original_duration_ms": int(original_duration_ms),
+            "speaker_tag": speaker_tag,
+            "previous_context": (previous_context or "").strip(),
+            "next_context": (next_context or "").strip(),
+            "tolerance": round(float(tolerance), 4),
+            "max_iterations": int(max_iterations),
+        }
+        cache_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()[:24]
+        return f"cache:trans:{payload['provider']}:{src}:{tgt}:{cache_hash}"
 
     @staticmethod
     async def _get_from_cache(key: str) -> Optional[Dict[str, Any]]:
