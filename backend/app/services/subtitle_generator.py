@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from app.schemas.transcription_schema import SegmentResponse
 
 
@@ -48,8 +48,5 @@ class SubtitleGenerator:
         ms = int(round((seconds % 1) * 1000))
         return f"{hrs:02d}:{mins:02d}:{secs:02d}{delimiter}{ms:03d}"
 
-
-# Hack to support Optional in type annotation
-from typing import Optional
 
 subtitle_generator = SubtitleGenerator()
