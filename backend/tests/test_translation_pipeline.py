@@ -10,6 +10,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.translation_schema import TranslateProjectRequest, TranslateSegmentRequest
+from app.utils.prompt_templates import (
+    get_refinement_condensation_prompt,
+    get_refinement_expansion_prompt,
+    get_segment_translation_user_prompt,
+    get_system_translation_prompt,
+)
 from app.utils.speech_rate import speech_rate_estimator
 
 DURATION_MATCHER_PATH = Path(__file__).resolve().parents[1] / "app" / "services" / "duration_matcher.py"
@@ -232,7 +238,75 @@ def test_duration_matcher_google_provider_single_pass(google_translate_text_resp
 
 
 # =============================================================================
-# 3. TRANSLATION REQUEST SCHEMA TESTS
+# 3. TRANSLATION PROMPT REGRESSION TESTS
+# =============================================================================
+def test_hindi_system_translation_prompt_prefers_natural_semantic_translation() -> None:
+    prompt = get_system_translation_prompt("en", "hi")
+
+    assert "HINDI-SPECIFIC GUIDANCE" in prompt
+    assert "Prioritize meaning, intent, and flow over word-for-word correspondence with the source." in prompt
+    assert "Resolve English discourse patterns into clean Hindi sentence structure instead of preserving English syntax." in prompt
+    assert "My name is Namrata, and we are going to explore retrieval augmented generation today." in prompt
+    assert "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन को समझेंगे।" in prompt
+
+
+
+def test_segment_translation_prompt_prefers_natural_target_language_rendering() -> None:
+    prompt = get_segment_translation_user_prompt(
+        original_text="My name is Namrata, and we are going to explore retrieval augmented generation today.",
+        target_duration_ms=4200,
+        previous_context="Welcome to the session.",
+        next_context="Let's get started.",
+        speaker_tag="Host",
+    )
+
+    assert 'Previous Dialogue Context: "Welcome to the session."' in prompt
+    assert 'Following Dialogue Context: "Let\'s get started."' in prompt
+    assert "Speaker: Host" in prompt
+    assert "Target Spoken Duration: approximately 4200 ms" in prompt
+    assert "Prefer a natural, meaning-preserving sentence in the target language over a literal word-by-word rendering." in prompt
+
+
+
+def test_refinement_condensation_prompt_preserves_meaning_while_shortening() -> None:
+    prompt = get_refinement_condensation_prompt(
+        current_translation="मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन के बारे में विस्तार से बात करेंगे।",
+        original_text="My name is Namrata, and today we will explore retrieval augmented generation in detail.",
+        target_duration_ms=4200,
+        estimated_duration_ms=5100,
+        excess_pct=21.4,
+    )
+
+    assert "The previous translation is too long" in prompt
+    assert 'Original Text: "My name is Namrata, and today we will explore retrieval augmented generation in detail."' in prompt
+    assert 'Previous Translation: "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन के बारे में विस्तार से बात करेंगे।"' in prompt
+    assert "Current Estimated Duration: 5100 ms (approximately 21.4% too long)" in prompt
+    assert "while retaining the essential message and emotional tone" in prompt
+    assert "Use more concise phrasing, omit non-essential filler words, or use shorter synonyms." in prompt
+    assert "Provide ONLY the revised translation." in prompt
+
+
+
+def test_refinement_expansion_prompt_preserves_natural_delivery() -> None:
+    prompt = get_refinement_expansion_prompt(
+        current_translation="आज हम रिट्रीवल ऑगमेंटेड जेनरेशन समझेंगे।",
+        original_text="Today we will explore retrieval augmented generation.",
+        target_duration_ms=4200,
+        estimated_duration_ms=3000,
+        deficit_pct=28.6,
+    )
+
+    assert "The previous translation is too short" in prompt
+    assert 'Original Text: "Today we will explore retrieval augmented generation."' in prompt
+    assert 'Previous Translation: "आज हम रिट्रीवल ऑगमेंटेड जेनरेशन समझेंगे।"' in prompt
+    assert "Current Estimated Duration: 3000 ms (approximately 28.6% too short)" in prompt
+    assert "Please slightly expand the translation with natural phrasing" in prompt
+    assert "without padding with nonsense" in prompt
+    assert "Provide ONLY the revised translation." in prompt
+
+
+# =============================================================================
+# 4. TRANSLATION REQUEST SCHEMA TESTS
 # =============================================================================
 def test_translate_request_schemas() -> None:
     transcript_id = uuid.uuid4()

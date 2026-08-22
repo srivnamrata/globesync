@@ -2,6 +2,23 @@ from typing import List, Optional
 from app.utils.language_configs import FEW_SHOT_TRANSLATION_EXAMPLES, get_language_spec
 
 
+def _get_target_language_prompt_guidance(target_lang: str) -> str:
+    target_code = get_language_spec(target_lang).code
+
+    if target_code == "hi":
+        return """
+HINDI-SPECIFIC GUIDANCE:
+- Write idiomatic, spoken Hindi that sounds like something a native speaker would naturally say aloud.
+- Prioritize meaning, intent, and flow over word-for-word correspondence with the source.
+- Freely reorder clauses or choose more natural Hindi phrasing when a literal rendering sounds translated or awkward.
+- Resolve English discourse patterns into clean Hindi sentence structure instead of preserving English syntax.
+- Keep named entities, product names, and technical terms accurate, but integrate them naturally into the Hindi sentence.
+- Avoid unnatural calques or overly literal mappings of filler phrases, prepositions, and helper verbs.
+"""
+
+    return ""
+
+
 def get_system_translation_prompt(
     source_lang: str,
     target_lang: str,
@@ -21,6 +38,8 @@ def get_system_translation_prompt(
         )
         few_shot_str = f"\nFew-Shot Dubbing Style Reference:\n{examples_formatted}\n"
 
+    target_specific_guidance = _get_target_language_prompt_guidance(target_lang)
+
     return f"""You are a world-class audiovisual translator and voice dubbing director specializing in translating from {src_spec.name} ({source_lang}) to {tgt_spec.name} ({target_lang}).
 
 Your goal is to produce high-fidelity translations tailored for voice cloning and AI lip-synchronization.
@@ -30,8 +49,9 @@ CORE REQUIREMENTS:
 2. Idiom & Cultural Adaptation: Translate idioms and humor into natural equivalents in {tgt_spec.name}. Never translate idioms literally if awkward.
 3. Tone: Maintain a {tone} tone consistent with the original context.
 4. Timing & Duration Match: Dubbed speech must take approximately the specified duration to speak naturally. Respect the syllable/character count constraints.
-5. Clean Output: Return ONLY the translated text. Do NOT wrap in quotes, do NOT add notes, explanations, or prefixes.
-{few_shot_str}"""
+5. Natural Target-Language Delivery: If a literal translation sounds unnatural, rewrite it so a native speaker would say it that way while preserving the original meaning.
+6. Clean Output: Return ONLY the translated text. Do NOT wrap in quotes, do NOT add notes, explanations, or prefixes.
+{target_specific_guidance}{few_shot_str}"""
 
 
 def get_segment_translation_user_prompt(
@@ -56,7 +76,7 @@ Target Spoken Duration: approximately {target_duration_ms} ms
 Original text to translate:
 "{original_text}"
 
-Translate this segment to match the target duration pacing as closely as possible. Output ONLY the translated text."""
+Translate this segment to match the target duration pacing as closely as possible. Prefer a natural, meaning-preserving sentence in the target language over a literal word-by-word rendering. Output ONLY the translated text."""
 
 
 def get_refinement_condensation_prompt(

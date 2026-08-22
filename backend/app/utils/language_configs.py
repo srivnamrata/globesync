@@ -58,6 +58,10 @@ FEW_SHOT_TRANSLATION_EXAMPLES = {
     "en-zh": [
         {"src": "Welcome to our keynote presentation.", "tgt": "欢迎来到我们的主题演讲。", "note": "Pithy 4-syllable phrasing"},
     ],
+    "en-hi": [
+        {"src": "My name is Namrata, and we are going to explore retrieval augmented generation today.", "tgt": "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन को समझेंगे।", "note": "Rephrased into natural spoken Hindi instead of preserving English wording"},
+        {"src": "Let's get started.", "tgt": "चलिए, शुरुआत करते हैं।", "note": "Natural spoken Hindi opening, not a literal word order match"},
+    ],
 }
 
 
