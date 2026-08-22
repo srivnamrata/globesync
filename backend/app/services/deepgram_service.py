@@ -36,16 +36,25 @@ class DeepgramSTT:
         Submits audio directly to Deepgram Nova-2 API.
         Extracts word-level timestamps and speaker diarization labels.
         """
-        # If running in local mock test environment without real key
-        if not self.api_key or "test" in self.api_key or "placeholder" in self.api_key:
-            return self._generate_mock_deepgram_response(audio_file_path, language)
+        # Allow canned responses only for local development; production must fail loudly
+        # so placeholder credentials never masquerade as a successful transcript.
+        api_key = (self.api_key or "").strip()
+        looks_mock = (not api_key) or ("placeholder" in api_key.lower()) or ("test" in api_key.lower())
+        if looks_mock:
+            if settings.DEPLOYMENT_ENV == "development":
+                return self._generate_mock_deepgram_response(audio_file_path, language)
+            raise MediaAppException(
+                status_code=503,
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                message="Deepgram API key is not configured for production transcription.",
+            )
 
         params: Dict[str, Any] = {
             "model": settings.DEEPGRAM_MODEL,
-            "smart_format": "true" if smart_format else "false",
-            "punctuate": "true",
-            "diarize": "true" if diarize else "false",
-            "utterances": "true",
+            "smart_format": "true" if (smart_format and settings.DEEPGRAM_SMART_FORMAT) else "false",
+            "punctuate": "true" if settings.DEEPGRAM_PUNCTUATE else "false",
+            "diarize": "true" if (diarize and settings.DEEPGRAM_DIARIZE) else "false",
+            "utterances": "true" if settings.DEEPGRAM_UTTERANCES else "false",
             "paragraphs": "true",
             "filler_words": "false",
         }
@@ -63,7 +72,6 @@ class DeepgramSTT:
         #     "Content-Type": "audio/wav",
         # }
         headers = self.get_headers(audio_file_path)
-        print(headers)
         
         try:
             async with httpx.AsyncClient(timeout=180.0) as client:

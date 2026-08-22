@@ -113,11 +113,25 @@ else
   echo "Generated translation-jwt-secret."
 fi
 
+if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then
+  printf '%s' "$DEEPGRAM_API_KEY" | gcloud secrets create transcription-deepgram-api-key --data-file=- 2>/dev/null \
+    || printf '%s' "$DEEPGRAM_API_KEY" | gcloud secrets versions add transcription-deepgram-api-key --data-file=-
+  echo "Updated transcription-deepgram-api-key from environment."
+else
+  echo "DEEPGRAM_API_KEY not set; skipping transcription-deepgram-api-key secret update."
+fi
+
 for secret in translation-database-url translation-sync-database-url translation-jwt-secret; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member="serviceAccount:${RUNTIME_SA}" \
     --role="roles/secretmanager.secretAccessor" >/dev/null
 done
+
+if gcloud secrets describe transcription-deepgram-api-key >/dev/null 2>&1; then
+  gcloud secrets add-iam-policy-binding transcription-deepgram-api-key \
+    --member="serviceAccount:${RUNTIME_SA}" \
+    --role="roles/secretmanager.secretAccessor" >/dev/null
+fi
 
 echo "==> Runtime service account roles"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
