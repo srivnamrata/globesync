@@ -42,14 +42,7 @@ def publish_progress_event(media_id: str, transcript_id: str, status: str, progr
         logger.warning(f"Failed to publish Redis progress event: {e}")
 
 
-@celery_app.task(
-    bind=True,
-    name="app.tasks.transcription_tasks.preprocess_and_transcribe_pipeline_task",
-    max_retries=3,
-    default_retry_delay=10,
-)
-def preprocess_and_transcribe_pipeline_task(
-    self,
+def run_transcription_pipeline(
     media_id_str: str,
     transcript_id_str: str,
     language: Optional[str] = None,
@@ -58,15 +51,8 @@ def preprocess_and_transcribe_pipeline_task(
     enable_loudness_norm: bool = True,
 ):
     """
-    Complete asynchronous pipeline:
-    1. Download raw media from S3/GCS
-    2. Extract speech-optimized 16kHz mono WAV via FFmpeg
-    3. Preprocess audio (noise reduction + -20 LUFS loudness normalization)
-    4. Chunk audio if 60+ minutes
-    5. Transcribe and diarize with Deepgram Nova-2
-    6. Normalize segments & word timestamps
-    7. Persist to PostgreSQL database
-    8. Broadcast real-time SSE progress events
+    Core asynchronous transcription pipeline implementation shared by Celery
+    workers and Cloud Tasks-triggered in-process execution.
     """
     media_id = uuid.UUID(media_id_str)
     transcript_id = uuid.UUID(transcript_id_str)
@@ -192,8 +178,7 @@ def preprocess_and_transcribe_pipeline_task(
             db.commit()
 
         publish_progress_event(media_id_str, transcript_id_str, "failed", 0, f"Transcription failed: {str(exc)}")
-        # Trigger Celery retry with exponential backoff
-        raise self.retry(exc=exc)
+        raise
 
     finally:
         db.close()
@@ -204,3 +189,32 @@ def preprocess_and_transcribe_pipeline_task(
                     os.remove(p)
                 except Exception:
                     pass
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.transcription_tasks.preprocess_and_transcribe_pipeline_task",
+    max_retries=3,
+    default_retry_delay=10,
+)
+def preprocess_and_transcribe_pipeline_task(
+    self,
+    media_id_str: str,
+    transcript_id_str: str,
+    language: Optional[str] = None,
+    max_speakers: Optional[int] = None,
+    enable_noise_reduction: bool = True,
+    enable_loudness_norm: bool = True,
+):
+    """Celery wrapper around the shared transcription pipeline implementation."""
+    try:
+        return run_transcription_pipeline(
+            media_id_str=media_id_str,
+            transcript_id_str=transcript_id_str,
+            language=language,
+            max_speakers=max_speakers,
+            enable_noise_reduction=enable_noise_reduction,
+            enable_loudness_norm=enable_loudness_norm,
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc)

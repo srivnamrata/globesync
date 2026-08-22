@@ -16,9 +16,20 @@ from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
 from app.services.translation_service import translation_service
+from app.tasks.transcription_tasks import run_transcription_pipeline
 
 logger = logging.getLogger("internal_tasks")
 router = APIRouter(prefix="/internal/tasks", tags=["Internal Tasks"])
+
+
+class TranscribeTaskPayload(BaseModel):
+    media_id: uuid.UUID
+    transcript_id: uuid.UUID
+    language: Optional[str] = None
+    max_speakers: Optional[int] = None
+    enable_noise_reduction: bool = True
+    enable_loudness_norm: bool = True
+    job_id: str = Field(..., min_length=8)
 
 
 class TranslateProjectTaskPayload(BaseModel):
@@ -44,6 +55,36 @@ async def _verify_cloud_tasks_request(
     # OIDC is enforced by Cloud Run IAM when --no-allow-unauthenticated / invoker
     # bindings are configured. Presence of the Cloud Tasks header is the app-level gate.
     _ = authorization
+
+
+@router.post(
+    "/transcribe",
+    status_code=status.HTTP_200_OK,
+    summary="Execute transcription pipeline (Cloud Tasks target)",
+)
+async def run_transcribe_task(
+    payload: TranscribeTaskPayload,
+    _: None = Depends(_verify_cloud_tasks_request),
+):
+    result = run_transcription_pipeline(
+        media_id_str=str(payload.media_id),
+        transcript_id_str=str(payload.transcript_id),
+        language=payload.language,
+        max_speakers=payload.max_speakers,
+        enable_noise_reduction=payload.enable_noise_reduction,
+        enable_loudness_norm=payload.enable_loudness_norm,
+    )
+    logger.info(
+        "Cloud Tasks transcription job %s completed (%s)",
+        payload.job_id,
+        payload.transcript_id,
+    )
+    return {
+        "status": result["status"],
+        "job_id": payload.job_id,
+        "transcript_id": str(payload.transcript_id),
+        "segments": result["segments"],
+    }
 
 
 @router.post(

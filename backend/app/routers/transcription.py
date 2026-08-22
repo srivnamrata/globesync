@@ -30,6 +30,7 @@ from app.schemas.transcription_schema import (
     WordDetail,
 )
 from app.tasks.transcription_tasks import preprocess_and_transcribe_pipeline_task
+from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.pipeline_availability import require_background_pipelines
 from app.utils.transcript_parser import transcript_parser
 
@@ -46,8 +47,7 @@ async def start_transcription(
     req: StartTranscriptionRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    require_background_pipelines()
-    """Dispatches asynchronous Celery pipeline to extract, clean, transcribe, and diarize speech."""
+    """Dispatches asynchronous transcription work via Cloud Tasks or Celery."""
     stmt = select(MediaFile).where(MediaFile.id == req.media_id)
     res = await db.execute(stmt)
     media = res.scalar_one_or_none()
@@ -74,6 +74,32 @@ async def start_transcription(
         transcript.status = "queued"
         transcript.error_message = None
         await db.commit()
+
+    job_id = uuid.uuid4().hex
+
+    if cloud_tasks_service.enabled:
+        cloud_tasks_service.enqueue_http_task(
+            relative_handler_path="/v1/internal/tasks/transcribe",
+            payload={
+                "media_id": str(req.media_id),
+                "transcript_id": str(transcript.id),
+                "language": req.language,
+                "max_speakers": req.max_speakers,
+                "enable_noise_reduction": req.enable_noise_reduction,
+                "enable_loudness_norm": req.enable_loudness_norm,
+                "job_id": job_id,
+            },
+            task_name_suffix=f"transcribe-{req.media_id.hex}-{job_id[:12]}",
+        )
+        return TranscriptionJobResponse(
+            job_id=job_id,
+            transcript_id=transcript.id,
+            media_id=req.media_id,
+            status="queued",
+            message="Audio extraction, noise reduction, and Deepgram Nova-2 diarization job queued on Cloud Tasks.",
+        )
+
+    require_background_pipelines()
 
     # Dispatch Celery background task
     task = preprocess_and_transcribe_pipeline_task.apply_async(

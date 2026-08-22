@@ -1,0 +1,36 @@
+Here's a full breakdown of what **GlobeSync** does:
+
+---
+
+## What the project is
+
+**GlobeSync** is an enterprise-grade, cloud-agnostic platform that takes any audio or video file and produces a fully **dubbed, lip-synced translation** in a target language — automatically. It automates the entire pipeline from raw media to a finished translated MP4.
+
+---
+
+## The 8-stage pipeline
+
+| # | Stage | What happens |
+|---|-------|-------------|
+| **1** | **Upload** | User creates a project in the Next.js UI, uploads a video. FastAPI validates it (magic-byte + SHA-256) and stores it in S3/GCS/MinIO. |
+| **2** | **Audio extraction** | FFmpeg demuxes the file to a 16 kHz mono WAV, applies noise reduction and −20 LUFS loudness normalization, then chunks it for long files. |
+| **3** | **STT + Diarization** | Deepgram Nova-2 transcribes each chunk with speaker labels and word-level timestamps. Segments are merged and saved to PostgreSQL. |
+| **4** | **Translation** | GPT-4o (or Google Cloud Translation) translates all segments in parallel batches. Each segment is **iteratively rewritten** until it fits within ±10% of the original duration — preventing audio overruns. |
+| **5** | **Voice Cloning + TTS** | ElevenLabs harvests 30–90 s of audio per speaker, clones their voice, then synthesises every translated segment with that cloned voice. |
+| **6** | **Audio Retiming** | FFmpeg `atempo` time-stretches each synthesised clip (0.75×–1.35×) to land within ±100 ms of its original timestamp. A master dubbed WAV is assembled. |
+| **7** | **Neural Lip-Sync** | Replicate (LivePortrait / Wav2Lip) renders facial animation per segment. Segments with no detected face fall back to a straight audio mux. A/V sync drift is measured and logged per segment. |
+| **8** | **Export** | All clips are stitched into a final H.264 MP4 with the master dub and SRT/VTT subtitles burned in or soft-attached. Uploaded to cloud storage. |
+
+---
+
+## Architecture at a glance
+
+```
+Next.js UI  ──REST/SSE──►  FastAPI  ──Celery tasks──►  7 Worker Queues
+    │                           │                            │
+IndexedDB                  PostgreSQL               Deepgram · GPT-4o
+(drafts)                   Redis Pub/Sub            ElevenLabs · Replicate
+                           S3 / GCS / MinIO         FFmpeg
+```
+
+Progress at every stage is streamed **live to the browser** via Redis Pub/Sub → Server-Sent Events. The artifact above has the full interactive one-pager with architecture diagram, pipeline flowchart, queue table, and tech stack.

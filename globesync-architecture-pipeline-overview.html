@@ -1,0 +1,372 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GlobeSync Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #ffffff; color: #1f2328; padding: 32px 20px; }
+  .page { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; color: #1f2328; border-bottom: 2px solid #3b82d4; padding-bottom: 8px; margin-bottom: 6px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 15px; font-weight: 700; color: #1f2328; margin: 28px 0 12px; }
+  h3 { font-size: 13px; font-weight: 600; color: #1f2328; margin: 16px 0 8px; }
+  p { color: #1f2328; margin-bottom: 10px; }
+
+  /* ── Section cards ── */
+  .section { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+
+  /* ── ARCHITECTURE DIAGRAM ── */
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .arch-layer { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .arch-layer-header { padding: 8px 12px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .arch-layer-body { padding: 10px 12px; background: #fff; }
+  .layer-frontend .arch-layer-header { background: #ede9fe; color: #5b21b6; }
+  .layer-backend  .arch-layer-header { background: #dbeafe; color: #1d4ed8; }
+  .layer-infra    .arch-layer-header { background: #f0fdf4; color: #166534; }
+  .arch-item { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: #1f2328; padding: 3px 0; border-bottom: 1px dotted #e5e7eb; }
+  .arch-item:last-child { border-bottom: none; }
+  .arch-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .dot-purple { background: #7c5cd8; }
+  .dot-blue   { background: #3b82d4; }
+  .dot-green  { background: #22c55e; }
+  .dot-orange { background: #f97316; }
+  .dot-red    { background: #ef4444; }
+  .dot-gray   { background: #6b7280; }
+
+  /* ── ARROWS ── */
+  .arrows { display: flex; justify-content: space-around; margin: -8px 0 12px; color: #57606a; font-size: 18px; }
+
+  /* ── PIPELINE FLOW ── */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .flow-step { display: flex; align-items: flex-start; gap: 12px; }
+  .flow-step-left { display: flex; flex-direction: column; align-items: center; width: 36px; flex-shrink: 0; }
+  .flow-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; flex-shrink: 0; }
+  .flow-line { width: 2px; flex: 1; min-height: 16px; background: #e5e7eb; }
+  .flow-content { padding: 0 0 20px 0; flex: 1; }
+  .flow-title { font-weight: 700; font-size: 13px; color: #1f2328; margin-bottom: 4px; }
+  .flow-desc  { font-size: 12px; color: #57606a; line-height: 1.5; }
+  .flow-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; margin-right: 4px; margin-top: 4px; }
+  .tag-purple { background: #ede9fe; color: #5b21b6; }
+  .tag-blue   { background: #dbeafe; color: #1d4ed8; }
+  .tag-green  { background: #dcfce7; color: #15803d; }
+  .tag-orange { background: #fff7ed; color: #c2410c; }
+  .tag-red    { background: #fee2e2; color: #b91c1c; }
+  .tag-teal   { background: #ccfbf1; color: #0f766e; }
+
+  /* ── TECH TABLE ── */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; background: #f7f8fa; color: #57606a; font-weight: 600; padding: 7px 10px; border-bottom: 2px solid #e5e7eb; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 6px; }
+
+  /* ── QUEUE TABLE ── */
+  .queue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .queue-card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; background: #fff; }
+  .queue-name { font-size: 11px; font-weight: 700; font-family: "Courier New", monospace; color: #1d4ed8; margin-bottom: 4px; }
+  .queue-desc { font-size: 12px; color: #57606a; }
+
+  /* ── FOOTER ── */
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 11px; color: #8b949e; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>GlobeSync — Enterprise Video Translation Platform</h1>
+  <p class="subtitle">Architecture overview &amp; end-to-end processing pipeline — v1.2.0</p>
+
+  
+  <div class="section">
+    <h2 style="margin-top:0">What is this project?</h2>
+    <p>
+      GlobeSync is a production-ready, cloud-agnostic platform that takes a source audio or video file
+      and produces a fully dubbed, lip-synced translation in a target language.
+      The platform automates every step: speech-to-text, speaker diarization, context-aware translation
+      with duration matching, voice cloning, TTS synthesis with audio retiming, and neural lip-sync
+      rendering via AI models — all orchestrated through an async task queue.
+    </p>
+  </div>
+
+  
+  <h2>High-Level Architecture</h2>
+  <div class="arch-grid">
+    
+    <div class="arch-layer layer-frontend">
+      <div class="arch-layer-header">Frontend (Next.js)</div>
+      <div class="arch-layer-body">
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Project Browser (IndexedDB drafts)</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Translation Editor (segment grid)</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Video Preview + Waveform Timeline</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Undo / Redo history stack</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Auto-save to IndexedDB (30s loop)</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>SSE progress stream listener</div>
+        <div class="arch-item"><span class="arch-dot dot-purple"></span>Zustand stores (project / media / translation)</div>
+      </div>
+    </div>
+    
+    <div class="arch-layer layer-backend">
+      <div class="arch-layer-header">Backend (FastAPI)</div>
+      <div class="arch-layer-body">
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>REST API (upload, transcription, translation, TTS, lipsync, export)</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>SSE / WebSocket progress endpoints</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>Celery task dispatch</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>PostgreSQL (async SQLAlchemy)</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>Redis Pub/Sub progress bus</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>S3 / GCS / MinIO storage abstraction</div>
+        <div class="arch-item"><span class="arch-dot dot-blue"></span>Request ID &amp; performance middleware</div>
+      </div>
+    </div>
+    
+    <div class="arch-layer layer-infra">
+      <div class="arch-layer-header">Workers &amp; AI Services</div>
+      <div class="arch-layer-body">
+        <div class="arch-item"><span class="arch-dot dot-green"></span>Celery workers (7 queues)</div>
+        <div class="arch-item"><span class="arch-dot dot-green"></span>FFmpeg — extract, retime, mux</div>
+        <div class="arch-item"><span class="arch-dot dot-orange"></span>Deepgram Nova-2 — STT + diarization</div>
+        <div class="arch-item"><span class="arch-dot dot-orange"></span>OpenAI GPT-4o — translation</div>
+        <div class="arch-item"><span class="arch-dot dot-orange"></span>Google Cloud Translation (alt)</div>
+        <div class="arch-item"><span class="arch-dot dot-orange"></span>ElevenLabs Multilingual v2 — TTS + voice clone</div>
+        <div class="arch-item"><span class="arch-dot dot-red"></span>Replicate (LivePortrait / Wav2Lip) — lip-sync</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrows">
+    <span style="font-size:13px;color:#57606a">⟵ REST / SSE / WebSocket ⟶</span>
+    <span style="font-size:13px;color:#57606a">⟵ Redis Pub/Sub + Celery queues ⟶</span>
+  </div>
+
+  
+  <h2>End-to-End Processing Pipeline</h2>
+  <div class="flow">
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#7c5cd8">1</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Project Creation &amp; Media Upload</div>
+        <div class="flow-desc">
+          User creates a project (source + target language) in the Next.js UI. Project metadata is saved to <strong>IndexedDB</strong>. 
+          The user uploads an audio/video file (up to 100 MB direct; larger via resumable chunked upload). 
+          FastAPI validates the file (magic-byte inspection, MIME detection, SHA-256) and stores it in <strong>S3 / GCS / MinIO</strong>, 
+          persisting a <code>MediaFile</code> record in PostgreSQL.
+        </div>
+        <span class="flow-tag tag-purple">Next.js UI</span>
+        <span class="flow-tag tag-blue">FastAPI /upload</span>
+        <span class="flow-tag tag-green">Object Storage</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#3b82d4">2</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Audio Extraction &amp; Pre-processing</div>
+        <div class="flow-desc">
+          A Celery task (<code>stt_diarize</code> queue) downloads the raw media and uses <strong>FFmpeg</strong> to demux it into 
+          a 16 kHz mono WAV optimised for STT (&lt;30 s for 4 GB files). 
+          The extracted audio is then noise-reduced (noisereduce library), loudness-normalised to −20 LUFS, 
+          and chunked into manageable pieces for files longer than 20 minutes.
+        </div>
+        <span class="flow-tag tag-blue">Celery: stt_diarize</span>
+        <span class="flow-tag tag-orange">FFmpeg</span>
+        <span class="flow-tag tag-teal">−20 LUFS / VAD chunking</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#0ea5e9">3</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Speech-to-Text &amp; Speaker Diarization</div>
+        <div class="flow-desc">
+          Each audio chunk is sent to <strong>Deepgram Nova-2</strong> for transcription with speaker diarization and 
+          word-level timestamps. Results are parsed, normalised, time-offset-merged across chunks, 
+          and persisted as <code>Transcript</code> + <code>TranscriptSegment</code> rows in PostgreSQL. 
+          Real-time progress (10 → 100 %) is published to a <strong>Redis Pub/Sub</strong> channel and streamed to the UI via SSE.
+        </div>
+        <span class="flow-tag tag-orange">Deepgram Nova-2</span>
+        <span class="flow-tag tag-blue">PostgreSQL</span>
+        <span class="flow-tag tag-teal">Redis SSE</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#22c55e">4</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Context-Aware Translation with Duration Matching</div>
+        <div class="flow-desc">
+          A second Celery task (<code>translation</code> queue) loads all transcript segments and runs 
+          <strong>GPT-4o</strong> (or Google Cloud Translation) in parallel batches of up to 10 concurrent 
+          requests with a <em>sliding context window</em> for coherence. 
+          Each translated segment is measured for speech rate and iteratively rewritten (condensed or expanded) 
+          until the translated text fits within <strong>±10 % of the original segment duration</strong>. 
+          Results are stored as <code>Translation</code> rows with duration ratio and speed-adjustment metadata.
+        </div>
+        <span class="flow-tag tag-orange">OpenAI GPT-4o</span>
+        <span class="flow-tag tag-green">Google Cloud Translation (alt)</span>
+        <span class="flow-tag tag-blue">Celery: translation</span>
+        <span class="flow-tag tag-teal">±10 % duration loop</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#f97316">5</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Voice Cloning &amp; TTS Synthesis</div>
+        <div class="flow-desc">
+          The <code>tts_clone</code> Celery task harvests 30–90 s of clean audio per speaker from the original media 
+          and calls <strong>ElevenLabs Instant Voice Cloning</strong> to build per-speaker <code>VoiceProfile</code> records. 
+          All translated segments are then synthesised concurrently (up to 10 parallel requests) using 
+          <strong>ElevenLabs Multilingual v2</strong>. Each generated audio clip is uploaded to cloud storage 
+          and recorded as a <code>GeneratedAudio</code> row.
+        </div>
+        <span class="flow-tag tag-orange">ElevenLabs Multilingual v2</span>
+        <span class="flow-tag tag-blue">Celery: tts_clone</span>
+        <span class="flow-tag tag-green">Voice cloning (per speaker)</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#ef4444">6</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Audio Retiming &amp; Master Dub Assembly</div>
+        <div class="flow-desc">
+          Each synthesised segment is time-stretched with <strong>FFmpeg atempo</strong> (0.75×–1.35× speed range) 
+          to hit its exact original timestamp slot within ±100 ms. De-clicking filters are applied at splice points. 
+          All retimed clips are mixed into a single <strong>master dubbed audio WAV</strong> that matches the exact 
+          original video duration and uploaded to cloud storage.
+        </div>
+        <span class="flow-tag tag-orange">FFmpeg atempo</span>
+        <span class="flow-tag tag-blue">Celery: audio_retiming</span>
+        <span class="flow-tag tag-teal">±100 ms precision</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#7c5cd8">7</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Neural Lip-Sync Rendering</div>
+        <div class="flow-desc">
+          The <code>lipsync_render</code> Celery task slices the original video into per-segment clips, 
+          extracts a keyframe and runs <strong>face detection</strong> to identify suitable frames. 
+          For each speech segment containing a detected face, it calls <strong>Replicate (LivePortrait or Wav2Lip)</strong> 
+          to generate neural facial animation synchronised to the dubbed audio. 
+          A/V sync drift is measured for each rendered segment; segments with no detectable face fall back 
+          to a straight audio mux. Per-segment quality scores and face metadata are persisted as <code>FrameMetadata</code>.
+        </div>
+        <span class="flow-tag tag-red">Replicate LivePortrait / Wav2Lip</span>
+        <span class="flow-tag tag-blue">Celery: lipsync_render</span>
+        <span class="flow-tag tag-teal">AV drift measurement</span>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#0f766e">8</div>
+        <div class="flow-line"></div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Video Reconstruction &amp; Export</div>
+        <div class="flow-desc">
+          All rendered clips are stitched back into the original video timeline with the master dubbed audio muxed in. 
+          SRT/VTT subtitles are generated from translated segments and either <em>burned in</em> or attached as 
+          soft subtitle tracks. The final video is H.264-encoded and uploaded to cloud storage 
+          as the deliverable <code>exports/{project}/{lang}_translated_master.mp4</code>. 
+          The UI is notified via SSE and the project status is updated.
+        </div>
+        <span class="flow-tag tag-orange">FFmpeg H.264</span>
+        <span class="flow-tag tag-blue">Celery: mux_export</span>
+        <span class="flow-tag tag-green">SRT / VTT subtitles</span>
+        <span class="flow-tag tag-teal">Cloud Storage export</span>
+      </div>
+    </div>
+
+    
+    <div class="flow-step">
+      <div class="flow-step-left">
+        <div class="flow-num" style="background:#1f2328">✓</div>
+      </div>
+      <div class="flow-content">
+        <div class="flow-title">Translated Video Ready</div>
+        <div class="flow-desc">
+          The user receives a dubbed, lip-synced MP4 with subtitle tracks — spoken in the target language with 
+          original speaker voices cloned — delivered via a signed cloud storage URL.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  
+  <h2>Celery Worker Queues</h2>
+  <div class="queue-grid">
+    <div class="queue-card"><div class="queue-name">audio_extract</div><div class="queue-desc">FFmpeg audio demuxing tasks</div></div>
+    <div class="queue-card"><div class="queue-name">stt_diarize</div><div class="queue-desc">Noise reduction, loudness norm, Deepgram STT pipeline</div></div>
+    <div class="queue-card"><div class="queue-name">translation</div><div class="queue-desc">GPT-4o / Google batch translation with duration matching</div></div>
+    <div class="queue-card"><div class="queue-name">tts_clone</div><div class="queue-desc">ElevenLabs voice cloning &amp; speech synthesis</div></div>
+    <div class="queue-card"><div class="queue-name">audio_retiming</div><div class="queue-desc">FFmpeg atempo retiming &amp; master dub assembly</div></div>
+    <div class="queue-card"><div class="queue-name">lipsync_render</div><div class="queue-desc">Replicate neural lip-sync rendering (GPU-bound)</div></div>
+    <div class="queue-card"><div class="queue-name">mux_export</div><div class="queue-desc">Video reconstruction, H.264 mux &amp; export upload</div></div>
+  </div>
+
+  
+  <h2>Technology Stack</h2>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Technology</th><th>Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Frontend</td><td>Next.js 14, Zustand, Tailwind CSS</td><td>Project management &amp; translation editor UI</td></tr>
+      <tr><td>API</td><td>FastAPI (Python 3.10+)</td><td>REST + SSE endpoints, middleware, health probes</td></tr>
+      <tr><td>Task Queue</td><td>Celery + Redis (broker)</td><td>Async pipeline orchestration across 7 queues</td></tr>
+      <tr><td>Database</td><td>PostgreSQL + SQLAlchemy (async)</td><td>Media, transcript, translation, audio &amp; job records</td></tr>
+      <tr><td>Object Storage</td><td>S3 / GCS / MinIO (abstracted)</td><td>Raw media, processed audio, final video export</td></tr>
+      <tr><td>STT</td><td>Deepgram Nova-2</td><td>Transcription + speaker diarization + word timestamps</td></tr>
+      <tr><td>Translation</td><td>OpenAI GPT-4o / Google Cloud Translation</td><td>Context-aware translation with duration matching loop</td></tr>
+      <tr><td>TTS / Voices</td><td>ElevenLabs Multilingual v2</td><td>Voice cloning + high-quality speech synthesis</td></tr>
+      <tr><td>Lip-Sync</td><td>Replicate (LivePortrait, Wav2Lip)</td><td>Neural facial animation from dubbed audio</td></tr>
+      <tr><td>Media Processing</td><td>FFmpeg / FFprobe</td><td>Demux, retime (atempo), H.264 encode, subtitle burn-in</td></tr>
+      <tr><td>Real-time Events</td><td>Redis Pub/Sub → SSE</td><td>Live progress streaming from workers to UI</td></tr>
+      <tr><td>Local Persistence</td><td>IndexedDB (browser)</td><td>Offline project draft storage with 30 s auto-save</td></tr>
+    </tbody>
+  </table>
+
+  
+  <h2>Key Design Decisions</h2>
+  <div class="section" style="margin-bottom:0">
+    <h3>Duration-Matching Feedback Loop</h3>
+    <p>Every translated segment is iteratively rewritten until its estimated spoken duration fits within ±10 % of the original. This prevents audio segments from running over their video window, eliminating the need for aggressive speed changes.</p>
+    <h3>Per-Speaker Voice Cloning</h3>
+    <p>The platform harvests 30–90 seconds of clean speech per speaker from the original video and creates an ElevenLabs voice profile. All TTS segments for that speaker are then synthesised with their cloned voice, preserving vocal identity across languages.</p>
+    <h3>Graceful Lip-Sync Fallback</h3>
+    <p>If no face is detected in a segment (e.g. B-roll, text cards, close-up of hands), the platform skips the expensive neural rendering call and simply muxes the dubbed audio into the original video slice — ensuring the pipeline never blocks on segments that don't benefit from lip-sync.</p>
+    <h3>Cloud-Agnostic Storage Abstraction</h3>
+    <p>All object storage calls go through a single <code>storage_service</code> abstraction layer that supports S3, GCS, and MinIO interchangeably — deployable on AWS, GCP, or a local Docker Compose stack with zero code changes.</p>
+  </div>
+
+  <footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>
