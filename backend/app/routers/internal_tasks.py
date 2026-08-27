@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
 from app.services.translation_service import translation_service
+from app.tasks.lipsync_tasks import run_lipsync_project_pipeline
 from app.tasks.transcription_tasks import run_transcription_pipeline
 
 logger = logging.getLogger("internal_tasks")
@@ -39,6 +40,16 @@ class TranslateProjectTaskPayload(BaseModel):
     target_language: str
     project_id: Optional[uuid.UUID] = None
     job_id: str = Field(..., min_length=8)
+
+
+class RenderLipSyncProjectTaskPayload(BaseModel):
+    job_id: uuid.UUID
+    media_file_id: uuid.UUID
+    transcript_id: uuid.UUID
+    target_language: str
+    project_id: Optional[uuid.UUID] = None
+    model_preference: str = "liveportrait"
+    burn_in_subtitles: bool = False
 
 
 async def _verify_cloud_tasks_request(
@@ -143,3 +154,29 @@ async def run_translate_project_task(
         "transcript_id": str(payload.transcript_id),
         "segments_translated": len(translated),
     }
+
+
+@router.post(
+    "/render-lipsync-project",
+    status_code=status.HTTP_200_OK,
+    summary="Execute dub and lip-sync pipeline (Cloud Tasks target)",
+)
+async def run_render_lipsync_project_task(
+    payload: RenderLipSyncProjectTaskPayload,
+    _: None = Depends(_verify_cloud_tasks_request),
+):
+    result = await asyncio.to_thread(
+        run_lipsync_project_pipeline,
+        job_id_str=str(payload.job_id),
+        media_file_id_str=str(payload.media_file_id),
+        transcript_id_str=str(payload.transcript_id),
+        target_language=payload.target_language,
+        model_preference=payload.model_preference,
+        burn_in_subtitles=payload.burn_in_subtitles,
+    )
+    logger.info(
+        "Cloud Tasks dub/lip-sync job %s completed (%s)",
+        payload.job_id,
+        payload.transcript_id,
+    )
+    return result

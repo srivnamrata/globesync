@@ -20,7 +20,9 @@ export default function TranslationEditor() {
   const { segments, setSegments, updateSegmentText } = useMediaStore();
   const { translations, setTranslations, updateTranslationText } = useTranslationStore();
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing' | 'translating'>('idle');
+  const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
 
   const timeline = useTimeline();
   const history = useHistory();
@@ -156,6 +158,96 @@ export default function TranslationEditor() {
     }
 
     return latestTranslations;
+  };
+
+  const syncTranslationsBeforeBuild = async (): Promise<TranslatedSegment[]> => {
+    const localTranslations = Object.values(translations).filter(
+      (translation) => translation.id && translation.translatedText.trim().length > 0,
+    );
+
+    const persistedTranslations = await Promise.all(
+      localTranslations.map((translation) =>
+        projectService.updateTranslationSegment(translation.id, translation.translatedText),
+      ),
+    );
+
+    setTranslations(persistedTranslations);
+    await persistDraft({ translationsOverride: persistedTranslations });
+    return persistedTranslations;
+  };
+
+  const pollForLipSyncCompletion = async (jobId: string) => {
+    let latestStatus: any = null;
+
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      latestStatus = await projectService.getExportStatus(jobId);
+
+      if (latestStatus?.status === 'failed') {
+        throw new Error(latestStatus?.error_message || 'Dub & Lip-Sync failed. Check the backend logs for details.');
+      }
+
+      if (latestStatus?.status === 'completed') {
+        return latestStatus;
+      }
+
+      setUploadMessage(
+        `Dub & Lip-Sync ${String(latestStatus?.status || 'in progress').replace('_', ' ')}${typeof latestStatus?.progress_percent === 'number' ? ` (${latestStatus.progress_percent}%)` : ''}…`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    return latestStatus;
+  };
+
+  const handleBuildDubAndLipSync = async () => {
+    if (!currentProject?.id || !currentProject.mediaId || !currentProject.transcriptId) {
+      setUploadMessage('Upload and transcribe media before building dub and lip-sync.');
+      return;
+    }
+
+    if (segments.length === 0) {
+      setUploadMessage('Transcript segments are required before building dub and lip-sync.');
+      return;
+    }
+
+    if (Object.keys(translations).length < segments.length) {
+      setUploadMessage('Wait until all translated segments are available before building dub and lip-sync.');
+      return;
+    }
+
+    try {
+      setBuildState('syncing');
+      setRenderedVideoUrl(null);
+      setUploadMessage('Saving translated segment edits…');
+      const persistedTranslations = await syncTranslationsBeforeBuild();
+
+      if (persistedTranslations.length < segments.length) {
+        throw new Error('Not all translated segments are ready yet.');
+      }
+
+      setBuildState('building');
+      setUploadMessage('Queuing dub and lip-sync pipeline…');
+      const job = await projectService.triggerLipSync(
+        currentProject.mediaId,
+        currentProject.transcriptId,
+        currentProject.targetLanguage,
+        currentProject.id,
+      );
+
+      setUploadMessage('Dub and lip-sync queued. Building dubbed audio…');
+      const completedJob = await pollForLipSyncCompletion(job.job_id);
+
+      if (completedJob?.output_video_url) {
+        setRenderedVideoUrl(completedJob.output_video_url);
+        setUploadMessage('Dub & Lip-Sync complete. Preview is ready.');
+      } else {
+        setUploadMessage('Dub & Lip-Sync completed successfully.');
+      }
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Unable to build dub and lip-sync output.');
+    } finally {
+      setBuildState('idle');
+    }
   };
 
   const handleTextChange = (segId: string, text: string) => {
@@ -328,8 +420,16 @@ export default function TranslationEditor() {
           >
             Redo
           </button>
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition">
-            Build Dub & Lip-Sync
+          <button
+            onClick={handleBuildDubAndLipSync}
+            disabled={buildState !== 'idle' || uploadState !== 'idle'}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {buildState === 'syncing'
+              ? 'Saving Translations…'
+              : buildState === 'building'
+                ? 'Building…'
+                : 'Build Dub & Lip-Sync'}
           </button>
         </div>
       </header>
@@ -416,8 +516,19 @@ export default function TranslationEditor() {
 
         {/* Right Grid: Video Preview Player */}
         <div className="bg-slate-950 p-6 flex flex-col justify-between overflow-hidden">
-          <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500">
-            Preview Media Player Placeholder
+          <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500 overflow-hidden">
+            {renderedVideoUrl ? (
+              <video
+                key={renderedVideoUrl}
+                src={renderedVideoUrl}
+                controls
+                className="h-full w-full"
+              >
+                Your browser does not support embedded video playback.
+              </video>
+            ) : (
+              'Preview Media Player Placeholder'
+            )}
           </div>
 
           <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between">

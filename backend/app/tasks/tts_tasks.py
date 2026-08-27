@@ -42,17 +42,11 @@ def publish_tts_event(project_id: str, status: str, progress_percent: int, messa
         logger.warning(f"Failed to publish Redis TTS event: {e}")
 
 
-@celery_app.task(
-    bind=True,
-    name="app.tasks.tts_tasks.synthesize_project_tts_task",
-    max_retries=3,
-    default_retry_delay=10,
-)
-def synthesize_project_tts_task(
-    self,
+def run_project_tts_pipeline(
     transcript_id_str: str,
     target_language: str,
     project_id_str: Optional[str] = None,
+    task_instance=None,
 ):
     """
     Asynchronous Celery task:
@@ -100,6 +94,11 @@ def synthesize_project_tts_task(
 
         if not translations:
             raise ValueError(f"No translations found for target language {target_language}")
+
+        translation_ids = [t.id for t in translations]
+        if translation_ids:
+            db.query(GeneratedAudio).filter(GeneratedAudio.translation_id.in_(translation_ids)).delete(synchronize_session=False)
+            db.commit()
 
         # Step 1: Voice Cloning / Speaker Profile Association
         publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, "Extracting speaker embeddings and voice clone profiles...")
@@ -226,7 +225,30 @@ def synthesize_project_tts_task(
         db.rollback()
         logger.error(f"Error in TTS synthesis pipeline: {exc}", exc_info=True)
         publish_tts_event(project_id_str or transcript_id_str, "failed", 0, f"TTS Synthesis failed: {str(exc)}")
-        raise self.retry(exc=exc)
+        if task_instance is not None:
+            raise task_instance.retry(exc=exc)
+        raise
 
     finally:
         db.close()
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.tts_tasks.synthesize_project_tts_task",
+    max_retries=3,
+    default_retry_delay=10,
+)
+def synthesize_project_tts_task(
+    self,
+    transcript_id_str: str,
+    target_language: str,
+    project_id_str: Optional[str] = None,
+):
+    """Celery wrapper around the shared project TTS pipeline implementation."""
+    return run_project_tts_pipeline(
+        transcript_id_str=transcript_id_str,
+        target_language=target_language,
+        project_id_str=project_id_str,
+        task_instance=self,
+    )

@@ -1,6 +1,5 @@
 import asyncio
 import os
-import subprocess
 from typing import Optional
 from app.core.config import settings
 from app.utils.error_codes import ErrorCode, MediaAppException
@@ -8,6 +7,12 @@ from app.utils.error_codes import ErrorCode, MediaAppException
 
 class AudioExtractor:
     """High-performance FFmpeg audio extraction module supporting all major video formats."""
+
+    @staticmethod
+    def _ensure_parent_dir(output_path: str) -> None:
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
     @staticmethod
     async def extract_audio_for_stt(
@@ -24,7 +29,7 @@ class AudioExtractor:
             base_name = os.path.splitext(os.path.basename(video_input_path))[0]
             output_wav_path = os.path.join(settings.PROCESSED_MEDIA_DIR, f"{base_name}_stt_16k.wav")
 
-        os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+        AudioExtractor._ensure_parent_dir(output_wav_path)
 
         cmd = [
             "ffmpeg",
@@ -62,7 +67,7 @@ class AudioExtractor:
         output_segment_path: str,
     ) -> str:
         """Extracts a precise slice/segment of audio with sample-accurate seeking."""
-        os.makedirs(os.path.dirname(output_segment_path), exist_ok=True)
+        AudioExtractor._ensure_parent_dir(output_segment_path)
 
         cmd = [
             "ffmpeg",
@@ -97,7 +102,15 @@ class AudioExtractor:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await fb_process.communicate()
+            _, fb_stderr = await fb_process.communicate()
+
+            if fb_process.returncode != 0 or not os.path.exists(output_segment_path):
+                raise MediaAppException(
+                    status_code=500,
+                    error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                    message="Failed to extract audio segment with FFmpeg.",
+                    details={"stderr": fb_stderr.decode("utf-8", errors="ignore")},
+                )
 
         return output_segment_path
 
@@ -111,6 +124,8 @@ class AudioExtractor:
         if not output_mp3_path:
             base_name = os.path.splitext(os.path.basename(input_audio_path))[0]
             output_mp3_path = os.path.join(settings.PROCESSED_MEDIA_DIR, f"{base_name}_web.mp3")
+
+        AudioExtractor._ensure_parent_dir(output_mp3_path)
 
         cmd = [
             "ffmpeg",
@@ -126,7 +141,16 @@ class AudioExtractor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        await process.communicate()
+        _, stderr = await process.communicate()
+
+        if process.returncode != 0 or not os.path.exists(output_mp3_path):
+            raise MediaAppException(
+                status_code=500,
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                message="Failed to convert audio to MP3 with FFmpeg.",
+                details={"stderr": stderr.decode("utf-8", errors="ignore")},
+            )
+
         return output_mp3_path
 
 

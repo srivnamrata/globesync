@@ -31,6 +31,7 @@ from app.schemas.lipsync_schema import (
     RenderSegmentLipSyncRequest,
     ReplicateWebhookPayload,
 )
+from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.storage_service import storage_service
 from app.services.pipeline_availability import require_background_pipelines
 from app.tasks.lipsync_tasks import render_lipsync_project_task
@@ -48,8 +49,7 @@ async def render_lipsync_project(
     req: RenderLipSyncProjectRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    require_background_pipelines()
-    """Dispatches asynchronous Celery pipeline to perform neural facial synthesis, A/V sync, and video remuxing."""
+    """Dispatches asynchronous dubbing + neural lip-sync pipeline to perform TTS, facial synthesis, A/V sync, and video remuxing."""
     stmt = select(MediaFile).where(MediaFile.id == req.media_file_id)
     res = await db.execute(stmt)
     media = res.scalar_one_or_none()
@@ -78,18 +78,33 @@ async def render_lipsync_project(
     await db.commit()
     await db.refresh(job)
 
-    # Dispatch Celery background task
-    task = render_lipsync_project_task.apply_async(
-        kwargs={
-            "job_id_str": str(job.id),
-            "media_file_id_str": str(req.media_file_id),
-            "transcript_id_str": str(req.transcript_id),
-            "target_language": req.target_language,
-            "model_preference": req.model_preference,
-            "burn_in_subtitles": req.burn_in_subtitles,
-        },
-        queue="lipsync_render",
-    )
+    if cloud_tasks_service.enabled:
+        cloud_tasks_service.enqueue_http_task(
+            relative_handler_path="/v1/internal/tasks/render-lipsync-project",
+            payload={
+                "job_id": str(job.id),
+                "media_file_id": str(req.media_file_id),
+                "transcript_id": str(req.transcript_id),
+                "target_language": req.target_language,
+                "project_id": str(req.project_id) if req.project_id else None,
+                "model_preference": req.model_preference,
+                "burn_in_subtitles": req.burn_in_subtitles,
+            },
+            task_name_suffix=f"lipsync-{job.id.hex}-{req.target_language}",
+        )
+    else:
+        require_background_pipelines()
+        render_lipsync_project_task.apply_async(
+            kwargs={
+                "job_id_str": str(job.id),
+                "media_file_id_str": str(req.media_file_id),
+                "transcript_id_str": str(req.transcript_id),
+                "target_language": req.target_language,
+                "model_preference": req.model_preference,
+                "burn_in_subtitles": req.burn_in_subtitles,
+            },
+            queue="lipsync_render",
+        )
 
     return LipSyncDispatchResponse(
         job_id=job.id,

@@ -24,6 +24,7 @@ from app.services.storage_service import storage_service
 from app.services.video_processor import video_processor
 from app.services.video_reconstructor import video_reconstructor
 from app.tasks.gpu_task_scheduler import gpu_scheduler
+from app.tasks.tts_tasks import run_project_tts_pipeline
 from app.utils.quality_metrics import quality_metrics
 from app.utils.transcript_parser import transcript_parser
 
@@ -49,20 +50,14 @@ def publish_lipsync_event(job_id: str, status: str, progress_percent: int, messa
         logger.warning(f"Failed to publish Redis lip-sync event: {e}")
 
 
-@celery_app.task(
-    bind=True,
-    name="app.tasks.lipsync_tasks.render_lipsync_project_task",
-    max_retries=3,
-    default_retry_delay=15,
-)
-def render_lipsync_project_task(
-    self,
+def run_lipsync_project_pipeline(
     job_id_str: str,
     media_file_id_str: str,
     transcript_id_str: str,
     target_language: str,
     model_preference: str = "liveportrait",
     burn_in_subtitles: bool = False,
+    task_instance=None,
 ):
     """
     End-to-end neural lip-sync rendering pipeline:
@@ -96,6 +91,14 @@ def render_lipsync_project_task(
 
         job.status = "in_progress"
         db.commit()
+
+        project_id_str = str(job.project_id or transcript.project_id) if (job.project_id or transcript.project_id) else None
+        publish_lipsync_event(job_id_str, "in_progress", 8, "Synthesizing dubbed audio from translated segments...")
+        run_project_tts_pipeline(
+            transcript_id_str=transcript_id_str,
+            target_language=target_language,
+            project_id_str=project_id_str,
+        )
 
         # 1. Download source video
         publish_lipsync_event(job_id_str, "in_progress", 10, "Downloading high-resolution source video...")
@@ -325,7 +328,9 @@ def render_lipsync_project_task(
             db.commit()
 
         publish_lipsync_event(job_id_str, "failed", 0, f"Lip-sync rendering failed: {str(exc)}")
-        raise self.retry(exc=exc)
+        if task_instance is not None:
+            raise task_instance.retry(exc=exc)
+        raise
 
     finally:
         db.close()
@@ -336,3 +341,30 @@ def render_lipsync_project_task(
                     os.remove(p)
                 except Exception:
                     pass
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.lipsync_tasks.render_lipsync_project_task",
+    max_retries=3,
+    default_retry_delay=15,
+)
+def render_lipsync_project_task(
+    self,
+    job_id_str: str,
+    media_file_id_str: str,
+    transcript_id_str: str,
+    target_language: str,
+    model_preference: str = "liveportrait",
+    burn_in_subtitles: bool = False,
+):
+    """Celery wrapper around the shared lip-sync pipeline implementation."""
+    return run_lipsync_project_pipeline(
+        job_id_str=job_id_str,
+        media_file_id_str=media_file_id_str,
+        transcript_id_str=transcript_id_str,
+        target_language=target_language,
+        model_preference=model_preference,
+        burn_in_subtitles=burn_in_subtitles,
+        task_instance=self,
+    )
