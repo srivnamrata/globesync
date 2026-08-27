@@ -14,6 +14,9 @@ HINDI-SPECIFIC GUIDANCE:
 - Resolve English discourse patterns into clean Hindi sentence structure instead of preserving English syntax.
 - Keep named entities, product names, and technical terms accurate, but integrate them naturally into the Hindi sentence.
 - Avoid unnatural calques or overly literal mappings of filler phrases, prepositions, and helper verbs.
+- Many segments will be short fragments (3–7 words). Do NOT translate them in isolation as literal fragments. Use the surrounding context to produce a fluent continuation of the thought.
+- English technical terms (e.g. "retrieval augmented generation", "machine learning", "AI") should be transliterated phonetically (रिट्रीवल ऑगमेंटेड जेनरेशन) rather than translated word-for-word into Sanskrit-derived calques.
+- Greeting fragments like "Hello, everyone" → "नमस्ते दोस्तों" or "आप सभी का स्वागत है" — not the stilted "सभी को नमस्कार।"
 """
 
     return ""

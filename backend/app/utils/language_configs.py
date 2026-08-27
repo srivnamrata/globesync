@@ -59,7 +59,11 @@ FEW_SHOT_TRANSLATION_EXAMPLES = {
         {"src": "Welcome to our keynote presentation.", "tgt": "欢迎来到我们的主题演讲。", "note": "Pithy 4-syllable phrasing"},
     ],
     "en-hi": [
-        {"src": "My name is Namrata, and we are going to explore retrieval augmented generation today.", "tgt": "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन को समझेंगे।", "note": "Rephrased into natural spoken Hindi instead of preserving English wording"},
+        {"src": "Hello, everyone.", "tgt": "नमस्ते दोस्तों।", "note": "Natural spoken greeting — not the literal 'सभी को नमस्कार'"},
+        {"src": "My name is Namrata,", "tgt": "मेरा नाम नम्रता है,", "note": "Short fragment — preserve meaning, continue naturally into next clause"},
+        {"src": "and we are going to explore", "tgt": "और आज हम जानेंगे", "note": "Idiomatic: 'explore' → 'जानेंगे' sounds natural rather than 'खोजबीन करने जा रहे हैं'"},
+        {"src": "retrieval augmented generation", "tgt": "रिट्रीवल ऑगमेंटेड जेनरेशन", "note": "Technical term — phonetic transliteration, never a word-for-word Sanskrit calque"},
+        {"src": "today.", "tgt": "आज।", "note": "Short closing fragment — keep concise"},
         {"src": "Let's get started.", "tgt": "चलिए, शुरुआत करते हैं।", "note": "Natural spoken Hindi opening, not a literal word order match"},
     ],
 }
