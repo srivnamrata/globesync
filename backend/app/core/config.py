@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     TRANSLATION_MAX_ITERATIONS: int = 3
     TRANSLATION_CACHE_TTL_SECONDS: int = 2592000  # 30 days
 
+    # Speech Synthesis Provider
+    TTS_PROVIDER: str = "google"
+    GOOGLE_TTS_LANGUAGE_CODE: str = "en-US"
+    GOOGLE_TTS_VOICE_NAME: Optional[str] = None
+    GOOGLE_TTS_AUDIO_ENCODING: str = "LINEAR16"
+    GOOGLE_TTS_SPEAKING_RATE: float = 1.0
+    GOOGLE_TTS_PITCH: float = 0.0
+
     # Voice Cloning & Text-to-Speech (ElevenLabs)
     ELEVENLABS_API_KEY: str = "test_elevenlabs_api_key_placeholder"
     ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"

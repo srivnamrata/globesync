@@ -100,44 +100,49 @@ def run_project_tts_pipeline(
             db.query(GeneratedAudio).filter(GeneratedAudio.translation_id.in_(translation_ids)).delete(synchronize_session=False)
             db.commit()
 
-        # Step 1: Voice Cloning / Speaker Profile Association
-        publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, "Extracting speaker embeddings and voice clone profiles...")
-        
-        # Download master audio for voice sample extraction
         temp_dir = settings.PROCESSED_MEDIA_DIR
-        local_master_audio = os.path.join(temp_dir, f"master_{media_file.id.hex}.wav")
-        asyncio.run(storage_service.download_file(media_file.storage_path, local_master_audio))
-
-        distinct_speakers = list(set(s.speaker_tag for s in segments))
+        local_master_audio = None
         voice_profiles_by_speaker = {}
+        provider_label = "Google Cloud Text-to-Speech" if settings.TTS_PROVIDER == "google" else "ElevenLabs"
 
-        for spk in distinct_speakers:
-            # Check if voice profile already exists
-            vp = (
-                db.query(VoiceProfile)
-                .filter(VoiceProfile.speaker_name == spk, VoiceProfile.project_id == project_id)
-                .first()
-            )
-            if not vp:
-                vp = asyncio.run(
-                    voice_cloning_service.clone_speaker_from_segments(
-                        master_audio_path=local_master_audio,
-                        speaker_tag=spk,
-                        segments=segments,
-                        project_id=project_id,
-                    )
+        # Step 1: Voice Cloning / Speaker Profile Association
+        if settings.TTS_PROVIDER == "elevenlabs":
+            publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, "Extracting speaker embeddings and voice clone profiles...")
+
+            # Download master audio for voice sample extraction
+            local_master_audio = os.path.join(temp_dir, f"master_{media_file.id.hex}.wav")
+            asyncio.run(storage_service.download_file(media_file.storage_path, local_master_audio))
+
+            distinct_speakers = list(set(s.speaker_tag for s in segments))
+            for spk in distinct_speakers:
+                # Check if voice profile already exists
+                vp = (
+                    db.query(VoiceProfile)
+                    .filter(VoiceProfile.speaker_name == spk, VoiceProfile.project_id == project_id)
+                    .first()
                 )
-                db.add(vp)
-                db.commit()
-                db.refresh(vp)
-            voice_profiles_by_speaker[spk] = vp
+                if not vp:
+                    vp = asyncio.run(
+                        voice_cloning_service.clone_speaker_from_segments(
+                            master_audio_path=local_master_audio,
+                            speaker_tag=spk,
+                            segments=segments,
+                            project_id=project_id,
+                        )
+                    )
+                    db.add(vp)
+                    db.commit()
+                    db.refresh(vp)
+                voice_profiles_by_speaker[spk] = vp
+        else:
+            publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, f"Skipping voice cloning and preparing {provider_label} synthesis...")
 
         # Step 2: Concurrent TTS Synthesis & Retiming
         publish_tts_event(
             project_id_str or transcript_id_str,
             "in_progress",
             50,
-            f"Synthesizing speech and retiming {len(translations)} segments with ElevenLabs...",
+            f"Synthesizing speech and retiming {len(translations)} segments with {provider_label}...",
         )
 
         generated_audios = asyncio.run(
@@ -197,7 +202,11 @@ def run_project_tts_pipeline(
         )
 
         # Cleanup local scratch files
-        for p in downloaded_local_segments + [local_master_audio, master_dubbed_local]:
+        cleanup_paths = downloaded_local_segments + [master_dubbed_local]
+        if local_master_audio:
+            cleanup_paths.append(local_master_audio)
+
+        for p in cleanup_paths:
             if os.path.exists(p):
                 try:
                     os.remove(p)

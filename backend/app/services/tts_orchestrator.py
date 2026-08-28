@@ -9,6 +9,7 @@ from app.models.translation import Translation
 from app.models.voice_profile import VoiceProfile
 from app.services.audio_postprocessor import audio_postprocessor
 from app.services.elevenlabs_service import elevenlabs_tts
+from app.services.google_tts_service import google_tts_service
 from app.services.storage_service import storage_service
 from app.utils.audio_matcher import audio_matcher
 
@@ -36,12 +37,19 @@ class TTSOrchestrator:
         voice_settings = voice_profile.voice_settings if voice_profile else None
 
         # 1. Synthesize raw TTS speech
-        await elevenlabs_tts.synthesize_speech(
-            text=translation.translated_text,
-            voice_id=voice_id,
-            output_file_path=raw_tts_path,
-            voice_settings=voice_settings,
-        )
+        if settings.TTS_PROVIDER == "google":
+            await google_tts_service.synthesize_speech(
+                text=translation.translated_text,
+                language_code=translation.target_language,
+                output_file_path=raw_tts_path,
+            )
+        else:
+            await elevenlabs_tts.synthesize_speech(
+                text=translation.translated_text,
+                voice_id=voice_id,
+                output_file_path=raw_tts_path,
+                voice_settings=voice_settings,
+            )
 
         # 2. Measure actual duration
         actual_dur_ms = await audio_postprocessor.get_audio_duration_ms(raw_tts_path)
