@@ -147,6 +147,7 @@ class VideoReconstructor:
             "-i", audio_path,
         ]
 
+        subtitle_input_index = None
         if subtitle_srt_path and os.path.exists(subtitle_srt_path):
             if burn_in_subtitles:
                 # Burn in subtitles directly to video pixels
@@ -154,9 +155,14 @@ class VideoReconstructor:
                 cmd.extend(["-vf", f"subtitles='{srt_escaped}'", "-c:v", "libx264", "-crf", "18"])
             else:
                 # Soft subtitle track
+                subtitle_input_index = 2
                 cmd.extend(["-i", subtitle_srt_path, "-c:s", "mov_text", "-metadata:s:s:0", "language=spa"])
         else:
             cmd.extend(["-c:v", "copy"])
+
+        cmd.extend(["-map", "0:v:0", "-map", "1:a:0"])
+        if subtitle_input_index is not None:
+            cmd.extend(["-map", f"{subtitle_input_index}:s:0"])
 
         cmd.extend([
             "-c:a", "aac",
