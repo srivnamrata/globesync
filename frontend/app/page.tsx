@@ -105,7 +105,7 @@ export default function ProjectBrowser() {
     e.preventDefault();
     if (!newProjectName.trim()) return;
 
-    const projectId = Math.random().toString(36).substring(7);
+    const projectId = crypto.randomUUID();
     const newProj: Project = {
       id: projectId,
       name: newProjectName,

@@ -64,6 +64,13 @@ export interface ProjectTranslationResponse {
   translations: TranslationItemResponse[];
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeOptionalUuid(value?: string): string | undefined {
+  return value && UUID_PATTERN.test(value) ? value : undefined;
+}
+
 function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
   return {
     id: item.translation_id,
@@ -136,19 +143,21 @@ export class ProjectService {
   }
 
   async triggerTtsSynthesis(transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {
+    const normalizedProjectId = normalizeOptionalUuid(projectId);
     return apiClient.post<{ job_id: string }>('/tts/synthesize-project', {
       transcript_id: transcriptId,
       target_language: lang,
-      project_id: projectId,
+      ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
     });
   }
 
   async triggerLipSync(mediaId: string, transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {
+    const normalizedProjectId = normalizeOptionalUuid(projectId);
     return apiClient.post<{ job_id: string }>('/lipsync/render-project', {
       media_file_id: mediaId,
       transcript_id: transcriptId,
       target_language: lang,
-      project_id: projectId,
+      ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
       model_preference: 'liveportrait',
       burn_in_subtitles: false,
     });
