@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     # Voice Cloning & Text-to-Speech (ElevenLabs)
     ELEVENLABS_API_KEY: str = "test_elevenlabs_api_key_placeholder"
     ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
-    ELEVENLABS_DEFAULT_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"  # Default 'Rachel' fallback voice
+    ELEVENLABS_DEFAULT_VOICE_ID: str = "nGX3v5FQK5uatFWI2GdD"  # Default ElevenLabs fallback voice
     ELEVENLABS_STABILITY: float = 0.50
     ELEVENLABS_SIMILARITY_BOOST: float = 0.80
     ELEVENLABS_STYLE: float = 0.05

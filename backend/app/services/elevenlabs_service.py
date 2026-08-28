@@ -140,11 +140,34 @@ class ElevenLabsTTS:
 
             if response.status_code != 200:
                 logger.error(f"ElevenLabs TTS failed: {response.text}")
+                error_message = "ElevenLabs TTS synthesis failed."
+                error_details = {
+                    "error": response.text,
+                    "voice_id": target_voice,
+                    "model_id": target_model,
+                }
+
+                try:
+                    provider_error = response.json()
+                    error_details["provider_error"] = provider_error
+                    detail = provider_error.get("detail", {}) if isinstance(provider_error, dict) else {}
+                    if (
+                        response.status_code == 402
+                        and isinstance(detail, dict)
+                        and detail.get("code") == "paid_plan_required"
+                    ):
+                        error_message = (
+                            f"Configured ElevenLabs voice {target_voice} is not available on the current plan. "
+                            "Set ELEVENLABS_DEFAULT_VOICE_ID to an account-owned My Voices voice or upgrade the ElevenLabs plan."
+                        )
+                except ValueError:
+                    pass
+
                 raise MediaAppException(
                     status_code=response.status_code,
                     error_code=ErrorCode.INTERNAL_SERVER_ERROR,
-                    message="ElevenLabs TTS synthesis failed.",
-                    details={"error": response.text},
+                    message=error_message,
+                    details=error_details,
                 )
 
             # Write raw PCM audio converted to standard 16kHz WAV
