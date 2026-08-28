@@ -90,8 +90,13 @@ class ElevenLabsTTS:
         Synthesizes text into multilingual speech audio.
         Saves output audio file to disk and returns its path.
         """
-        target_voice = voice_id or self.default_voice_id
+        target_voice = self.default_voice_id
         target_model = model_id or self.default_model
+
+        if voice_id and voice_id != self.default_voice_id:
+            logger.warning(
+                f"Ignoring requested ElevenLabs voice_id {voice_id} and using default voice {self.default_voice_id}"
+            )
 
         if not output_file_path:
             output_file_path = os.path.join(
@@ -135,15 +140,6 @@ class ElevenLabsTTS:
 
             if response.status_code != 200:
                 logger.error(f"ElevenLabs TTS failed: {response.text}")
-                # Fallback to default voice if custom voice failed
-                if target_voice != self.default_voice_id:
-                    logger.warning(f"Retrying TTS with default voice {self.default_voice_id}")
-                    return await self.synthesize_speech(
-                        text=text,
-                        voice_id=self.default_voice_id,
-                        output_file_path=output_file_path,
-                        model_id=target_model,
-                    )
                 raise MediaAppException(
                     status_code=response.status_code,
                     error_code=ErrorCode.INTERNAL_SERVER_ERROR,
