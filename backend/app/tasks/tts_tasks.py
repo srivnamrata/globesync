@@ -15,11 +15,9 @@ from app.models.generated_audio import GeneratedAudio
 from app.models.media import MediaFile
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
-from app.models.voice_profile import VoiceProfile
 from app.services.audio_postprocessor import audio_postprocessor
 from app.services.storage_service import storage_service
 from app.services.tts_orchestrator import tts_orchestrator
-from app.services.voice_cloning_service import voice_cloning_service
 
 logger = logging.getLogger("tts_tasks")
 sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
@@ -101,54 +99,25 @@ def run_project_tts_pipeline(
             db.commit()
 
         temp_dir = settings.PROCESSED_MEDIA_DIR
-        local_master_audio = None
-        voice_profiles_by_speaker = {}
-        provider_label = "Google Cloud Text-to-Speech" if settings.TTS_PROVIDER == "google" else "ElevenLabs"
 
-        # Step 1: Voice Cloning / Speaker Profile Association
-        if settings.TTS_PROVIDER == "elevenlabs":
-            publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, "Extracting speaker embeddings and voice clone profiles...")
+        publish_tts_event(
+            project_id_str or transcript_id_str,
+            "in_progress",
+            25,
+            "Preparing Google Cloud Text-to-Speech synthesis...",
+        )
 
-            # Download master audio for voice sample extraction
-            local_master_audio = os.path.join(temp_dir, f"master_{media_file.id.hex}.wav")
-            asyncio.run(storage_service.download_file(media_file.storage_path, local_master_audio))
-
-            distinct_speakers = list(set(s.speaker_tag for s in segments))
-            for spk in distinct_speakers:
-                # Check if voice profile already exists
-                vp = (
-                    db.query(VoiceProfile)
-                    .filter(VoiceProfile.speaker_name == spk, VoiceProfile.project_id == project_id)
-                    .first()
-                )
-                if not vp:
-                    vp = asyncio.run(
-                        voice_cloning_service.clone_speaker_from_segments(
-                            master_audio_path=local_master_audio,
-                            speaker_tag=spk,
-                            segments=segments,
-                            project_id=project_id,
-                        )
-                    )
-                    db.add(vp)
-                    db.commit()
-                    db.refresh(vp)
-                voice_profiles_by_speaker[spk] = vp
-        else:
-            publish_tts_event(project_id_str or transcript_id_str, "in_progress", 25, f"Skipping voice cloning and preparing {provider_label} synthesis...")
-
-        # Step 2: Concurrent TTS Synthesis & Retiming
+        # Step 1: Concurrent TTS Synthesis & Retiming
         publish_tts_event(
             project_id_str or transcript_id_str,
             "in_progress",
             50,
-            f"Synthesizing speech and retiming {len(translations)} segments with {provider_label}...",
+            f"Synthesizing speech and retiming {len(translations)} segments with Google Cloud Text-to-Speech...",
         )
 
         generated_audios = asyncio.run(
             tts_orchestrator.synthesize_batch_concurrent(
                 translations=translations,
-                voice_profiles_by_speaker=voice_profiles_by_speaker,
                 concurrency=10,
             )
         )
@@ -203,8 +172,6 @@ def run_project_tts_pipeline(
 
         # Cleanup local scratch files
         cleanup_paths = downloaded_local_segments + [master_dubbed_local]
-        if local_master_audio:
-            cleanup_paths.append(local_master_audio)
 
         for p in cleanup_paths:
             if os.path.exists(p):

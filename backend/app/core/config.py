@@ -71,22 +71,12 @@ class Settings(BaseSettings):
     TRANSLATION_MAX_ITERATIONS: int = 3
     TRANSLATION_CACHE_TTL_SECONDS: int = 2592000  # 30 days
 
-    # Speech Synthesis Provider
-    TTS_PROVIDER: str = "google"
+    # Google Cloud Text-to-Speech
     GOOGLE_TTS_LANGUAGE_CODE: str = "en-US"
     GOOGLE_TTS_VOICE_NAME: Optional[str] = None
     GOOGLE_TTS_AUDIO_ENCODING: str = "LINEAR16"
     GOOGLE_TTS_SPEAKING_RATE: float = 1.0
     GOOGLE_TTS_PITCH: float = 0.0
-
-    # Voice Cloning & Text-to-Speech (ElevenLabs)
-    ELEVENLABS_API_KEY: str = "test_elevenlabs_api_key_placeholder"
-    ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
-    ELEVENLABS_DEFAULT_VOICE_ID: str = "0ZQKuoISTwSqUdo1z4fM"  # Default ElevenLabs fallback voice
-    ELEVENLABS_STABILITY: float = 0.50
-    ELEVENLABS_SIMILARITY_BOOST: float = 0.80
-    ELEVENLABS_STYLE: float = 0.05
-    ELEVENLABS_USE_SPEAKER_BOOST: bool = True
 
     # Lip-Sync Engine (Replicate / LivePortrait / Wav2Lip)
     REPLICATE_API_TOKEN: str = "test_replicate_token_placeholder"
