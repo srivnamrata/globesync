@@ -31,9 +31,17 @@ class ElevenLabsTTS:
         Creates an instant voice clone via ElevenLabs /v1/voices/add.
         Returns the external elevenlabs voice_id.
         """
-        if not self.api_key or "test" in self.api_key or "placeholder" in self.api_key:
-            # Generate deterministic mock voice ID for testing
-            return f"mock_voice_{uuid.uuid4().hex[:12]}"
+        api_key = (self.api_key or "").strip()
+        looks_mock = (not api_key) or ("placeholder" in api_key.lower()) or ("test" in api_key.lower())
+        if looks_mock:
+            if settings.DEPLOYMENT_ENV == "development":
+                # Generate deterministic mock voice ID for testing
+                return f"mock_voice_{uuid.uuid4().hex[:12]}"
+            raise MediaAppException(
+                status_code=503,
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                message="ElevenLabs API key is not configured for production voice cloning.",
+            )
 
         url = f"{self.base_url}/voices/add"
         headers = {"xi-api-key": self.api_key}
@@ -91,9 +99,17 @@ class ElevenLabsTTS:
             )
         os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
-        if not self.api_key or "test" in self.api_key or "placeholder" in self.api_key:
-            # Generate synthetic mock audio using FFmpeg sine wave for testing
-            return await self._generate_mock_audio(text, output_file_path)
+        api_key = (self.api_key or "").strip()
+        looks_mock = (not api_key) or ("placeholder" in api_key.lower()) or ("test" in api_key.lower())
+        if looks_mock:
+            if settings.DEPLOYMENT_ENV == "development":
+                # Generate synthetic mock audio using FFmpeg sine wave for testing
+                return await self._generate_mock_audio(text, output_file_path)
+            raise MediaAppException(
+                status_code=503,
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                message="ElevenLabs API key is not configured for production TTS.",
+            )
 
         url = f"{self.base_url}/text-to-speech/{target_voice}?output_format=pcm_24000"
         headers = {
