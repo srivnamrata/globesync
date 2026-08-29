@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     TEMP_UPLOAD_DIR: str = os.path.join(os.getcwd(), "tmp", "uploads")
     PROCESSED_MEDIA_DIR: str = os.path.join(os.getcwd(), "tmp", "processed")
 
+    # Speech-to-Text provider selection
+    STT_PRIMARY_PROVIDER: str = "google"
+    STT_FALLBACK_PROVIDER: str = "deepgram"
+
+    # Google Cloud Speech-to-Text
+    GOOGLE_STT_LANGUAGE_CODE: str = "en-US"
+    GOOGLE_STT_MODEL: str = "latest_long"
+    GOOGLE_STT_SAMPLE_RATE_HZ: int = 16000
+    GOOGLE_STT_TIMEOUT_SECONDS: int = 1800
+    GOOGLE_STT_ENABLE_AUTOMATIC_PUNCTUATION: bool = True
+    GOOGLE_STT_ENABLE_DIARIZATION: bool = True
+    GOOGLE_STT_USE_ENHANCED: bool = True
+    GOOGLE_STT_MAX_SPEAKERS: int = 8
+
     # AI & Speech-to-Text Services (Deepgram Nova-2)
     DEEPGRAM_API_KEY: Optional[str] = None
     DEEPGRAM_MODEL: str = "nova-2"

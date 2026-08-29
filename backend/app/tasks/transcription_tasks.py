@@ -16,6 +16,7 @@ from app.models.transcript import Transcript, TranscriptSegment
 from app.services.audio_extraction_service import audio_extractor
 from app.services.audio_preprocessing_service import audio_preprocessor
 from app.services.deepgram_service import deepgram_stt
+from app.services.google_stt_service import google_stt_service
 from app.services.storage_service import storage_service
 from app.utils.transcript_parser import transcript_parser
 
@@ -104,21 +105,77 @@ def run_transcription_pipeline(
         all_speaker_tags = set()
         raw_responses = []
 
-        publish_progress_event(media_id_str, transcript_id_str, "in_progress", 70, "Executing Deepgram Nova-2 STT & Speaker Diarization...")
+        primary_provider = settings.STT_PRIMARY_PROVIDER.lower().strip()
+        fallback_provider = settings.STT_FALLBACK_PROVIDER.lower().strip()
+        provider_label = "Google Cloud Speech-to-Text"
+        if primary_provider == "deepgram":
+            provider_label = "Deepgram Nova-2"
+        publish_progress_event(media_id_str, transcript_id_str, "in_progress", 70, f"Executing {provider_label} transcription with fallback protection...")
 
         for chunk_path, time_offset, chunk_dur in chunks:
-            deepgram_resp = asyncio.run(
-                deepgram_stt.transcribe_audio_file(
-                    audio_file_path=chunk_path,
-                    language=language,
-                    max_speakers=max_speakers,
-                )
-            )
-            raw_responses.append(deepgram_resp)
+            active_provider = primary_provider
+            stt_response = None
 
-            seg_list, text_part, avg_conf, w_cnt, spk_cnt = transcript_parser.parse_deepgram_response(
-                deepgram_resp, time_offset_seconds=time_offset
-            )
+            try:
+                if primary_provider == "google":
+                    stt_response = asyncio.run(
+                        google_stt_service.transcribe_audio_file(
+                            audio_file_path=chunk_path,
+                            language=language,
+                            max_speakers=max_speakers,
+                        )
+                    )
+                elif primary_provider == "deepgram":
+                    stt_response = asyncio.run(
+                        deepgram_stt.transcribe_audio_file(
+                            audio_file_path=chunk_path,
+                            language=language,
+                            max_speakers=max_speakers,
+                        )
+                    )
+                else:
+                    raise ValueError(f"Unsupported STT primary provider: {primary_provider}")
+            except Exception as primary_exc:
+                if fallback_provider == primary_provider:
+                    raise
+                logger.warning(
+                    "Primary STT provider %s failed for chunk %s; attempting fallback provider %s",
+                    primary_provider,
+                    chunk_path,
+                    fallback_provider,
+                    exc_info=True,
+                )
+                if fallback_provider == "deepgram":
+                    stt_response = asyncio.run(
+                        deepgram_stt.transcribe_audio_file(
+                            audio_file_path=chunk_path,
+                            language=language,
+                            max_speakers=max_speakers,
+                        )
+                    )
+                    active_provider = "deepgram"
+                elif fallback_provider == "google":
+                    stt_response = asyncio.run(
+                        google_stt_service.transcribe_audio_file(
+                            audio_file_path=chunk_path,
+                            language=language,
+                            max_speakers=max_speakers,
+                        )
+                    )
+                    active_provider = "google"
+                else:
+                    raise primary_exc
+
+            raw_responses.append({"provider": active_provider, "payload": stt_response})
+
+            if active_provider == "google":
+                seg_list, text_part, avg_conf, w_cnt, spk_cnt = transcript_parser.parse_google_response(
+                    stt_response, time_offset_seconds=time_offset
+                )
+            else:
+                seg_list, text_part, avg_conf, w_cnt, spk_cnt = transcript_parser.parse_deepgram_response(
+                    stt_response, time_offset_seconds=time_offset
+                )
 
             all_segments.extend(seg_list)
             if text_part:
