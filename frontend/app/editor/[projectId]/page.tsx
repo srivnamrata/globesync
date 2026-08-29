@@ -191,7 +191,7 @@ export default function TranslationEditor() {
       }
 
       setUploadMessage(
-        `Dub & Lip-Sync ${String(latestStatus?.status || 'in progress').replace('_', ' ')}${typeof latestStatus?.progress_percent === 'number' ? ` (${latestStatus.progress_percent}%)` : ''}…`,
+        `Dub & Lip-Sync ${String(latestStatus?.status || 'in progress').replace('_', ' ')}…`,
       );
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
