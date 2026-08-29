@@ -29,7 +29,7 @@ class VideoReconstructor:
         - Muxes master dubbed audio track
         - Applies optional subtitle stream
         """
-        os.makedirs(os.path.dirname(output_final_video_path), exist_ok=True)
+        os.makedirs(os.path.dirname(output_final_video_path) or ".", exist_ok=True)
         temp_dir = settings.PROCESSED_MEDIA_DIR
 
         # Sort segments by start time
@@ -85,8 +85,9 @@ class VideoReconstructor:
 
         with open(concat_list_file, "w") as f:
             for clip in timeline_clips:
-                # Use forward slashes for ffmpeg concat list file
-                f.write(f"file '{clip.replace(chr(92), '/')}'\n")
+                # Use forward slashes for ffmpeg concat list file and escape single quotes for FFmpeg.
+                normalized_clip = clip.replace(chr(92), "/").replace("'", "'\\''")
+                f.write(f"file '{normalized_clip}'\n")
 
         # Concat video stream
         cmd = [
@@ -102,7 +103,19 @@ class VideoReconstructor:
             video_stitched_temp,
         ]
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        await proc.communicate()
+        _, stderr = await proc.communicate()
+
+        if proc.returncode != 0 or not os.path.exists(video_stitched_temp):
+            if os.path.exists(concat_list_file):
+                os.remove(concat_list_file)
+            if os.path.exists(video_stitched_temp):
+                os.remove(video_stitched_temp)
+            raise MediaAppException(
+                status_code=500,
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR,
+                message="Intermediate video stitching failed.",
+                details={"stderr": stderr.decode("utf-8", errors="ignore")},
+            )
 
         # Cleanup concat list and temporary gap slices
         if os.path.exists(concat_list_file):
