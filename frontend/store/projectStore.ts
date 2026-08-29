@@ -5,7 +5,7 @@ export interface Project {
   name: string;
   sourceLanguage: string;
   targetLanguage: string;
-  status: 'draft' | 'processing' | 'completed' | 'failed';
+  status: 'draft' | 'processing' | 'completed' | 'failed' | 'archived';
   createdAt: string;
   updatedAt: string;
   transcriptId?: string;
@@ -33,7 +33,21 @@ export const useProjectStore = create<ProjectState>((set) => ({
   isLoading: false,
   error: null,
 
-  setCurrentProject: (project) => set({ currentProject: project }),
+  setCurrentProject: (project) => set((state) => {
+    if (!project) {
+      return { currentProject: null };
+    }
+
+    const existingIndex = state.projects.findIndex((candidate) => candidate.id === project.id);
+    const projects = existingIndex >= 0
+      ? state.projects.map((candidate) => (candidate.id === project.id ? project : candidate))
+      : [project, ...state.projects];
+
+    return {
+      currentProject: project,
+      projects,
+    };
+  }),
   setProjects: (projects) => set({ projects }),
   addProject: (project) => set((state) => ({
     projects: [project, ...state.projects]

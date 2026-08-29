@@ -4,7 +4,7 @@ import { useMediaStore } from '../store/mediaStore';
 import { useTranslationStore } from '../store/translationStore';
 import { storageService, HeygenXFile } from '../services/storageService';
 
-export function useProjectAutoSave() {
+export function useProjectAutoSave(syncDraft?: () => Promise<void>) {
   const currentProject = useProjectStore((s) => s.currentProject);
   const segments = useMediaStore((s) => s.segments);
   const translations = useTranslationStore((s) => s.translations);
@@ -21,6 +21,12 @@ export function useProjectAutoSave() {
     // Schedule auto-save every 30 seconds
     autoSaveIntervalRef.current = setInterval(async () => {
       try {
+        if (syncDraft) {
+          await syncDraft();
+          console.log(`Auto-saved project: ${currentProject.name} to backend and IndexedDB.`);
+          return;
+        }
+
         const fileData: HeygenXFile = {
           version: '1.2.0',
           projectMetadata: {
@@ -53,5 +59,6 @@ export function useProjectAutoSave() {
         clearInterval(autoSaveIntervalRef.current);
       }
     };
-  }, [currentProject, segments, translations]);
+  }, [currentProject, segments, syncDraft, translations]);
 }
+  

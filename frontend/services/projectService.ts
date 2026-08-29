@@ -1,7 +1,9 @@
-import { apiClient } from './apiClient';
+
+import { ApiError, apiClient } from './apiClient';
 import type { Project } from '../store/projectStore';
 import type { TranscriptSegment } from '../store/mediaStore';
 import type { TranslatedSegment } from '../store/translationStore';
+import type { HeygenXFile } from './storageService';
 
 export interface UploadedMedia {
   media_id: string;
@@ -14,7 +16,13 @@ export interface UploadedMedia {
 
 export interface TranscriptStatus {
   transcript_id: string;
+  media_id?: string;
   status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  language?: string;
+  confidence_score?: number | null;
+  word_count?: number;
+  speaker_count?: number;
+  full_text?: string | null;
   segments: Array<{
     id: string | null;
     start_time: number;
@@ -64,11 +72,163 @@ export interface ProjectTranslationResponse {
   translations: TranslationItemResponse[];
 }
 
+interface ProjectApiShape {
+  id: string;
+  workspace_id: string;
+  owner_user_id: string;
+  name: string;
+  status: Project['status'] | 'archived';
+  source_language: string | null;
+  target_language: string | null;
+  active_translation_language: string | null;
+  media_file_id: string | null;
+  transcript_id: string | null;
+  latest_draft_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProjectDetailApiShape extends ProjectApiShape {
+  created_by_user_id: string;
+  slug: string | null;
+  current_lipsync_job_id: string | null;
+  current_export_job_id: string | null;
+  last_rendered_video_gcs_path: string | null;
+  archived_at: string | null;
+}
+
+export interface ProjectUpdateRequest {
+  name?: string;
+  status?: Project['status'];
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  activeTranslationLanguage?: string;
+  mediaId?: string;
+  transcriptId?: string;
+}
+
+interface ProjectUpdateApiRequest {
+  name?: string;
+  status?: Project['status'];
+  source_language?: string;
+  target_language?: string;
+  active_translation_language?: string;
+  media_file_id?: string;
+  transcript_id?: string;
+}
+
+interface ProjectDraftApiResponse {
+  project_id: string;
+  workspace_id: string;
+  version: number;
+  draft_schema_version: string;
+  base_project_updated_at: string | null;
+  last_saved_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+  draft_payload: HeygenXFile;
+}
+
+export interface ProjectDraftConflictErrorDetail {
+  code: 'DRAFT_VERSION_CONFLICT';
+  message: string;
+  project_id: string;
+  client_version: number;
+  server_version: number;
+  server_updated_at: string;
+  last_saved_by_user_id: string;
+}
+
+interface ProjectDraftPutApiResponse {
+  project_id: string;
+  workspace_id: string;
+  version: number;
+  draft_schema_version: string;
+  base_project_updated_at: string | null;
+  last_saved_by_user_id: string;
+  updated_at: string;
+}
+
+interface ProjectListApiResponse {
+  items: ProjectApiShape[];
+  next_cursor: string | null;
+}
+
+type ProjectApiScope = {
+  workspaceId: string;
+  actorUserId: string;
+};
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalizeOptionalUuid(value?: string): string | undefined {
   return value && UUID_PATTERN.test(value) ? value : undefined;
+}
+
+function buildScopedEndpoint(endpoint: string, scope: ProjectApiScope, params: Record<string, string | number | boolean | undefined> = {}): string {
+  const searchParams = new URLSearchParams({
+    workspace_id: scope.workspaceId,
+    actor_user_id: scope.actorUserId,
+  });
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      searchParams.set(key, String(value));
+    }
+  });
+
+  return `${endpoint}?${searchParams.toString()}`;
+}
+
+function mapProjectApiShape(project: ProjectApiShape | ProjectDetailApiShape): Project {
+  return {
+    id: project.id,
+    name: project.name,
+    sourceLanguage: project.source_language || 'en',
+    targetLanguage: project.target_language || 'en',
+    status: project.status,
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+    transcriptId: project.transcript_id || undefined,
+    mediaId: project.media_file_id || undefined,
+  };
+}
+
+export function getProjectDraftConflictDetail(error: unknown): ProjectDraftConflictErrorDetail | null {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return null;
+  }
+
+  const detail = (error.data as { error?: ProjectDraftConflictErrorDetail } | undefined)?.error;
+  if (!detail || detail.code !== 'DRAFT_VERSION_CONFLICT') {
+    return null;
+  }
+
+  return detail;
+}
+
+function mapDraftPayloadToLocalDraft(projectId: string, payload: Partial<HeygenXFile>, fallbackProject?: Project): HeygenXFile {
+  return {
+    version: payload.version || '1.2.0',
+    projectMetadata: {
+      id: payload.projectMetadata?.id || projectId,
+      name: payload.projectMetadata?.name || fallbackProject?.name || 'Untitled Project',
+      sourceLanguage: payload.projectMetadata?.sourceLanguage || fallbackProject?.sourceLanguage || 'en',
+      targetLanguage: payload.projectMetadata?.targetLanguage || fallbackProject?.targetLanguage || 'en',
+      createdAt: payload.projectMetadata?.createdAt || fallbackProject?.createdAt || new Date().toISOString(),
+      updatedAt: payload.projectMetadata?.updatedAt || fallbackProject?.updatedAt || new Date().toISOString(),
+    },
+    mediaReferences: {
+      videoFilename: payload.mediaReferences?.videoFilename || fallbackProject?.originalVideoUrl || 'source_video.mp4',
+      durationSeconds: payload.mediaReferences?.durationSeconds || 0,
+      originalTranscriptSegments: payload.mediaReferences?.originalTranscriptSegments || [],
+      transcriptId: payload.mediaReferences?.transcriptId || fallbackProject?.transcriptId,
+      mediaId: payload.mediaReferences?.mediaId || fallbackProject?.mediaId,
+    },
+    translations: payload.translations || [],
+    timelineState: payload.timelineState,
+  };
 }
 
 function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
@@ -86,6 +246,36 @@ function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
 }
 
 export class ProjectService {
+  hasProjectApiScope(): boolean {
+    return Boolean(this.getProjectApiScope());
+  }
+
+  private getProjectApiScope(): ProjectApiScope | null {
+    const workspaceId = process.env.NEXT_PUBLIC_WORKSPACE_ID?.trim();
+    const actorUserId = process.env.NEXT_PUBLIC_ACTOR_USER_ID?.trim();
+
+    if (!workspaceId || !actorUserId) {
+      return null;
+    }
+
+    return {
+      workspaceId,
+      actorUserId,
+    };
+  }
+
+  private requireProjectApiScope(): ProjectApiScope {
+    const scope = this.getProjectApiScope();
+    if (!scope) {
+      throw new Error('Project API scope is not configured. Set NEXT_PUBLIC_WORKSPACE_ID and NEXT_PUBLIC_ACTOR_USER_ID.');
+    }
+    return scope;
+  }
+
+  buildLocalDraftFromProject(project: Project): HeygenXFile {
+    return mapDraftPayloadToLocalDraft(project.id, {}, project);
+  }
+
   async uploadMedia(file: File): Promise<UploadedMedia> {
     const formData = new FormData();
     formData.append('file', file);
@@ -107,15 +297,97 @@ export class ProjectService {
   }
 
   async fetchAllProjects(): Promise<Project[]> {
-    return apiClient.get<Project[]>('/projects');
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.get<ProjectListApiResponse>(
+      buildScopedEndpoint('/projects', scope),
+    );
+    return response.items.map(mapProjectApiShape);
+  }
+
+  async createProjectShell(name: string, sourceLanguage: string, targetLanguage: string): Promise<Project> {
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.post<ProjectDetailApiShape>(
+      buildScopedEndpoint('/projects', scope),
+      {
+        name,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+      },
+    );
+    return mapProjectApiShape(response);
   }
 
   async getProject(projectId: string): Promise<Project> {
-    return apiClient.get<Project>(`/projects/${projectId}`);
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.get<ProjectDetailApiShape>(
+      buildScopedEndpoint(`/projects/${projectId}`, scope),
+    );
+    return mapProjectApiShape(response);
+  }
+
+  async updateProject(projectId: string, payload: ProjectUpdateRequest): Promise<Project> {
+    const scope = this.requireProjectApiScope();
+    const apiPayload: ProjectUpdateApiRequest = {
+      ...(payload.name !== undefined ? { name: payload.name } : {}),
+      ...(payload.status !== undefined ? { status: payload.status } : {}),
+      ...(payload.sourceLanguage !== undefined ? { source_language: payload.sourceLanguage } : {}),
+      ...(payload.targetLanguage !== undefined ? { target_language: payload.targetLanguage } : {}),
+      ...(payload.activeTranslationLanguage !== undefined
+        ? { active_translation_language: payload.activeTranslationLanguage }
+        : {}),
+      ...(payload.mediaId !== undefined ? { media_file_id: payload.mediaId } : {}),
+      ...(payload.transcriptId !== undefined ? { transcript_id: payload.transcriptId } : {}),
+    };
+
+    const response = await apiClient.patch<ProjectDetailApiShape>(
+      buildScopedEndpoint(`/projects/${projectId}`, scope),
+      apiPayload,
+    );
+    return mapProjectApiShape(response);
+  }
+
+  async getProjectDraft(projectId: string): Promise<{ draft: HeygenXFile; version: number; baseProjectUpdatedAt: string | null }> {
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.get<ProjectDraftApiResponse>(
+      buildScopedEndpoint(`/projects/${projectId}/draft`, scope),
+    );
+    const project = await this.getProject(projectId);
+    return {
+      draft: mapDraftPayloadToLocalDraft(projectId, response.draft_payload, project),
+      version: response.version,
+      baseProjectUpdatedAt: response.base_project_updated_at,
+    };
+  }
+
+  async saveProjectDraft(
+    projectId: string,
+    draft: HeygenXFile,
+    options: { version: number; baseProjectUpdatedAt?: string | null },
+  ): Promise<ProjectDraftPutApiResponse> {
+    const scope = this.requireProjectApiScope();
+    return apiClient.put<ProjectDraftPutApiResponse>(
+      buildScopedEndpoint(`/projects/${projectId}/draft`, scope),
+      {
+        version: options.version,
+        draft_schema_version: draft.version,
+        base_project_updated_at: options.baseProjectUpdatedAt || null,
+        draft_payload: draft,
+      },
+    );
   }
 
   async getTranscript(mediaId: string): Promise<TranscriptSegment[]> {
-    return apiClient.get<TranscriptSegment[]>(`/transcription/${mediaId}/segments`);
+    const response = await apiClient.get<TranscriptStatus>(`/transcription/media/${mediaId}`);
+    return response.segments.map((segment) => ({
+      id: segment.id ?? '',
+      sequenceOrder: segment.sequence_order,
+      startTimeSeconds: segment.start_time,
+      endTimeSeconds: segment.end_time,
+      durationSeconds: segment.duration,
+      speakerTag: segment.speaker,
+      text: segment.text,
+      confidence: segment.confidence ?? 0,
+    }));
   }
 
   async triggerProjectTranslation(transcriptId: string, sourceLanguage: string, targetLanguage: string): Promise<TranslationJobStatus> {

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useProjectStore, Project } from '../store/projectStore';
 import { storageService } from '../services/storageService';
 import { apiClient } from '../services/apiClient';
+import { projectService } from '../services/projectService';
 import Link from 'next/link';
 
 type LanguageOption = {
@@ -52,9 +53,18 @@ export default function ProjectBrowser() {
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
 
   useEffect(() => {
-    // Load local project drafts from IndexedDB
-    async function loadDrafts() {
+    async function loadProjects() {
       try {
+        if (projectService.hasProjectApiScope()) {
+          try {
+            const remoteProjects = await projectService.fetchAllProjects();
+            setProjects(remoteProjects);
+            return;
+          } catch (remoteError) {
+            console.warn('Failed to load backend projects, falling back to local drafts:', remoteError);
+          }
+        }
+
         const drafts = await storageService.listDrafts();
         const mapped: Project[] = drafts.map((d) => ({
           id: d.projectMetadata.id,
@@ -67,7 +77,7 @@ export default function ProjectBrowser() {
         }));
         setProjects(mapped);
       } catch (err) {
-        console.error('Failed to load project drafts:', err);
+        console.error('Failed to load projects:', err);
       }
     }
 
@@ -97,7 +107,7 @@ export default function ProjectBrowser() {
       }
     }
 
-    loadDrafts();
+    loadProjects();
     loadSupportedLanguages();
   }, [setProjects]);
 
@@ -105,35 +115,38 @@ export default function ProjectBrowser() {
     e.preventDefault();
     if (!newProjectName.trim()) return;
 
-    const projectId = crypto.randomUUID();
-    const newProj: Project = {
-      id: projectId,
-      name: newProjectName,
-      sourceLanguage: sourceLang,
-      targetLanguage: targetLang,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const now = new Date().toISOString();
+    const fallbackProjectId = crypto.randomUUID();
+    let newProj: Project;
 
-    // Save to IndexedDB initial draft file
-    await storageService.saveDraft({
-      version: '1.2.0',
-      projectMetadata: {
-        id: projectId,
+    if (projectService.hasProjectApiScope()) {
+      try {
+        newProj = await projectService.createProjectShell(newProjectName, sourceLang, targetLang);
+      } catch (remoteError) {
+        console.warn('Failed to create backend project shell, falling back to local draft:', remoteError);
+        newProj = {
+          id: fallbackProjectId,
+          name: newProjectName,
+          sourceLanguage: sourceLang,
+          targetLanguage: targetLang,
+          status: 'draft',
+          createdAt: now,
+          updatedAt: now,
+        };
+      }
+    } else {
+      newProj = {
+        id: fallbackProjectId,
         name: newProjectName,
         sourceLanguage: sourceLang,
         targetLanguage: targetLang,
-        createdAt: newProj.createdAt,
-        updatedAt: newProj.updatedAt,
-      },
-      mediaReferences: {
-        videoFilename: 'source_video.mp4',
-        durationSeconds: 0,
-        originalTranscriptSegments: [],
-      },
-      translations: [],
-    });
+        status: 'draft',
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    await storageService.saveDraft(projectService.buildLocalDraftFromProject(newProj));
 
     addProject(newProj);
     setNewProjectName('');

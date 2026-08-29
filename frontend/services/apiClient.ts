@@ -1,3 +1,31 @@
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+function getErrorMessage(errData: any, status: number): string {
+  if (typeof errData?.message === 'string' && errData.message.length > 0) {
+    return errData.message;
+  }
+
+  if (typeof errData?.detail === 'string' && errData.detail.length > 0) {
+    return errData.detail;
+  }
+
+  if (typeof errData?.error?.message === 'string' && errData.error.message.length > 0) {
+    return errData.error.message;
+  }
+
+  return `HTTP error! Status: ${status}`;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
@@ -46,12 +74,12 @@ export class ApiClient {
         }
 
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || `HTTP error! Status: ${response.status}`);
+        throw new ApiError(getErrorMessage(errData, response.status), response.status, errData);
       }
 
       return (await response.json()) as T;
-    } catch (error: any) {
-      if (retries > 0 && error.message.includes('Fetch failed')) {
+    } catch (error: unknown) {
+      if (retries > 0 && error instanceof Error && error.message.includes('Fetch failed')) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         return this.request<T>(endpoint, options, retries - 1, delayMs * 2);
       }
@@ -76,6 +104,14 @@ export class ApiClient {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async patch<T>(endpoint: string, body: any, options?: RequestInit): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
+      method: 'PATCH',
       body: JSON.stringify(body),
     });
   }

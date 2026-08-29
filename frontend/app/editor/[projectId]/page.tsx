@@ -1,15 +1,48 @@
 'use client';
 
-import React, { ChangeEvent, useEffect, useState } from 'react';
+import React, { ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useProjectStore } from '../../../store/projectStore';
+import { useProjectStore, type Project } from '../../../store/projectStore';
 import { useMediaStore, type TranscriptSegment } from '../../../store/mediaStore';
 import { useTranslationStore, type TranslatedSegment } from '../../../store/translationStore';
-import { storageService } from '../../../services/storageService';
+import { storageService, type HeygenXFile } from '../../../services/storageService';
 import { useProjectAutoSave } from '../../../hooks/useProject';
 import { useTimeline } from '../../../hooks/useTimeline';
 import { useHistory } from '../../../hooks/useHistory';
-import { projectService } from '../../../services/projectService';
+import { getProjectDraftConflictDetail, projectService } from '../../../services/projectService';
+
+const mergeDraftWithProject = (draft: HeygenXFile, project?: Project | null): HeygenXFile => ({
+  ...draft,
+  projectMetadata: {
+    ...draft.projectMetadata,
+    id: project?.id ?? draft.projectMetadata.id,
+    name: project?.name ?? draft.projectMetadata.name,
+    sourceLanguage: project?.sourceLanguage ?? draft.projectMetadata.sourceLanguage,
+    targetLanguage: project?.targetLanguage ?? draft.projectMetadata.targetLanguage,
+    createdAt: project?.createdAt ?? draft.projectMetadata.createdAt,
+    updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
+  },
+  mediaReferences: {
+    ...draft.mediaReferences,
+    transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
+    mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
+    videoFilename: project?.originalVideoUrl ?? draft.mediaReferences.videoFilename,
+  },
+});
+
+const buildProjectFromDraft = (draft: HeygenXFile, project?: Project | null): Project => ({
+  id: project?.id ?? draft.projectMetadata.id,
+  name: project?.name ?? draft.projectMetadata.name,
+  sourceLanguage: project?.sourceLanguage ?? draft.projectMetadata.sourceLanguage,
+  targetLanguage: project?.targetLanguage ?? draft.projectMetadata.targetLanguage,
+  status: project?.status ?? 'draft',
+  createdAt: project?.createdAt ?? draft.projectMetadata.createdAt,
+  updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
+  transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
+  mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
+  originalVideoUrl: project?.originalVideoUrl ?? draft.mediaReferences.videoFilename,
+  dubbedAudioUrl: project?.dubbedAudioUrl,
+});
 
 export default function TranslationEditor() {
   const params = useParams();
@@ -23,71 +56,101 @@ export default function TranslationEditor() {
   const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
+  const [remoteDraftVersion, setRemoteDraftVersion] = useState<number | null>(null);
+  const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
+  const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
+  const [isReloadingProject, setIsReloadingProject] = useState(false);
 
   const timeline = useTimeline();
   const history = useHistory();
 
-  // Activate 30-second IndexedDB auto-save loop
-  useProjectAutoSave();
+  const loadProjectData = useCallback(async () => {
+    if (!projectId) {
+      return;
+    }
+
+    setIsReloadingProject(true);
+    try {
+      let draft: HeygenXFile | null = null;
+      let backendProject: Project | null = null;
+      let nextBaseProjectUpdatedAt: string | null = null;
+
+      if (projectService.hasProjectApiScope()) {
+        try {
+          backendProject = await projectService.getProject(projectId);
+          nextBaseProjectUpdatedAt = backendProject.updatedAt;
+
+          try {
+            const remoteDraft = await projectService.getProjectDraft(projectId);
+            draft = mergeDraftWithProject(remoteDraft.draft, backendProject);
+            setRemoteDraftVersion(remoteDraft.version);
+            nextBaseProjectUpdatedAt = remoteDraft.baseProjectUpdatedAt ?? backendProject.updatedAt;
+          } catch (draftError) {
+            draft = projectService.buildLocalDraftFromProject(backendProject);
+            setRemoteDraftVersion(null);
+            console.warn('No server-side draft found yet, seeded editor from project metadata:', draftError);
+          }
+
+          await storageService.saveDraft(draft);
+        } catch (projectError) {
+          console.warn('Failed to load project from backend, falling back to local IndexedDB draft:', projectError);
+        }
+      }
+
+      if (!draft) {
+        draft = await storageService.getDraft(projectId);
+      }
+
+      if (!draft) {
+        router.push('/');
+        return;
+      }
+
+      const hydratedProject = buildProjectFromDraft(draft, backendProject);
+
+      setCurrentProject(hydratedProject);
+      setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
+      setHasRemoteDraftConflict(false);
+      setUploadMessage(null);
+
+      const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
+      const draftTranslations = draft.translations || [];
+
+      setSegments(draftSegments);
+      setTranslations(draftTranslations);
+
+      if (
+        draft.mediaReferences.transcriptId &&
+        draftSegments.length > 0 &&
+        draftTranslations.length < draftSegments.length
+      ) {
+        try {
+          const fetchedTranslations = await projectService.fetchTranslations(
+            draft.mediaReferences.transcriptId,
+            hydratedProject.targetLanguage,
+          );
+
+          if (fetchedTranslations.length > 0) {
+            setTranslations(fetchedTranslations);
+            await storageService.saveDraft({
+              ...draft,
+              translations: fetchedTranslations,
+            });
+          }
+        } catch (translationErr) {
+          console.warn('No persisted translations available yet for this transcript:', translationErr);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load project draft in editor:', err);
+    } finally {
+      setIsReloadingProject(false);
+    }
+  }, [projectId, router, setCurrentProject, setSegments, setTranslations]);
 
   useEffect(() => {
-    async function loadProjectData() {
-      if (!projectId) return;
-      try {
-        const draft = await storageService.getDraft(projectId);
-        if (!draft) {
-          router.push('/');
-          return;
-        }
-
-        // Hydrate stores
-        setCurrentProject({
-          id: draft.projectMetadata.id,
-          name: draft.projectMetadata.name,
-          sourceLanguage: draft.projectMetadata.sourceLanguage,
-          targetLanguage: draft.projectMetadata.targetLanguage,
-          status: 'draft',
-          createdAt: draft.projectMetadata.createdAt,
-          updatedAt: draft.projectMetadata.updatedAt,
-          transcriptId: draft.mediaReferences.transcriptId,
-          mediaId: draft.mediaReferences.mediaId,
-          originalVideoUrl: draft.mediaReferences.videoFilename,
-        });
-
-        const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
-        const draftTranslations = draft.translations || [];
-
-        setSegments(draftSegments);
-        setTranslations(draftTranslations);
-
-        if (
-          draft.mediaReferences.transcriptId &&
-          draftSegments.length > 0 &&
-          draftTranslations.length < draftSegments.length
-        ) {
-          try {
-            const fetchedTranslations = await projectService.fetchTranslations(
-              draft.mediaReferences.transcriptId,
-              draft.projectMetadata.targetLanguage,
-            );
-
-            if (fetchedTranslations.length > 0) {
-              setTranslations(fetchedTranslations);
-              await storageService.saveDraft({
-                ...draft,
-                translations: fetchedTranslations,
-              });
-            }
-          } catch (translationErr) {
-            console.warn('No persisted translations available yet for this transcript:', translationErr);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load project draft in editor:', err);
-      }
-    }
-    loadProjectData();
-  }, [projectId, setCurrentProject, setSegments, setTranslations, router]);
+    void loadProjectData();
+  }, [loadProjectData]);
 
   const persistDraft = async ({
     projectOverride,
@@ -97,6 +160,7 @@ export default function TranslationEditor() {
     durationSeconds,
     transcriptId,
     mediaId,
+    baseProjectUpdatedAtOverride,
   }: {
     projectOverride?: typeof currentProject;
     segmentsOverride?: TranscriptSegment[];
@@ -105,13 +169,14 @@ export default function TranslationEditor() {
     durationSeconds?: number;
     transcriptId?: string;
     mediaId?: string;
+    baseProjectUpdatedAtOverride?: string | null;
   } = {}) => {
     const project = projectOverride ?? currentProject;
     if (!project) {
       return;
     }
 
-    await storageService.saveDraft({
+    const nextDraft: HeygenXFile = {
       version: '1.2.0',
       projectMetadata: {
         id: project.id,
@@ -131,8 +196,106 @@ export default function TranslationEditor() {
         mediaId: mediaId ?? project.mediaId,
       },
       translations: translationsOverride ?? Object.values(translations),
-    });
+    };
+
+    await storageService.saveDraft(nextDraft);
+
+    if (projectService.hasProjectApiScope() && !hasRemoteDraftConflict) {
+      try {
+        const remoteDraft = await projectService.saveProjectDraft(project.id, nextDraft, {
+          version: remoteDraftVersion ?? 1,
+          baseProjectUpdatedAt: baseProjectUpdatedAtOverride ?? baseProjectUpdatedAt,
+        });
+        setRemoteDraftVersion(remoteDraft.version);
+        setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
+        setHasRemoteDraftConflict(false);
+      } catch (error) {
+        const conflictDetail = getProjectDraftConflictDetail(error);
+        if (conflictDetail) {
+          setHasRemoteDraftConflict(true);
+          setUploadMessage('A newer backend draft exists for this project. Reload the latest backend state before saving more changes. Your browser draft is still cached locally for recovery.');
+          console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
+          return;
+        }
+
+        console.warn('Failed to persist project draft to backend; kept local IndexedDB draft as fallback:', error);
+      }
+    }
   };
+
+  const applyProjectPatch = useCallback(async ({
+    name,
+    sourceLanguage,
+    targetLanguage,
+    status,
+    transcriptId,
+    mediaId,
+    originalVideoUrl,
+    dubbedAudioUrl,
+  }: {
+    name?: string;
+    sourceLanguage?: string;
+    targetLanguage?: string;
+    status?: Project['status'];
+    transcriptId?: string;
+    mediaId?: string;
+    originalVideoUrl?: string;
+    dubbedAudioUrl?: string;
+  }): Promise<Project | null> => {
+    if (!currentProject) {
+      return null;
+    }
+
+    if (projectService.hasProjectApiScope()) {
+      if (hasRemoteDraftConflict) {
+        throw new Error('Reload the latest backend draft before updating project metadata.');
+      }
+
+      const updatedProject = await projectService.updateProject(currentProject.id, {
+        ...(name !== undefined ? { name } : {}),
+        ...(status !== undefined ? { status } : {}),
+        ...(sourceLanguage !== undefined ? { sourceLanguage } : {}),
+        ...(targetLanguage !== undefined
+          ? {
+              targetLanguage,
+              activeTranslationLanguage: targetLanguage,
+            }
+          : {}),
+        ...(mediaId !== undefined ? { mediaId } : {}),
+        ...(transcriptId !== undefined ? { transcriptId } : {}),
+      });
+
+      const hydratedProject: Project = {
+        ...updatedProject,
+        originalVideoUrl: originalVideoUrl ?? currentProject.originalVideoUrl,
+        dubbedAudioUrl: dubbedAudioUrl ?? currentProject.dubbedAudioUrl,
+      };
+
+      setCurrentProject(hydratedProject);
+      setBaseProjectUpdatedAt(updatedProject.updatedAt);
+      return hydratedProject;
+    }
+
+    const hydratedProject: Project = {
+      ...currentProject,
+      ...(name !== undefined ? { name } : {}),
+      ...(sourceLanguage !== undefined ? { sourceLanguage } : {}),
+      ...(targetLanguage !== undefined ? { targetLanguage } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(transcriptId !== undefined ? { transcriptId } : {}),
+      ...(mediaId !== undefined ? { mediaId } : {}),
+      ...(originalVideoUrl !== undefined ? { originalVideoUrl } : {}),
+      ...(dubbedAudioUrl !== undefined ? { dubbedAudioUrl } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setCurrentProject(hydratedProject);
+    setBaseProjectUpdatedAt(hydratedProject.updatedAt);
+    return hydratedProject;
+  }, [currentProject, hasRemoteDraftConflict, setCurrentProject]);
+
+  // Keep the existing local cache, but also push draft changes to the backend when scope is configured.
+  useProjectAutoSave(persistDraft);
 
   const pollForTranslations = async (
     transcriptId: string,
@@ -225,13 +388,15 @@ export default function TranslationEditor() {
         throw new Error('Not all translated segments are ready yet.');
       }
 
+      const projectForBuild = (await applyProjectPatch({ status: 'processing' })) ?? currentProject;
+
       setBuildState('building');
       setUploadMessage('Queuing dub and lip-sync pipeline…');
       const job = await projectService.triggerLipSync(
-        currentProject.mediaId,
-        currentProject.transcriptId,
-        currentProject.targetLanguage,
-        currentProject.id,
+        projectForBuild.mediaId!,
+        projectForBuild.transcriptId!,
+        projectForBuild.targetLanguage,
+        projectForBuild.id,
       );
 
       setUploadMessage('Dub and lip-sync queued. Building dubbed audio…');
@@ -239,8 +404,10 @@ export default function TranslationEditor() {
 
       if (completedJob?.output_video_url) {
         setRenderedVideoUrl(completedJob.output_video_url);
+        await applyProjectPatch({ status: 'completed' });
         setUploadMessage('Dub & Lip-Sync complete. Preview is ready.');
       } else {
+        await applyProjectPatch({ status: 'completed' });
         setUploadMessage('Dub & Lip-Sync completed successfully.');
       }
     } catch (error) {
@@ -317,15 +484,13 @@ export default function TranslationEditor() {
           text: segment.text,
           confidence: segment.confidence ?? 0,
         }));
-        const updatedProject = {
-          ...currentProject,
+        const updatedProject = (await applyProjectPatch({
+          status: 'processing',
           transcriptId: job.transcript_id,
           mediaId: media.media_id,
           originalVideoUrl: media.filename,
-          updatedAt: new Date().toISOString(),
-        };
+        })) ?? currentProject;
 
-        setCurrentProject(updatedProject);
         setSegments(loadedSegments);
         await persistDraft({
           projectOverride: updatedProject,
@@ -335,6 +500,7 @@ export default function TranslationEditor() {
           durationSeconds: media.duration_seconds,
           transcriptId: job.transcript_id,
           mediaId: media.media_id,
+          baseProjectUpdatedAtOverride: updatedProject.updatedAt,
         });
 
         setUploadState('translating');
@@ -363,6 +529,7 @@ export default function TranslationEditor() {
             durationSeconds: media.duration_seconds,
             transcriptId: job.transcript_id,
             mediaId: media.media_id,
+            baseProjectUpdatedAtOverride: updatedProject.updatedAt,
           });
           setUploadMessage(
             fetchedTranslations.length >= loadedSegments.length
@@ -422,7 +589,7 @@ export default function TranslationEditor() {
           </button>
           <button
             onClick={handleBuildDubAndLipSync}
-            disabled={buildState !== 'idle' || uploadState !== 'idle'}
+            disabled={buildState !== 'idle' || uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {buildState === 'syncing'
@@ -434,6 +601,23 @@ export default function TranslationEditor() {
         </div>
       </header>
 
+      {hasRemoteDraftConflict && (
+        <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm text-amber-100">
+              A newer backend draft was saved in another session. Reload the latest project state to resume backend saves. Your browser draft remains cached locally until you reload.
+            </p>
+            <button
+              onClick={() => void loadProjectData()}
+              disabled={isReloadingProject}
+              className="shrink-0 rounded-lg border border-amber-500/60 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isReloadingProject ? 'Reloading…' : 'Reload latest draft'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace Layout Grid */}
       <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
         {/* Left Grid: Transcript & Translation Edit Workspace */}
@@ -441,7 +625,7 @@ export default function TranslationEditor() {
           <div className="p-4 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
             <div className="flex items-center gap-3">
-              <label className={`cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition ${uploadState !== 'idle' ? 'pointer-events-none opacity-50' : ''}`}>
+              <label className={`cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition ${uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject ? 'pointer-events-none opacity-50' : ''}`}>
                 {uploadState === 'uploading'
                   ? 'Uploading…'
                   : uploadState === 'transcribing'
@@ -449,7 +633,7 @@ export default function TranslationEditor() {
                     : uploadState === 'translating'
                       ? 'Translating…'
                       : 'Upload & Transcribe'}
-                <input type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle'} />
+                <input type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject} />
               </label>
               <span className="text-xs text-slate-500">{segments.length} segments loaded</span>
             </div>
