@@ -75,7 +75,6 @@ class TTSOrchestrator:
 
         return GeneratedAudio(
             translation_id=translation.id,
-            voice_profile_id=None,
             project_id=translation.project_id,
             storage_bucket=settings.GCS_BUCKET_NAME,
             storage_path=storage_key,

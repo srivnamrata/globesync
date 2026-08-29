@@ -26,12 +26,6 @@ class GeneratedAudio(Base):
         nullable=False,
         index=True,
     )
-    voice_profile_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("voice_profiles.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
 
     storage_bucket = Column(String(255), nullable=False)
@@ -59,4 +53,3 @@ class GeneratedAudio(Base):
     )
 
     translation = relationship("Translation", backref="generated_audio")
-    voice_profile = relationship("VoiceProfile", backref="generated_audios")
