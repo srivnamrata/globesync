@@ -20,121 +20,21 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.generated_audio import GeneratedAudio
-from app.models.media import MediaFile
-from app.models.transcript import Transcript, TranscriptSegment
+from app.models.transcript import Transcript
 from app.models.translation import Translation
-from app.models.voice_profile import VoiceProfile
 from app.schemas.tts_schema import (
-    CloneVoiceRequest,
     GeneratedAudioResponse,
     MasterDubbedAudioResponse,
     SynthesizeProjectTTSRequest,
     SynthesizeSegmentTTSRequest,
     TTSJobResponse,
-    VoiceProfileResponse,
 )
 from app.services.storage_service import storage_service
 from app.services.pipeline_availability import require_background_pipelines
 from app.services.tts_orchestrator import tts_orchestrator
-from app.services.voice_cloning_service import voice_cloning_service
 from app.tasks.tts_tasks import synthesize_project_tts_task
 
-router = APIRouter(prefix="/tts", tags=["Voice Cloning & Text-to-Speech"])
-
-
-@router.post(
-    "/voice-profiles/clone",
-    response_model=VoiceProfileResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Clone Speaker Voice from Media Sample",
-)
-async def clone_speaker_voice(
-    req: CloneVoiceRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Extracts 30-90s speech sample from media, computes prosody, and creates ElevenLabs voice clone."""
-    stmt = select(MediaFile).where(MediaFile.id == req.media_id)
-    res = await db.execute(stmt)
-    media = res.scalar_one_or_none()
-
-    if not media:
-        raise HTTPException(status_code=404, detail="Media file not found.")
-
-    # Fetch transcript segments for speaker
-    seg_stmt = select(TranscriptSegment).join(Transcript).where(Transcript.media_file_id == req.media_id)
-    s_res = await db.execute(seg_stmt)
-    segments = s_res.scalars().all()
-
-    # Download source media locally for sample extraction
-    temp_dir = settings.PROCESSED_MEDIA_DIR
-    local_media = f"{temp_dir}/clone_src_{media.id.hex}.wav"
-    await storage_service.download_file(media.storage_path, local_media)
-
-    voice_profile = await voice_cloning_service.clone_speaker_from_segments(
-        master_audio_path=local_media,
-        speaker_tag=req.speaker_tag,
-        segments=segments,
-        project_id=req.project_id or media.project_id,
-    )
-    db.add(voice_profile)
-    await db.commit()
-    await db.refresh(voice_profile)
-
-    ref_url = (
-        storage_service.generate_presigned_download_url(voice_profile.reference_sample_gcs_path)
-        if voice_profile.reference_sample_gcs_path
-        else None
-    )
-
-    return VoiceProfileResponse(
-        voice_id=voice_profile.id,
-        speaker_name=voice_profile.speaker_name,
-        language=voice_profile.language,
-        external_voice_id=voice_profile.external_voice_id,
-        reference_sample_url=ref_url,
-        voice_settings=voice_profile.voice_settings or {},
-        confidence_score=float(voice_profile.confidence_score),
-        created_at=voice_profile.created_at,
-    )
-
-
-@router.get(
-    "/voice-profiles",
-    response_model=List[VoiceProfileResponse],
-    summary="List Available Voice Profiles",
-)
-async def list_voice_profiles(
-    project_id: Optional[uuid.UUID] = Query(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Lists cloned voice profiles with acoustic settings and audio sample URLs."""
-    stmt = select(VoiceProfile).where(VoiceProfile.is_active == True)
-    if project_id:
-        stmt = stmt.where(VoiceProfile.project_id == project_id)
-
-    res = await db.execute(stmt)
-    profiles = res.scalars().all()
-
-    results = []
-    for p in profiles:
-        ref_url = (
-            storage_service.generate_presigned_download_url(p.reference_sample_gcs_path)
-            if p.reference_sample_gcs_path
-            else None
-        )
-        results.append(
-            VoiceProfileResponse(
-                voice_id=p.id,
-                speaker_name=p.speaker_name,
-                language=p.language,
-                external_voice_id=p.external_voice_id,
-                reference_sample_url=ref_url,
-                voice_settings=p.voice_settings or {},
-                confidence_score=float(p.confidence_score),
-                created_at=p.created_at,
-            )
-        )
-    return results
+router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
 
 
 @router.post(
@@ -172,7 +72,7 @@ async def synthesize_project(
         transcript_id=req.transcript_id,
         target_language=req.target_language,
         status="queued",
-        message="Voice cloning, parallel TTS speech generation, and retiming task enqueued.",
+        message="Parallel TTS speech generation and retiming task enqueued.",
     )
 
 
@@ -193,13 +93,7 @@ async def synthesize_single_segment(
     if not translation:
         raise HTTPException(status_code=404, detail="Translation not found.")
 
-    voice_profile = None
-    if req.voice_profile_id:
-        vp_stmt = select(VoiceProfile).where(VoiceProfile.id == req.voice_profile_id)
-        vp_res = await db.execute(vp_stmt)
-        voice_profile = vp_res.scalar_one_or_none()
-
-    gen_audio = await tts_orchestrator.synthesize_single_translation(translation, voice_profile)
+    gen_audio = await tts_orchestrator.synthesize_single_translation(translation)
     db.add(gen_audio)
     await db.commit()
     await db.refresh(gen_audio)
@@ -209,7 +103,6 @@ async def synthesize_single_segment(
     return GeneratedAudioResponse(
         id=gen_audio.id,
         translation_id=gen_audio.translation_id,
-        voice_profile_id=gen_audio.voice_profile_id,
         audio_url=audio_url,
         storage_path=gen_audio.storage_path,
         raw_tts_duration_ms=gen_audio.raw_tts_duration_ms,
