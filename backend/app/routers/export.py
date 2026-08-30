@@ -67,7 +67,6 @@ async def enqueue_video_export(
         context=context,
         workspace_id=media.workspace_id,
         project_id=media.project_id,
-        legacy_user_id=media.user_id,
         require_write=True,
         not_found_detail="Source media file not found.",
     )

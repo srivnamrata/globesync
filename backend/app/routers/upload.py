@@ -341,7 +341,6 @@ async def complete_signed_resumable_upload(
         db=db,
         context=context,
         workspace_id=session.workspace_id,
-        legacy_user_id=session.user_id,
         require_write=True,
         not_found_detail="Upload session not found.",
     )
@@ -468,7 +467,6 @@ async def upload_resumable_chunk(
         db=db,
         context=context,
         workspace_id=session.workspace_id,
-        legacy_user_id=session.user_id,
         require_write=True,
         not_found_detail="Upload session not found.",
     )
@@ -581,7 +579,6 @@ async def get_resumable_upload_status(
         db=db,
         context=context,
         workspace_id=session.workspace_id,
-        legacy_user_id=session.user_id,
         not_found_detail="Upload session not found.",
     )
 
@@ -637,7 +634,6 @@ async def complete_resumable_upload(
         db=db,
         context=context,
         workspace_id=session.workspace_id,
-        legacy_user_id=session.user_id,
         require_write=True,
         not_found_detail="Upload session not found.",
     )
@@ -771,8 +767,7 @@ async def abort_resumable_upload(
             db=db,
             context=context,
             workspace_id=session.workspace_id,
-            legacy_user_id=session.user_id,
-            require_write=True,
+                require_write=True,
             not_found_detail="Upload session not found.",
         )
         storage_service.abort_multipart_upload(session.storage_key, session.s3_upload_id)
@@ -803,7 +798,6 @@ async def get_media_file(
         context=context,
         workspace_id=media.workspace_id,
         project_id=media.project_id,
-        legacy_user_id=media.user_id,
         not_found_detail="Media file not found.",
     )
 

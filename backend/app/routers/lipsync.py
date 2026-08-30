@@ -70,7 +70,6 @@ async def render_lipsync_project(
         context=context,
         workspace_id=media.workspace_id,
         project_id=media.project_id,
-        legacy_user_id=media.user_id,
         require_write=True,
         not_found_detail="Media file not found.",
     )

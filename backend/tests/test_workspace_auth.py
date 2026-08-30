@@ -155,16 +155,19 @@ def test_resource_access_resolves_project_scope_when_workspace_missing(monkeypat
     )
 
 
-def test_resource_access_allows_legacy_user_fallback_for_unscoped_rows():
+def test_resource_access_returns_not_found_for_unscoped_rows():
     context = _build_context()
 
-    asyncio.run(
-        ensure_workspace_resource_access(
-            db=FakeAsyncSession(None),
-            context=context,
-            legacy_user_id=context.user_id,
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            ensure_workspace_resource_access(
+                db=FakeAsyncSession(None),
+                context=context,
+            )
         )
-    )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Resource not found."
 
 
 def test_resource_access_returns_not_found_for_other_workspace():
@@ -183,7 +186,7 @@ def test_resource_access_returns_not_found_for_other_workspace():
     assert exc_info.value.detail == "Resource not found."
 
 
-def test_resource_access_requires_write_role_before_fallback_checks():
+def test_resource_access_requires_write_role_before_scope_checks():
     context = _build_context(role="viewer")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -191,7 +194,7 @@ def test_resource_access_requires_write_role_before_fallback_checks():
             ensure_workspace_resource_access(
                 db=FakeAsyncSession(None),
                 context=context,
-                legacy_user_id=context.user_id,
+                workspace_id=context.workspace_id,
                 require_write=True,
             )
         )

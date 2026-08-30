@@ -51,17 +51,17 @@ class _Select:
 sqlalchemy_module = types.ModuleType("sqlalchemy")
 sqlalchemy_module.select = lambda *args, **kwargs: _Select(*args)
 sqlalchemy_module.or_ = lambda *args: ("or", args)
-sys.modules.setdefault("sqlalchemy", sqlalchemy_module)
+sys.modules["sqlalchemy"] = sqlalchemy_module
 
 sqlalchemy_ext_module = types.ModuleType("sqlalchemy.ext")
 sqlalchemy_ext_asyncio_module = types.ModuleType("sqlalchemy.ext.asyncio")
 sqlalchemy_ext_asyncio_module.AsyncSession = object
-sys.modules.setdefault("sqlalchemy.ext", sqlalchemy_ext_module)
-sys.modules.setdefault("sqlalchemy.ext.asyncio", sqlalchemy_ext_asyncio_module)
+sys.modules["sqlalchemy.ext"] = sqlalchemy_ext_module
+sys.modules["sqlalchemy.ext.asyncio"] = sqlalchemy_ext_asyncio_module
 
 sqlalchemy_orm_module = types.ModuleType("sqlalchemy.orm")
 sqlalchemy_orm_module.selectinload = lambda value: ("selectinload", value)
-sys.modules.setdefault("sqlalchemy.orm", sqlalchemy_orm_module)
+sys.modules["sqlalchemy.orm"] = sqlalchemy_orm_module
 
 aiofiles_module = types.ModuleType("aiofiles")
 
@@ -89,11 +89,11 @@ sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
 
 multipart_module = types.ModuleType("multipart")
 multipart_module.__version__ = "0.0-test"
-sys.modules.setdefault("multipart", multipart_module)
+sys.modules["multipart"] = multipart_module
 
 multipart_submodule = types.ModuleType("multipart.multipart")
 multipart_submodule.parse_options_header = lambda value: (b"form-data", {})
-sys.modules.setdefault("multipart.multipart", multipart_submodule)
+sys.modules["multipart.multipart"] = multipart_submodule
 
 app_core_config_module = types.ModuleType("app.core.config")
 app_core_config_module.settings = SimpleNamespace(
@@ -504,7 +504,6 @@ def test_upload_status_propagates_workspace_not_found(monkeypatch):
 
     async def _deny(**kwargs):
         assert kwargs["workspace_id"] == session.workspace_id
-        assert kwargs["legacy_user_id"] == session.user_id
         raise HTTPException(status_code=404, detail=kwargs["not_found_detail"])
 
     monkeypatch.setattr(upload, "ensure_workspace_resource_access", _deny)

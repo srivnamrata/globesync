@@ -95,7 +95,6 @@ async def ensure_workspace_resource_access(
     context: AuthenticatedRequestContext,
     workspace_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
-    legacy_user_id: uuid.UUID | None = None,
     require_write: bool = False,
     not_found_detail: str = "Resource not found.",
 ) -> None:
@@ -115,9 +114,6 @@ async def ensure_workspace_resource_access(
             require_write=False,
             not_found_detail=not_found_detail,
         )
-        return
-
-    if legacy_user_id is not None and legacy_user_id == context.user_id:
         return
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found_detail)

@@ -159,7 +159,7 @@ echo "Web URL: $WEB_URL"
 echo "==> Updating API CORS allow-list"
 gcloud run services update "$API_SERVICE" \
   --region="$REGION" \
-  --update-env-vars="ALLOWED_ORIGINS=[\"${WEB_URL}\"]"
+  --update-env-vars="ALLOWED_ORIGINS=[\"http://localhost:3000\",\"https://app.translationplatform.io\",\"${WEB_URL}\"]"
 
 echo "==> Smoke checks"
 curl -fsS "${API_URL}/health"
