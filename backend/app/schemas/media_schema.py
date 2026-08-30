@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class InitResumableUploadRequest(BaseModel):
-    filename: str = Field(..., example="keynote_2026.mp4")
-    filesize_bytes: int = Field(..., gt=0, le=4 * 1024 * 1024 * 1024, example=4294967296)
-    mime_type: str = Field(..., example="video/mp4")
-    chunk_size_bytes: Optional[int] = Field(default=8 * 1024 * 1024, ge=5 * 1024 * 1024, example=8388608)
+    filename: str = Field(..., examples=["keynote_2026.mp4"])
+    filesize_bytes: int = Field(..., gt=0, le=4 * 1024 * 1024 * 1024, examples=[4294967296])
+    mime_type: str = Field(..., examples=["video/mp4"])
+    chunk_size_bytes: Optional[int] = Field(default=8 * 1024 * 1024, ge=5 * 1024 * 1024, examples=[8388608])
 
     @field_validator("filename")
     def sanitize_filename(cls, v: str) -> str:
@@ -35,9 +35,9 @@ class InitResumableUploadResponse(BaseModel):
 
 
 class InitSignedUploadRequest(BaseModel):
-    filename: str = Field(..., example="keynote_2026.mp4")
+    filename: str = Field(..., examples=["keynote_2026.mp4"])
     filesize_bytes: int = Field(..., gt=0, le=4 * 1024 * 1024 * 1024)
-    mime_type: str = Field(..., example="video/mp4")
+    mime_type: str = Field(..., examples=["video/mp4"])
     origin: Optional[str] = Field(
         None,
         description="Browser Origin header value required by GCS resumable sessions.",
@@ -88,7 +88,7 @@ class CompleteUploadRequest(BaseModel):
         None,
         min_length=64,
         max_length=64,
-        example="8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+        examples=["8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"],
     )
 
 

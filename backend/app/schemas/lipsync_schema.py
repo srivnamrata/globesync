@@ -7,16 +7,16 @@ from pydantic import BaseModel, Field
 class RenderLipSyncProjectRequest(BaseModel):
     media_file_id: UUID
     transcript_id: UUID
-    target_language: str = Field(..., example="es")
+    target_language: str = Field(..., examples=["es"])
     project_id: Optional[UUID] = None
-    model_preference: str = Field("liveportrait", example="liveportrait", description="'liveportrait' or 'wav2lip'")
+    model_preference: str = Field("liveportrait", examples=["liveportrait"], description="'liveportrait' or 'wav2lip'")
     burn_in_subtitles: bool = Field(False, description="Burn subtitles directly into video pixels")
 
 
 class RenderSegmentLipSyncRequest(BaseModel):
     segment_id: UUID
     translation_id: UUID
-    model_preference: str = Field("liveportrait", example="liveportrait")
+    model_preference: str = Field("liveportrait", examples=["liveportrait"])
 
 
 class FrameMetadataResponse(BaseModel):

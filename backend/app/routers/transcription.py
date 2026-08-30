@@ -233,7 +233,7 @@ async def get_transcript_by_media(
 )
 async def export_transcript(
     transcript_id: uuid.UUID = Path(...),
-    export_format: str = Path(..., regex="^(srt|vtt|txt|json)$"),
+    export_format: str = Path(..., pattern="^(srt|vtt|txt|json)$"),
     context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):

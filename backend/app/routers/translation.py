@@ -269,7 +269,7 @@ async def translate_single_segment(
 )
 async def get_project_translations(
     transcript_id: uuid.UUID = Path(...),
-    target_language: str = Query(..., example="es"),
+    target_language: str = Query(..., examples=["es"]),
     context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -392,7 +392,7 @@ async def update_translation(
 )
 async def export_translated_subtitles(
     transcript_id: uuid.UUID = Path(...),
-    export_format: str = Path(..., regex="^(srt|vtt|txt)$"),
+    export_format: str = Path(..., pattern="^(srt|vtt|txt)$"),
     target_language: str = Query("es"),
     context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),

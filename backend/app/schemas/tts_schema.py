@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class SynthesizeProjectTTSRequest(BaseModel):
     transcript_id: UUID
-    target_language: str = Field(..., example="es")
+    target_language: str = Field(..., examples=["es"])
     project_id: Optional[UUID] = None
 
 
