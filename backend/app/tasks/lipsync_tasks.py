@@ -35,6 +35,8 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 def publish_lipsync_event(job_id: str, status: str, progress_percent: int, message: str, eta_seconds: Optional[float] = None):
     """Broadcasts real-time lip-sync progress events to Redis Pub/Sub."""
+    if not settings.REDIS_URL:
+        return
     try:
         r = redis.Redis.from_url(settings.REDIS_URL)
         event_payload = json.dumps({

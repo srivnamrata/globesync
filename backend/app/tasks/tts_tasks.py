@@ -26,6 +26,8 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 def publish_tts_event(project_id: str, status: str, progress_percent: int, message: str):
     """Broadcasts real-time TTS synthesis and retiming progress to Redis Pub/Sub."""
+    if not settings.REDIS_URL:
+        return
     try:
         r = redis.Redis.from_url(settings.REDIS_URL)
         event_payload = json.dumps({

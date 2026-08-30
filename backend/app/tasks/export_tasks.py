@@ -24,6 +24,8 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 def publish_export_progress(job_id: str, status: str, stage: str, progress: int, eta_seconds: Optional[float] = None):
     """Publishes real-time rendering statistics to Redis Pub/Sub."""
+    if not settings.REDIS_URL:
+        return
     try:
         r = redis.Redis.from_url(settings.REDIS_URL)
         event_payload = json.dumps({

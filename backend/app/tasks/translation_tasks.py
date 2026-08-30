@@ -21,6 +21,8 @@ SyncSession = sessionmaker(bind=sync_engine)
 
 def publish_translation_event(transcript_id: str, status: str, progress_percent: int, message: str):
     """Broadcasts live translation progress to Redis Pub/Sub."""
+    if not settings.REDIS_URL:
+        return
     try:
         r = redis.Redis.from_url(settings.REDIS_URL)
         event_payload = json.dumps({

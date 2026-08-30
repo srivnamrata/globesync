@@ -1,5 +1,6 @@
 import os
 from typing import List, Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
@@ -14,8 +15,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres_secure_pass@localhost:5432/translation_db"
     SYNC_DATABASE_URL: str = "postgresql://postgres:postgres_secure_pass@localhost:5432/translation_db"
 
-    # Redis & Celery
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Redis event streaming is optional in the Cloud Run deployment.
+    REDIS_URL: Optional[str] = None
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
