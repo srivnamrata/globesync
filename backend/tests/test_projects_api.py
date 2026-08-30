@@ -1,11 +1,13 @@
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.core.auth import get_request_context
 from app.core.database import get_db
 from app.routers.projects import router
 from app.schemas.projects import DraftConflictErrorDetail
@@ -29,7 +31,20 @@ async def _dummy_get_db():
     yield AsyncMock(name="db_session")
 
 
+def _build_request_context(role: str = "owner"):
+    return SimpleNamespace(
+        user_id=uuid.UUID(ACTOR_USER_ID),
+        workspace_id=uuid.UUID(WORKSPACE_ID),
+        membership_role=role,
+    )
+
+
+async def _dummy_request_context():
+    return _build_request_context()
+
+
 api_app.dependency_overrides[get_db] = _dummy_get_db
+api_app.dependency_overrides[get_request_context] = _dummy_request_context
 
 
 @pytest.fixture
@@ -126,8 +141,6 @@ async def test_list_projects_returns_workspace_scoped_items(mock_project_service
         response = await client.get(
             "/v1/projects",
             params={
-                "workspace_id": WORKSPACE_ID,
-                "actor_user_id": ACTOR_USER_ID,
                 "status": "draft",
                 "limit": 20,
             },
@@ -137,6 +150,7 @@ async def test_list_projects_returns_workspace_scoped_items(mock_project_service
     payload = response.json()
     assert payload["items"][0]["id"] == PROJECT_ID
     assert payload["items"][0]["owner_user_id"] == ACTOR_USER_ID
+    assert mock_project_service.list_projects.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.list_projects.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -148,7 +162,6 @@ async def test_create_project_creates_actor_scoped_shell(mock_project_service, p
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/v1/projects",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
             json={
                 "name": "Hindi Product Launch",
                 "source_language": "en",
@@ -160,7 +173,34 @@ async def test_create_project_creates_actor_scoped_shell(mock_project_service, p
     payload = response.json()
     assert payload["workspace_id"] == WORKSPACE_ID
     assert payload["created_by_user_id"] == ACTOR_USER_ID
+    assert mock_project_service.create_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.create_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_viewer_role(mock_project_service):
+    async def _viewer_request_context():
+        return _build_request_context(role="viewer")
+
+    api_app.dependency_overrides[get_request_context] = _viewer_request_context
+    transport = ASGITransport(app=api_app)
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/v1/projects",
+                json={
+                    "name": "Hindi Product Launch",
+                    "source_language": "en",
+                    "target_language": "hi",
+                },
+            )
+    finally:
+        api_app.dependency_overrides[get_request_context] = _dummy_request_context
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Workspace membership role does not allow this operation."
+    mock_project_service.create_project.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -169,13 +209,11 @@ async def test_get_project_returns_project_detail(mock_project_service, project_
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            f"/v1/projects/{PROJECT_ID}",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
-        )
+        response = await client.get(f"/v1/projects/{PROJECT_ID}")
 
     assert response.status_code == 200
     assert response.json()["id"] == PROJECT_ID
+    assert mock_project_service.get_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.get_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -188,7 +226,6 @@ async def test_update_project_patches_mutable_metadata(mock_project_service, pro
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.patch(
             f"/v1/projects/{PROJECT_ID}",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
             json={"name": "Hindi Product Launch v2", "status": "processing"},
         )
 
@@ -196,6 +233,7 @@ async def test_update_project_patches_mutable_metadata(mock_project_service, pro
     payload = response.json()
     assert payload["name"] == "Hindi Product Launch v2"
     assert payload["status"] == "processing"
+    assert mock_project_service.update_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.update_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -205,15 +243,13 @@ async def test_get_project_draft_returns_latest_saved_draft(mock_project_service
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            f"/v1/projects/{PROJECT_ID}/draft",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
-        )
+        response = await client.get(f"/v1/projects/{PROJECT_ID}/draft")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["version"] == 1
     assert payload["draft_payload"]["projectMetadata"]["id"] == PROJECT_ID
+    assert mock_project_service.get_project_draft.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.get_project_draft.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -233,7 +269,6 @@ async def test_put_project_draft_returns_conflict_payload(mock_project_service):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put(
             f"/v1/projects/{PROJECT_ID}/draft",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
             json={
                 "version": 1,
                 "draft_schema_version": "heygenx/v1",
@@ -246,6 +281,7 @@ async def test_put_project_draft_returns_conflict_payload(mock_project_service):
     payload = response.json()
     assert payload["error"]["code"] == "DRAFT_VERSION_CONFLICT"
     assert payload["error"]["server_version"] == 2
+    assert mock_project_service.put_project_draft.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.put_project_draft.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -261,15 +297,13 @@ async def test_archive_project_marks_project_archived(mock_project_service):
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            f"/v1/projects/{PROJECT_ID}/archive",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
-        )
+        response = await client.post(f"/v1/projects/{PROJECT_ID}/archive")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "archived"
     assert payload["archived_at"] == ARCHIVED_AT
+    assert mock_project_service.archive_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.archive_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
 
@@ -279,10 +313,7 @@ async def test_get_project_returns_404_when_missing(mock_project_service):
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            f"/v1/projects/{PROJECT_ID}",
-            params={"workspace_id": WORKSPACE_ID, "actor_user_id": ACTOR_USER_ID},
-        )
+        response = await client.get(f"/v1/projects/{PROJECT_ID}")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Project not found."

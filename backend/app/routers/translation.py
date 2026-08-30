@@ -17,6 +17,12 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_request_context,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
@@ -67,6 +73,7 @@ async def list_supported_translation_languages():
 )
 async def translate_project(
     req: TranslateProjectRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Queue via Cloud Tasks, run inline (Google text), or Celery when a worker exists."""
@@ -76,6 +83,15 @@ async def translate_project(
 
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        require_write=True,
+        not_found_detail="Transcript not found.",
+    )
 
     source_language = req.source_language or transcript.detected_language or "en"
     project_id = transcript.project_id
@@ -171,15 +187,29 @@ async def translate_project(
 )
 async def translate_single_segment(
     req: TranslateSegmentRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Translates a single segment and actively adjusts length to match target duration within ±10%."""
-    stmt = select(TranscriptSegment).where(TranscriptSegment.id == req.segment_id)
+    stmt = (
+        select(TranscriptSegment)
+        .options(selectinload(TranscriptSegment.transcript))
+        .where(TranscriptSegment.id == req.segment_id)
+    )
     res = await db.execute(stmt)
     segment = res.scalar_one_or_none()
 
     if not segment:
         raise HTTPException(status_code=404, detail="Transcript segment not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=segment.transcript.workspace_id if segment.transcript else None,
+        project_id=segment.transcript.project_id if segment.transcript else None,
+        require_write=True,
+        not_found_detail="Transcript segment not found.",
+    )
 
     result = await duration_matcher.translate_with_duration_matching(
         source_text=req.source_text,
@@ -202,6 +232,8 @@ async def translate_single_segment(
     if not trans:
         trans = Translation(
             transcript_segment_id=segment.id,
+            project_id=segment.transcript.project_id if segment.transcript else None,
+            workspace_id=context.workspace_id,
             source_language=req.source_language,
             target_language=req.target_language,
             source_text=req.source_text,
@@ -238,9 +270,24 @@ async def translate_single_segment(
 async def get_project_translations(
     transcript_id: uuid.UUID = Path(...),
     target_language: str = Query(..., example="es"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves all translated segments along with duration ratios and quality scores."""
+    transcript_stmt = select(Transcript).where(Transcript.id == transcript_id)
+    transcript_res = await db.execute(transcript_stmt)
+    transcript = transcript_res.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        not_found_detail="Transcript not found.",
+    )
+
     # Get all segments for transcript
     stmt = (
         select(TranscriptSegment)
@@ -299,6 +346,7 @@ async def get_project_translations(
 async def update_translation(
     translation_id: uuid.UUID = Path(...),
     req: UpdateTranslationRequest = None,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Allows user to edit translated text. Re-calculates estimated speech duration in real-time."""
@@ -312,6 +360,15 @@ async def update_translation(
 
     if not trans:
         raise HTTPException(status_code=404, detail="Translation not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=trans.workspace_id,
+        project_id=trans.project_id,
+        require_write=True,
+        not_found_detail="Translation not found.",
+    )
 
     new_text = req.translated_text.strip()
     est_duration_ms = speech_rate_estimator.estimate_speech_duration_ms(new_text, trans.target_language)
@@ -337,10 +394,11 @@ async def export_translated_subtitles(
     transcript_id: uuid.UUID = Path(...),
     export_format: str = Path(..., regex="^(srt|vtt|txt)$"),
     target_language: str = Query("es"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Exports translated subtitles in standard SRT or WebVTT format."""
-    project_trans = await get_project_translations(transcript_id, target_language, db)
+    project_trans = await get_project_translations(transcript_id, target_language, context, db)
     items = project_trans.translations
 
     if export_format == "srt":
@@ -380,8 +438,24 @@ async def export_translated_subtitles(
 async def stream_translation_progress(
     transcript_id: uuid.UUID = Path(...),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Streams live Redis Pub/Sub translation progress events to frontend via SSE."""
+    transcript_stmt = select(Transcript).where(Transcript.id == transcript_id)
+    transcript_res = await db.execute(transcript_stmt)
+    transcript = transcript_res.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        not_found_detail="Transcript not found.",
+    )
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
         pubsub = r.pubsub()

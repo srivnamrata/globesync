@@ -17,6 +17,13 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_request_context,
+    get_scoped_project,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.frame_metadata import FrameMetadata
@@ -47,6 +54,7 @@ router = APIRouter(prefix="/lipsync", tags=["Neural Lip-Sync Video Rendering"])
 )
 async def render_lipsync_project(
     req: RenderLipSyncProjectRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Dispatches asynchronous dubbing + neural lip-sync pipeline to perform TTS, facial synthesis, A/V sync, and video remuxing."""
@@ -57,6 +65,16 @@ async def render_lipsync_project(
     if not media:
         raise HTTPException(status_code=404, detail="Media file not found.")
 
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=media.workspace_id,
+        project_id=media.project_id,
+        legacy_user_id=media.user_id,
+        require_write=True,
+        not_found_detail="Media file not found.",
+    )
+
     t_stmt = select(Transcript).where(Transcript.id == req.transcript_id)
     t_res = await db.execute(t_stmt)
     transcript = t_res.scalar_one_or_none()
@@ -64,9 +82,30 @@ async def render_lipsync_project(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found.")
 
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        require_write=True,
+        not_found_detail="Transcript not found.",
+    )
+
+    effective_project_id = media.project_id or transcript.project_id
+    if req.project_id is not None:
+        project = await get_scoped_project(
+            project_id=req.project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
+
     # Create LipSyncJob entity in database
     job = LipSyncJob(
-        project_id=req.project_id or media.project_id,
+        project_id=effective_project_id,
+        workspace_id=context.workspace_id,
         media_file_id=req.media_file_id,
         transcript_id=req.transcript_id,
         target_language=req.target_language,
@@ -120,6 +159,7 @@ async def render_lipsync_project(
 )
 async def get_lipsync_job(
     job_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves live job status, progress percentage, segment-by-segment facial detection metadata, and final video streaming URL."""
@@ -133,6 +173,14 @@ async def get_lipsync_job(
 
     if not job:
         raise HTTPException(status_code=404, detail="Lip-sync job not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        not_found_detail="Lip-sync job not found.",
+    )
 
     output_url = None
     if job.output_video_gcs_path:
@@ -184,8 +232,24 @@ async def get_lipsync_job(
 async def stream_lipsync_progress(
     job_id: uuid.UUID = Path(...),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Push-streams live millisecond rendering progress and ETA to frontend via SSE."""
+    stmt = select(LipSyncJob).where(LipSyncJob.id == job_id)
+    res = await db.execute(stmt)
+    job = res.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Lip-sync job not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        not_found_detail="Lip-sync job not found.",
+    )
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
         pubsub = r.pubsub()

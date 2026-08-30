@@ -67,7 +67,6 @@ class ProjectService:
             stmt = stmt.where(Project.status == query_params.status)
         if not query_params.include_archived:
             stmt = stmt.where(Project.archived_at.is_(None))
-        stmt = stmt.where(Project.owner_user_id == actor_user_id)
 
         result = await db.execute(stmt)
         projects = result.scalars().all()
@@ -134,6 +133,12 @@ class ProjectService:
             project.media_file_id = payload.media_file_id
         if payload.transcript_id is not None:
             project.transcript_id = payload.transcript_id
+        if payload.current_lipsync_job_id is not None:
+            project.current_lipsync_job_id = payload.current_lipsync_job_id
+        if payload.current_export_job_id is not None:
+            project.current_export_job_id = payload.current_export_job_id
+        if payload.last_rendered_video_gcs_path is not None:
+            project.last_rendered_video_gcs_path = payload.last_rendered_video_gcs_path
 
         project.updated_at = self._utcnow()
         await db.flush()
@@ -256,7 +261,6 @@ class ProjectService:
             .where(
                 Project.id == project_id,
                 Project.workspace_id == workspace_id,
-                Project.owner_user_id == actor_user_id,
             )
         )
 
@@ -281,6 +285,7 @@ class ProjectService:
             transcript_id=project.transcript_id,
             latest_draft_version=latest_draft_version,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
+            last_opened_at=project.last_opened_at,
             created_at=project.created_at,
             updated_at=project.updated_at,
         )
@@ -305,6 +310,7 @@ class ProjectService:
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
             latest_draft_version=latest_draft_version,
             archived_at=project.archived_at,
+            last_opened_at=project.last_opened_at,
             created_at=project.created_at,
             updated_at=project.updated_at,
         )

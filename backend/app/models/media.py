@@ -24,6 +24,7 @@ class MediaFile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=True)
 
@@ -68,6 +69,7 @@ class UploadSession(Base):
     __tablename__ = "upload_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=True)
 

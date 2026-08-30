@@ -6,7 +6,18 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.core.database import Base
 # Import every model so SQLAlchemy has complete metadata for autogeneration.
-from app.models import export_job, frame_metadata, generated_audio, lipsync_job, media, transcript, translation, voice_profile  # noqa: F401
+from app.models import (  # noqa: F401
+    export_job,
+    frame_metadata,
+    generated_audio,
+    identity,
+    lipsync_job,
+    media,
+    project,
+    transcript,
+    translation,
+    voice_profile,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.SYNC_DATABASE_URL)

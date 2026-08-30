@@ -27,6 +27,7 @@ class GeneratedAudio(Base):
         index=True,
     )
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
 
     storage_bucket = Column(String(255), nullable=False)
     storage_path = Column(String(1024), nullable=False)

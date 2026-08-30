@@ -15,7 +15,7 @@ RUNTIME_SA="${RUNTIME_SA:-globesync@${PROJECT_ID}.iam.gserviceaccount.com}"
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-${PROJECT_ID}:${REGION}:translation-pg}"
 RAW_BUCKET="${RAW_BUCKET:-${PROJECT_ID}-media-raw}"
 EXPORTS_BUCKET="${EXPORTS_BUCKET:-${PROJECT_ID}-media-exports}"
-ENV_FILE="${ENV_FILE:-deploy/cloudrun.env.yaml}"
+ENV_FILE="${ENV_FILE:-deploy/cloudrun.env.yaml}" 
 
 # Connection budget example: 100 Cloud SQL connections.
 # pool_size=5, concurrency=10 → cap max instances near 100/(5*ceil(10/5)) ≈ 10.
@@ -103,6 +103,27 @@ gcloud run services update "$API_SERVICE" \
   --region="$REGION" \
   --update-env-vars="CLOUD_TASKS_TARGET_URL=${API_URL},INTERNAL_TASKS_AUDIENCE=${API_URL},GCS_BUCKET_NAME=${RAW_BUCKET},GCS_EXPORTS_BUCKET=${EXPORTS_BUCKET}"
 
+WEB_BUILD_ARGS=(
+  "--build-arg=NEXT_PUBLIC_API_URL=${API_URL}"
+)
+if [[ -n "${NEXT_PUBLIC_DEBUG_USER_EMAIL:-}" ]]; then
+  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_DEBUG_USER_EMAIL=${NEXT_PUBLIC_DEBUG_USER_EMAIL}")
+fi
+if [[ -n "${NEXT_PUBLIC_DEBUG_USER_SUBJECT:-}" ]]; then
+  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_DEBUG_USER_SUBJECT=${NEXT_PUBLIC_DEBUG_USER_SUBJECT}")
+fi
+if [[ -n "${NEXT_PUBLIC_DEBUG_USER_NAME:-}" ]]; then
+  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_DEBUG_USER_NAME=${NEXT_PUBLIC_DEBUG_USER_NAME}")
+fi
+if [[ -n "${NEXT_PUBLIC_DEBUG_WORKSPACE_ID:-}" ]]; then
+  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_DEBUG_WORKSPACE_ID=${NEXT_PUBLIC_DEBUG_WORKSPACE_ID}")
+fi
+
+WEB_BUILD_ARGS_YAML=""
+for arg in "${WEB_BUILD_ARGS[@]}"; do
+  WEB_BUILD_ARGS_YAML+=$'      - '\"${arg}\"$'\n'
+done
+
 echo "==> Building web image with NEXT_PUBLIC_API_URL=$API_URL"
 gcloud builds submit \
   --config=/dev/stdin <<EOF
@@ -110,8 +131,7 @@ steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --build-arg=NEXT_PUBLIC_API_URL=${API_URL}
-      - -t
+${WEB_BUILD_ARGS_YAML}      - -t
       - ${WEB_IMAGE}
       - -f
       - frontend/Dockerfile

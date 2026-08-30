@@ -77,6 +77,7 @@ export default function TranslationEditor() {
 
       if (projectService.hasProjectApiScope()) {
         try {
+          await projectService.bootstrapAuthContext();
           backendProject = await projectService.getProject(projectId);
           nextBaseProjectUpdatedAt = backendProject.updatedAt;
 
@@ -88,7 +89,16 @@ export default function TranslationEditor() {
           } catch (draftError) {
             draft = projectService.buildLocalDraftFromProject(backendProject);
             setRemoteDraftVersion(null);
-            console.warn('No server-side draft found yet, seeded editor from project metadata:', draftError);
+            nextBaseProjectUpdatedAt = backendProject.updatedAt;
+            console.warn('No server-side draft found yet, seeding canonical draft from project metadata:', draftError);
+
+            try {
+              const seededDraft = await projectService.seedProjectDraft(backendProject);
+              setRemoteDraftVersion(seededDraft.version);
+              nextBaseProjectUpdatedAt = seededDraft.base_project_updated_at ?? backendProject.updatedAt;
+            } catch (seedError) {
+              console.warn('Failed to seed canonical backend draft; keeping local fallback cache:', seedError);
+            }
           }
 
           await storageService.saveDraft(draft);
@@ -198,10 +208,9 @@ export default function TranslationEditor() {
       translations: translationsOverride ?? Object.values(translations),
     };
 
-    await storageService.saveDraft(nextDraft);
-
     if (projectService.hasProjectApiScope() && !hasRemoteDraftConflict) {
       try {
+        await projectService.bootstrapAuthContext();
         const remoteDraft = await projectService.saveProjectDraft(project.id, nextDraft, {
           version: remoteDraftVersion ?? 1,
           baseProjectUpdatedAt: baseProjectUpdatedAtOverride ?? baseProjectUpdatedAt,
@@ -209,11 +218,14 @@ export default function TranslationEditor() {
         setRemoteDraftVersion(remoteDraft.version);
         setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
         setHasRemoteDraftConflict(false);
+        await storageService.saveDraft(nextDraft);
+        return;
       } catch (error) {
         const conflictDetail = getProjectDraftConflictDetail(error);
         if (conflictDetail) {
           setHasRemoteDraftConflict(true);
           setUploadMessage('A newer backend draft exists for this project. Reload the latest backend state before saving more changes. Your browser draft is still cached locally for recovery.');
+          await storageService.saveDraft(nextDraft);
           console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
           return;
         }
@@ -221,6 +233,8 @@ export default function TranslationEditor() {
         console.warn('Failed to persist project draft to backend; kept local IndexedDB draft as fallback:', error);
       }
     }
+
+    await storageService.saveDraft(nextDraft);
   };
 
   const applyProjectPatch = useCallback(async ({

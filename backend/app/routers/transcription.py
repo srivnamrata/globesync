@@ -18,6 +18,12 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_request_context,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.media import MediaFile
@@ -45,6 +51,7 @@ router = APIRouter(prefix="/transcription", tags=["Speech-to-Text & Diarization"
 )
 async def start_transcription(
     req: StartTranscriptionRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Dispatches asynchronous transcription work via Cloud Tasks or Celery."""
@@ -55,6 +62,16 @@ async def start_transcription(
     if not media:
         raise HTTPException(status_code=404, detail="Media file not found.")
 
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=media.workspace_id,
+        project_id=media.project_id,
+        legacy_user_id=media.user_id,
+        require_write=True,
+        not_found_detail="Media file not found.",
+    )
+
     # Check for existing transcript or create a new one
     t_stmt = select(Transcript).where(Transcript.media_file_id == req.media_id)
     t_res = await db.execute(t_stmt)
@@ -64,6 +81,7 @@ async def start_transcription(
         transcript = Transcript(
             media_file_id=req.media_id,
             project_id=media.project_id,
+            workspace_id=context.workspace_id,
             status="queued",
             detected_language=req.language or "en",
         )
@@ -130,6 +148,7 @@ async def start_transcription(
 )
 async def get_transcript(
     transcript_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves full normalized transcript, confidence scores, and word-level timing details."""
@@ -143,6 +162,14 @@ async def get_transcript(
 
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        not_found_detail="Transcript not found.",
+    )
 
     segments = []
     for seg in sorted(transcript.segments, key=lambda s: s.sequence_order):
@@ -182,6 +209,7 @@ async def get_transcript(
 )
 async def get_transcript_by_media(
     media_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Fetches transcript associated with a specific media file ID."""
@@ -196,7 +224,7 @@ async def get_transcript_by_media(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript for media file not found.")
 
-    return await get_transcript(transcript.id, db)
+    return await get_transcript(transcript.id, context, db)
 
 
 @router.get(
@@ -206,10 +234,11 @@ async def get_transcript_by_media(
 async def export_transcript(
     transcript_id: uuid.UUID = Path(...),
     export_format: str = Path(..., regex="^(srt|vtt|txt|json)$"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Exports diarized transcript in subtitle (SRT/VTT) or script format."""
-    transcript_data = await get_transcript(transcript_id, db)
+    transcript_data = await get_transcript(transcript_id, context, db)
     segments = transcript_data.segments
 
     if export_format == "srt":
@@ -240,8 +269,24 @@ async def export_transcript(
 async def stream_transcript_progress(
     transcript_id: uuid.UUID = Path(...),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Streams live Redis Pub/Sub progress events to frontend via SSE."""
+    stmt = select(Transcript).where(Transcript.id == transcript_id)
+    res = await db.execute(stmt)
+    transcript = res.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        not_found_detail="Transcript not found.",
+    )
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
         pubsub = r.pubsub()

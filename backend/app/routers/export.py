@@ -14,12 +14,20 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 import redis.asyncio as aioredis
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_request_context,
+    get_scoped_project,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.export_job import ExportJob
 from app.models.media import MediaFile
+from app.models.project import Project
 from app.models.transcript import Transcript, TranscriptSegment
 from app.schemas.export_schema import (
     ExportDispatchResponse,
@@ -42,6 +50,7 @@ router = APIRouter(prefix="/export", tags=["Video Export & Rendering Hub"])
 )
 async def enqueue_video_export(
     req: ExportRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     require_background_pipelines()
@@ -52,6 +61,42 @@ async def enqueue_video_export(
 
     if not media:
         raise HTTPException(status_code=404, detail="Source media file not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=media.workspace_id,
+        project_id=media.project_id,
+        legacy_user_id=media.user_id,
+        require_write=True,
+        not_found_detail="Source media file not found.",
+    )
+
+    transcript_stmt = select(Transcript).where(Transcript.id == req.transcript_id)
+    transcript_res = await db.execute(transcript_stmt)
+    transcript = transcript_res.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        require_write=True,
+        not_found_detail="Transcript not found.",
+    )
+
+    effective_project_id = media.project_id or transcript.project_id
+    if req.project_id is not None:
+        project = await get_scoped_project(
+            project_id=req.project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
 
     # Fetch transcript segments to generate subtitles if subtitles enabled
     segments_payload = None
@@ -72,7 +117,8 @@ async def enqueue_video_export(
 
     # Create ExportJob record
     job = ExportJob(
-        project_id=req.project_id or media.project_id,
+        project_id=effective_project_id,
+        workspace_id=context.workspace_id,
         media_file_id=req.media_file_id,
         transcript_id=req.transcript_id,
         target_language=req.target_language,
@@ -122,6 +168,7 @@ async def enqueue_video_export(
 )
 async def get_export_job_status(
     job_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves current rendering logs, encoding speeds, ETA estimates, and downloadable visual URLs."""
@@ -131,6 +178,14 @@ async def get_export_job_status(
 
     if not job:
         raise HTTPException(status_code=404, detail="Export job not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        not_found_detail="Export job not found.",
+    )
 
     output_url = None
     if job.output_video_gcs_path:
@@ -163,6 +218,7 @@ async def get_export_job_status(
 )
 async def cancel_export_job(
     job_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Signals cancellation to workers to immediately release GPU resources and clean up temp files."""
@@ -172,6 +228,15 @@ async def cancel_export_job(
 
     if not job:
         raise HTTPException(status_code=404, detail="Export job not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        require_write=True,
+        not_found_detail="Export job not found.",
+    )
 
     export_queue_manager.cancel_job(str(job_id))
     job.status = "failed"
@@ -188,11 +253,30 @@ async def cancel_export_job(
 )
 async def get_export_history(
     project_id: Optional[uuid.UUID] = Query(None),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves last 20 video render job logs and stats."""
-    stmt = select(ExportJob).order_by(ExportJob.created_at.desc()).limit(20)
+    stmt = (
+        select(ExportJob)
+        .where(
+            or_(
+                ExportJob.workspace_id == context.workspace_id,
+                ExportJob.project_id.in_(
+                    select(Project.id).where(Project.workspace_id == context.workspace_id)
+                ),
+            )
+        )
+        .order_by(ExportJob.created_at.desc())
+        .limit(20)
+    )
     if project_id:
+        await get_scoped_project(
+            project_id=project_id,
+            db=db,
+            context=context,
+            not_found_detail="Project not found.",
+        )
         stmt = stmt.where(ExportJob.project_id == project_id)
 
     res = await db.execute(stmt)
@@ -234,8 +318,24 @@ async def get_export_history(
 async def stream_export_progress(
     job_id: uuid.UUID = Path(...),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Streams live Redis Pub/Sub export rendering progress events to the frontend."""
+    stmt = select(ExportJob).where(ExportJob.id == job_id)
+    res = await db.execute(stmt)
+    job = res.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Export job not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=job.workspace_id,
+        project_id=job.project_id,
+        not_found_detail="Export job not found.",
+    )
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
         pubsub = r.pubsub()

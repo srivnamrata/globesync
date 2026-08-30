@@ -41,6 +41,9 @@ class ProjectUpdateRequest(BaseModel):
     active_translation_language: Optional[str] = Field(None, json_schema_extra={"example": "hi"})
     media_file_id: Optional[UUID] = Field(None, json_schema_extra={"example": "0f7df8e2-a8d1-4c2b-a7fc-4a8011a6e5c9"})
     transcript_id: Optional[UUID] = Field(None, json_schema_extra={"example": "25cda2d1-7726-4b65-a410-d204c80910ea"})
+    current_lipsync_job_id: Optional[UUID] = Field(None, json_schema_extra={"example": "30c4e7f5-f529-44a4-b7a7-8d4ce1262530"})
+    current_export_job_id: Optional[UUID] = Field(None, json_schema_extra={"example": "7374f6a8-73fc-4987-ab22-1d8022dbf769"})
+    last_rendered_video_gcs_path: Optional[str] = Field(None, max_length=2048, json_schema_extra={"example": "gs://project-794c406e-c0ab-4a50-8e9-media-exports/master_dubbed/video.mp4"})
 
     @field_validator("source_language", "target_language", "active_translation_language")
     @classmethod
@@ -73,6 +76,7 @@ class ProjectSummaryResponse(BaseModel):
     transcript_id: Optional[UUID] = None
     latest_draft_version: int = Field(0)
     last_rendered_video_gcs_path: Optional[str] = None
+    last_opened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +104,7 @@ class ProjectDetailResponse(BaseModel):
     last_rendered_video_gcs_path: Optional[str] = None
     latest_draft_version: int = Field(0)
     archived_at: Optional[datetime] = None
+    last_opened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

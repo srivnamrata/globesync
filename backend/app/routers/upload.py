@@ -22,6 +22,13 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_scoped_project,
+    get_request_context,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.media import MediaFile, UploadChunk, UploadSession
@@ -65,9 +72,21 @@ router = APIRouter(prefix="/media", tags=["Media Upload & Ingestion"])
 async def upload_direct_file(
     file: UploadFile = File(...),
     project_id: Optional[uuid.UUID] = Query(None),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Directly uploads media files (<100MB), validates codecs/format, and registers in database."""
+    effective_project_id = None
+    if project_id is not None:
+        project = await get_scoped_project(
+            project_id=project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
+
     temp_file_path = os.path.join(settings.TEMP_UPLOAD_DIR, f"{uuid.uuid4().hex}_{file.filename}")
     sha256_hasher = hashlib.sha256()
     total_bytes = 0
@@ -118,7 +137,9 @@ async def upload_direct_file(
 
         # Persist MediaFile entity
         media_record = MediaFile(
-            project_id=project_id,
+            project_id=effective_project_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
             storage_provider=settings.STORAGE_PROVIDER,
             storage_bucket=settings.GCS_BUCKET_NAME,
             storage_path=storage_key,
@@ -183,6 +204,7 @@ async def upload_direct_file(
 )
 async def init_resumable_upload(
     req: InitResumableUploadRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Initializes a resumable chunked upload session for massive video/audio files."""
@@ -202,6 +224,8 @@ async def init_resumable_upload(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
     session = UploadSession(
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
         filename=req.filename,
         filesize_bytes=req.filesize_bytes,
         mime_type=req.mime_type,
@@ -243,6 +267,7 @@ async def init_resumable_upload(
 async def init_signed_resumable_upload(
     req: InitSignedUploadRequest,
     request: Request,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Issues a GCS resumable upload URL so multi-GB files never stream through Cloud Run."""
@@ -259,6 +284,8 @@ async def init_signed_resumable_upload(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
     session = UploadSession(
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
         filename=req.filename,
         filesize_bytes=req.filesize_bytes,
         mime_type=req.mime_type,
@@ -296,6 +323,7 @@ async def complete_signed_resumable_upload(
     upload_id: uuid.UUID = Path(...),
     req: Optional[CompleteUploadRequest] = None,
     project_id: Optional[uuid.UUID] = Query(None),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Registers the MediaFile after the browser finished uploading directly to GCS."""
@@ -308,6 +336,26 @@ async def complete_signed_resumable_upload(
             error_code=ErrorCode.UPLOAD_SESSION_NOT_FOUND,
             message="Upload session not found.",
         )
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=session.workspace_id,
+        legacy_user_id=session.user_id,
+        require_write=True,
+        not_found_detail="Upload session not found.",
+    )
+
+    effective_project_id = None
+    if project_id is not None:
+        project = await get_scoped_project(
+            project_id=project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
 
     if session.status == "completed" and session.media_file_id:
         media_stmt = select(MediaFile).where(MediaFile.id == session.media_file_id)
@@ -351,7 +399,9 @@ async def complete_signed_resumable_upload(
                 pass
 
     media_record = MediaFile(
-        project_id=project_id,
+        project_id=effective_project_id,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
         storage_provider=session.storage_provider,
         storage_bucket=session.storage_bucket,
         storage_path=session.storage_key,
@@ -398,6 +448,7 @@ async def upload_resumable_chunk(
     x_chunk_index: int = Header(..., alias="X-Chunk-Index"),
     x_checksum_sha256: Optional[str] = Header(None, alias="X-Checksum-SHA256"),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Uploads a specific binary chunk part. Validates Content-Range and checksum."""
@@ -412,6 +463,15 @@ async def upload_resumable_chunk(
             error_code=ErrorCode.UPLOAD_SESSION_NOT_FOUND,
             message="Upload session not found.",
         )
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=session.workspace_id,
+        legacy_user_id=session.user_id,
+        require_write=True,
+        not_found_detail="Upload session not found.",
+    )
 
     if session.status != "in_progress" or session.expires_at < datetime.now(timezone.utc):
         raise UploadSessionExpiredException(str(upload_id))
@@ -498,6 +558,7 @@ async def upload_resumable_chunk(
 )
 async def get_resumable_upload_status(
     upload_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Returns detailed session status including which chunk indices are complete and which are missing."""
@@ -515,6 +576,14 @@ async def get_resumable_upload_status(
             error_code=ErrorCode.UPLOAD_SESSION_NOT_FOUND,
             message="Upload session not found.",
         )
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=session.workspace_id,
+        legacy_user_id=session.user_id,
+        not_found_detail="Upload session not found.",
+    )
 
     completed_chunk_indices = set(c.chunk_index for c in session.chunks)
     all_indices = set(range(session.total_chunks))
@@ -545,6 +614,7 @@ async def complete_resumable_upload(
     upload_id: uuid.UUID = Path(...),
     req: Optional[CompleteUploadRequest] = None,
     project_id: Optional[uuid.UUID] = Query(None),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Finalizes S3/GCS multipart upload assembly, probes media with ffprobe, and registers the MediaFile."""
@@ -562,6 +632,26 @@ async def complete_resumable_upload(
             error_code=ErrorCode.UPLOAD_SESSION_NOT_FOUND,
             message="Upload session not found.",
         )
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=session.workspace_id,
+        legacy_user_id=session.user_id,
+        require_write=True,
+        not_found_detail="Upload session not found.",
+    )
+
+    effective_project_id = None
+    if project_id is not None:
+        project = await get_scoped_project(
+            project_id=project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
 
     if session.status == "completed" and session.media_file_id:
         media_stmt = select(MediaFile).where(MediaFile.id == session.media_file_id)
@@ -627,7 +717,9 @@ async def complete_resumable_upload(
 
     # Create MediaFile database entry
     media_record = MediaFile(
-        project_id=project_id,
+        project_id=effective_project_id,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
         storage_provider=session.storage_provider,
         storage_bucket=session.storage_bucket,
         storage_path=session.storage_key,
@@ -666,6 +758,7 @@ async def complete_resumable_upload(
 )
 async def abort_resumable_upload(
     upload_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancels upload session, purges S3 multipart cache, and updates status to aborted."""
@@ -674,6 +767,14 @@ async def abort_resumable_upload(
     session = result.scalar_one_or_none()
 
     if session:
+        await ensure_workspace_resource_access(
+            db=db,
+            context=context,
+            workspace_id=session.workspace_id,
+            legacy_user_id=session.user_id,
+            require_write=True,
+            not_found_detail="Upload session not found.",
+        )
         storage_service.abort_multipart_upload(session.storage_key, session.s3_upload_id)
         session.status = "aborted"
         await db.commit()
@@ -686,6 +787,7 @@ async def abort_resumable_upload(
 )
 async def get_media_file(
     media_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves metadata and presigned download URL for an ingested media file."""
@@ -695,6 +797,15 @@ async def get_media_file(
 
     if not media:
         raise HTTPException(status_code=404, detail="Media file not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=media.workspace_id,
+        project_id=media.project_id,
+        legacy_user_id=media.user_id,
+        not_found_detail="Media file not found.",
+    )
 
     return _format_media_response(media)
 

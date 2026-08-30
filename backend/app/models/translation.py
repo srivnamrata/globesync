@@ -28,6 +28,7 @@ class Translation(Base):
         index=True,
     )
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
 
     source_language = Column(String(10), nullable=False, default="en")
     target_language = Column(String(10), nullable=False, index=True)

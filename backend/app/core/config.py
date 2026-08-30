@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     WEBHOOK_SECRET: str = "shared_webhook_secret_key_32bytes_hex"
 
+    # Google-backed auth bootstrap
+    AUTH_PROVIDER: str = "identity_platform"
+    GOOGLE_OAUTH_CLIENT_IDS: List[str] = []
+    ALLOW_INSECURE_DEV_AUTH: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

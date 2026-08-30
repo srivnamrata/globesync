@@ -57,6 +57,7 @@ export default function ProjectBrowser() {
       try {
         if (projectService.hasProjectApiScope()) {
           try {
+            await projectService.bootstrapAuthContext();
             const remoteProjects = await projectService.fetchAllProjects();
             setProjects(remoteProjects);
             return;
@@ -121,9 +122,10 @@ export default function ProjectBrowser() {
 
     if (projectService.hasProjectApiScope()) {
       try {
-        newProj = await projectService.createProjectShell(newProjectName, sourceLang, targetLang);
+        await projectService.bootstrapAuthContext();
+        newProj = await projectService.createProjectShellWithDraft(newProjectName, sourceLang, targetLang);
       } catch (remoteError) {
-        console.warn('Failed to create backend project shell, falling back to local draft:', remoteError);
+        console.warn('Failed to create canonical backend project draft, falling back to local draft:', remoteError);
         newProj = {
           id: fallbackProjectId,
           name: newProjectName,

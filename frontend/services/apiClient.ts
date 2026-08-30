@@ -29,6 +29,7 @@ function getErrorMessage(errData: any, status: number): string {
 export class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
+  private defaultHeaders: Record<string, string> = {};
 
   constructor(baseUrl: string = '/api/v1') {
     this.baseUrl = baseUrl;
@@ -36,6 +37,18 @@ export class ApiClient {
 
   setToken(token: string) {
     this.token = token;
+  }
+
+  clearToken() {
+    this.token = null;
+  }
+
+  setDefaultHeaders(headers: Record<string, string | null | undefined>) {
+    this.defaultHeaders = Object.fromEntries(
+      Object.entries(headers)
+        .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+        .map(([key, value]) => [key, value!.trim()]),
+    );
   }
 
   async request<T>(
@@ -47,7 +60,12 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     
     // Default headers
-    const headers = new Headers(options.headers || {});
+    const headers = new Headers(this.defaultHeaders);
+    const requestHeaders = new Headers(options.headers || {});
+    requestHeaders.forEach((value, key) => {
+      headers.set(key, value);
+    });
+
     headers.set('Accept', 'application/json');
     if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');

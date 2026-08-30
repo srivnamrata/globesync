@@ -4,6 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    get_request_context,
+    require_workspace_write_context,
+)
 from app.core.database import get_db
 from app.schemas.projects import (
     DraftConflictErrorResponse,
@@ -32,12 +37,11 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
     summary="List Projects",
 )
 async def list_projects(
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project list"),
     status_filter: str | None = Query(None, alias="status", description="Optional project status filter"),
     limit: int = Query(20, ge=1, le=100),
     cursor: str | None = Query(None),
     include_archived: bool = Query(False),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     filters = ProjectListQueryParams(
@@ -48,9 +52,9 @@ async def list_projects(
     )
     return await project_service.list_projects(
         db=db,
-        workspace_id=workspace_id,
+        workspace_id=context.workspace_id,
         filters=filters,
-        actor_user_id=actor_user_id,
+        actor_user_id=context.user_id,
     )
 
 
@@ -62,15 +66,14 @@ async def list_projects(
 )
 async def create_project(
     req: ProjectCreateRequest,
-    workspace_id: uuid.UUID = Query(..., description="Workspace that will own the project"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     return await project_service.create_project(
         db=db,
-        workspace_id=workspace_id,
+        workspace_id=context.workspace_id,
         payload=req,
-        actor_user_id=actor_user_id,
+        actor_user_id=context.user_id,
     )
 
 
@@ -81,16 +84,15 @@ async def create_project(
 )
 async def get_project(
     project_id: uuid.UUID = Path(...),
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         return await project_service.get_project(
             db=db,
-            workspace_id=workspace_id,
+            workspace_id=context.workspace_id,
             project_id=project_id,
-            actor_user_id=actor_user_id,
+            actor_user_id=context.user_id,
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -104,17 +106,16 @@ async def get_project(
 async def update_project(
     req: ProjectUpdateRequest,
     project_id: uuid.UUID = Path(...),
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         return await project_service.update_project(
             db=db,
-            workspace_id=workspace_id,
+            workspace_id=context.workspace_id,
             project_id=project_id,
             payload=req,
-            actor_user_id=actor_user_id,
+            actor_user_id=context.user_id,
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -127,16 +128,15 @@ async def update_project(
 )
 async def get_project_draft(
     project_id: uuid.UUID = Path(...),
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project draft"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         return await project_service.get_project_draft(
             db=db,
-            workspace_id=workspace_id,
+            workspace_id=context.workspace_id,
             project_id=project_id,
-            actor_user_id=actor_user_id,
+            actor_user_id=context.user_id,
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -151,17 +151,16 @@ async def get_project_draft(
 async def put_project_draft(
     req: ProjectDraftPutRequest,
     project_id: uuid.UUID = Path(...),
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project draft"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         return await project_service.put_project_draft(
             db=db,
-            workspace_id=workspace_id,
+            workspace_id=context.workspace_id,
             project_id=project_id,
             payload=req,
-            actor_user_id=actor_user_id,
+            actor_user_id=context.user_id,
         )
     except ProjectDraftConflictError as exc:
         return JSONResponse(status_code=409, content={"error": exc.detail.model_dump(mode="json")})
@@ -176,16 +175,15 @@ async def put_project_draft(
 )
 async def archive_project(
     project_id: uuid.UUID = Path(...),
-    workspace_id: uuid.UUID = Query(..., description="Workspace scope for the project"),
-    actor_user_id: uuid.UUID = Query(..., description="Actor performing the project operation"),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         return await project_service.archive_project(
             db=db,
-            workspace_id=workspace_id,
+            workspace_id=context.workspace_id,
             project_id=project_id,
-            actor_user_id=actor_user_id,
+            actor_user_id=context.user_id,
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

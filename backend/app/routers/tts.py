@@ -17,6 +17,13 @@ import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.core.auth import (
+    AuthenticatedRequestContext,
+    ensure_workspace_resource_access,
+    get_request_context,
+    get_scoped_project,
+    require_workspace_write_context,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.generated_audio import GeneratedAudio
@@ -45,6 +52,7 @@ router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
 )
 async def synthesize_project(
     req: SynthesizeProjectTTSRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     require_background_pipelines()
@@ -56,7 +64,27 @@ async def synthesize_project(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found.")
 
-    proj_id_str = str(req.project_id or transcript.project_id or "")
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=transcript.workspace_id,
+        project_id=transcript.project_id,
+        require_write=True,
+        not_found_detail="Transcript not found.",
+    )
+
+    effective_project_id = transcript.project_id
+    if req.project_id is not None:
+        project = await get_scoped_project(
+            project_id=req.project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
+        effective_project_id = project.id
+
+    proj_id_str = str(effective_project_id or "")
 
     task = synthesize_project_tts_task.apply_async(
         kwargs={
@@ -83,6 +111,7 @@ async def synthesize_project(
 )
 async def synthesize_single_segment(
     req: SynthesizeSegmentTTSRequest,
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Synthesizes a single segment on-demand and applies pitch-preserving time-stretching."""
@@ -93,7 +122,18 @@ async def synthesize_single_segment(
     if not translation:
         raise HTTPException(status_code=404, detail="Translation not found.")
 
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=translation.workspace_id,
+        project_id=translation.project_id,
+        require_write=True,
+        not_found_detail="Translation not found.",
+    )
+
     gen_audio = await tts_orchestrator.synthesize_single_translation(translation)
+    gen_audio.project_id = translation.project_id
+    gen_audio.workspace_id = context.workspace_id
     db.add(gen_audio)
     await db.commit()
     await db.refresh(gen_audio)
@@ -124,9 +164,17 @@ async def synthesize_single_segment(
 async def get_master_audio(
     project_id: uuid.UUID = Path(...),
     target_language: str = Query("es"),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieves presigned playback URL for the final master dubbed audio track."""
+    await get_scoped_project(
+        project_id=project_id,
+        db=db,
+        context=context,
+        not_found_detail="Project not found.",
+    )
+
     master_key = f"master_dubbed/{str(project_id)}/{target_language}_dubbed.wav"
     download_url = storage_service.generate_presigned_download_url(master_key, expires_in_seconds=7200)
 
@@ -147,8 +195,17 @@ async def get_master_audio(
 async def stream_tts_progress(
     project_id: uuid.UUID = Path(...),
     request: Request = None,
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """Streams live Redis Pub/Sub TTS synthesis progress events to the frontend."""
+    await get_scoped_project(
+        project_id=project_id,
+        db=db,
+        context=context,
+        not_found_detail="Project not found.",
+    )
+
     async def event_generator():
         r = aioredis.from_url(settings.REDIS_URL)
         pubsub = r.pubsub()
