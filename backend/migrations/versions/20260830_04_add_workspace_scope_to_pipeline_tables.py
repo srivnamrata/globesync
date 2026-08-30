@@ -41,45 +41,12 @@ def upgrade() -> None:
 
     op.execute(
         """
-        UPDATE media_files AS media
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE media.workspace_id IS NULL
-          AND (
-            media.project_id = projects.id
-            OR projects.media_file_id = media.id
-          )
-        """
-    )
-
-    op.execute(
-        """
-        UPDATE transcripts AS transcripts
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE transcripts.workspace_id IS NULL
-          AND transcripts.project_id = projects.id
-        """
-    )
-
-    op.execute(
-        """
         UPDATE transcripts AS transcripts
         SET workspace_id = media.workspace_id
         FROM media_files AS media
         WHERE transcripts.workspace_id IS NULL
           AND transcripts.media_file_id = media.id
           AND media.workspace_id IS NOT NULL
-        """
-    )
-
-    op.execute(
-        """
-        UPDATE translations AS translations
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE translations.workspace_id IS NULL
-          AND translations.project_id = projects.id
         """
     )
 
@@ -98,31 +65,11 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE generated_audios AS audio
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE audio.workspace_id IS NULL
-          AND audio.project_id = projects.id
-        """
-    )
-
-    op.execute(
-        """
-        UPDATE generated_audios AS audio
         SET workspace_id = translations.workspace_id
         FROM translations
         WHERE audio.workspace_id IS NULL
           AND audio.translation_id = translations.id
           AND translations.workspace_id IS NOT NULL
-        """
-    )
-
-    op.execute(
-        """
-        UPDATE lipsync_jobs AS jobs
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE jobs.workspace_id IS NULL
-          AND jobs.project_id = projects.id
         """
     )
 
@@ -145,16 +92,6 @@ def upgrade() -> None:
         WHERE jobs.workspace_id IS NULL
           AND jobs.transcript_id = transcripts.id
           AND transcripts.workspace_id IS NOT NULL
-        """
-    )
-
-    op.execute(
-        """
-        UPDATE export_jobs AS jobs
-        SET workspace_id = projects.workspace_id
-        FROM projects
-        WHERE jobs.workspace_id IS NULL
-          AND jobs.project_id = projects.id
         """
     )
 
