@@ -1,7 +1,7 @@
 """Add users, workspaces, and workspace_members tables.
 
 Revision ID: 20260829_03
-Revises: 20260829_02
+Revises: 20260821_01
 Create Date: 2026-08-29
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20260829_03"
-down_revision = "20260829_02"
+down_revision = "20260821_01"
 branch_labels = None
 depends_on = None
 
