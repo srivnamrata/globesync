@@ -1,4 +1,3 @@
-while 
 import { ApiError, apiClient } from './apiClient';
 import { authService } from './authService';
 import type { Project } from '../store/projectStore';
