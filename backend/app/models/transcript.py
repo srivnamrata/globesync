@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -59,6 +60,9 @@ class Transcript(Base):
 class TranscriptSegment(Base):
     """SQLAlchemy model for individual speaker-attributed speech segments with word timings."""
     __tablename__ = "transcript_segments"
+    __table_args__ = (
+        Index("ix_transcript_segments_transcript_id_sequence_order", "transcript_id", "sequence_order"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     transcript_id = Column(
@@ -80,6 +84,8 @@ class TranscriptSegment(Base):
     # [{"word": "Hello", "start": 0.12, "end": 0.45, "confidence": 0.98, "speaker": "Speaker 1"}, ...]
     words = Column(JSONB, nullable=False, default=list)
     sequence_order = Column(Integer, nullable=False, index=True)
+    origin_type = Column(String(50), nullable=True)
+    source_action = Column(String(100), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 

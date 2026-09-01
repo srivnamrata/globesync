@@ -73,6 +73,7 @@ async def list_supported_translation_languages():
 )
 async def translate_project(
     req: TranslateProjectRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -95,6 +96,8 @@ async def translate_project(
 
     source_language = req.source_language or transcript.detected_language or "en"
     project_id = transcript.project_id
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    idempotency_key = f"translate-project:{req.transcript_id}:{req.target_language}"
     job_id = uuid.uuid4().hex
 
     # Preferred production path: Cloud Tasks → private internal API handler.
@@ -107,6 +110,8 @@ async def translate_project(
                 "target_language": req.target_language,
                 "project_id": str(project_id) if project_id else None,
                 "job_id": job_id,
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
             },
             task_name_suffix=f"translate-{req.transcript_id.hex}-{req.target_language}-{job_id[:12]}",
         )
@@ -135,6 +140,11 @@ async def translate_project(
             source_language=source_language,
             target_language=req.target_language,
             project_id=project_id,
+            workspace_id=context.workspace_id,
+            request_id=request_id,
+            task_id=job_id,
+            source_action="translate_project_sync_fallback",
+            idempotency_key_prefix=idempotency_key,
             concurrency_limit=5,
         )
         segment_ids = [s.id for s in segments]
@@ -167,6 +177,9 @@ async def translate_project(
             "source_language": source_language,
             "target_language": req.target_language,
             "project_id_str": str(project_id) if project_id else None,
+            "workspace_id_str": str(context.workspace_id),
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
         },
         queue="translation",
     )
@@ -187,6 +200,7 @@ async def translate_project(
 )
 async def translate_single_segment(
     req: TranslateSegmentRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -229,11 +243,16 @@ async def translate_single_segment(
     t_res = await db.execute(trans_stmt)
     trans = t_res.scalar_one_or_none()
 
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    idempotency_key = f"translate-segment:{segment.id}:{req.target_language}"
+
     if not trans:
         trans = Translation(
             transcript_segment_id=segment.id,
             project_id=segment.transcript.project_id if segment.transcript else None,
             workspace_id=context.workspace_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
             source_language=req.source_language,
             target_language=req.target_language,
             source_text=req.source_text,
@@ -245,9 +264,13 @@ async def translate_single_segment(
             confidence_score=result.confidence_score,
             is_cached=result.is_cached,
             iteration_history=result.iteration_history,
+            source_action="translate_single_segment",
         )
         db.add(trans)
     else:
+        trans.request_id = request_id
+        trans.idempotency_key = idempotency_key
+        trans.source_action = "translate_single_segment"
         trans.translated_text = result.translated_text
         trans.estimated_duration_ms = result.estimated_duration_ms
         trans.duration_ratio = result.duration_ratio
@@ -255,6 +278,7 @@ async def translate_single_segment(
         trans.confidence_score = result.confidence_score
         trans.is_cached = result.is_cached
         trans.iteration_history = result.iteration_history
+        trans.source_text = req.source_text
 
     await db.commit()
     await db.refresh(trans)

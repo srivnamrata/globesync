@@ -46,6 +46,9 @@ def run_project_tts_pipeline(
     transcript_id_str: str,
     target_language: str,
     project_id_str: Optional[str] = None,
+    request_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
     task_instance=None,
 ):
     """
@@ -59,6 +62,8 @@ def run_project_tts_pipeline(
     """
     transcript_id = uuid.UUID(transcript_id_str)
     project_id = uuid.UUID(project_id_str) if project_id_str else None
+    request_id = request_id or task_id or transcript_id_str
+    idempotency_key = idempotency_key or f"tts-project:{project_id_str or transcript_id_str}:{target_language}"
     start_time = time.time()
 
     publish_tts_event(project_id_str or transcript_id_str, "in_progress", 10, "Initializing TTS speech synthesis pipeline...")
@@ -120,6 +125,9 @@ def run_project_tts_pipeline(
         generated_audios = asyncio.run(
             tts_orchestrator.synthesize_batch_concurrent(
                 translations=translations,
+                request_id=request_id,
+                task_id=task_id,
+                idempotency_key_prefix=idempotency_key,
                 concurrency=10,
             )
         )
@@ -222,11 +230,16 @@ def synthesize_project_tts_task(
     transcript_id_str: str,
     target_language: str,
     project_id_str: Optional[str] = None,
+    request_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ):
     """Celery wrapper around the shared project TTS pipeline implementation."""
     return run_project_tts_pipeline(
         transcript_id_str=transcript_id_str,
         target_language=target_language,
         project_id_str=project_id_str,
+        request_id=request_id,
+        task_id=self.request.id,
+        idempotency_key=idempotency_key,
         task_instance=self,
     )

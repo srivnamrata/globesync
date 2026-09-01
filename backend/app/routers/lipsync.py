@@ -54,6 +54,7 @@ router = APIRouter(prefix="/lipsync", tags=["Neural Lip-Sync Video Rendering"])
 )
 async def render_lipsync_project(
     req: RenderLipSyncProjectRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -101,10 +102,17 @@ async def render_lipsync_project(
         )
         effective_project_id = project.id
 
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    idempotency_key = (
+        f"lipsync:{effective_project_id or req.media_file_id}:{req.transcript_id}:{req.target_language}:{req.model_preference}"
+    )
+
     # Create LipSyncJob entity in database
     job = LipSyncJob(
         project_id=effective_project_id,
         workspace_id=context.workspace_id,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
         media_file_id=req.media_file_id,
         transcript_id=req.transcript_id,
         target_language=req.target_language,
@@ -117,7 +125,7 @@ async def render_lipsync_project(
     await db.refresh(job)
 
     if cloud_tasks_service.enabled:
-        cloud_tasks_service.enqueue_http_task(
+        job.task_id = cloud_tasks_service.enqueue_http_task(
             relative_handler_path="/v1/internal/tasks/render-lipsync-project",
             payload={
                 "job_id": str(job.id),
@@ -127,12 +135,15 @@ async def render_lipsync_project(
                 "project_id": str(req.project_id) if req.project_id else None,
                 "model_preference": req.model_preference,
                 "burn_in_subtitles": req.burn_in_subtitles,
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
             },
             task_name_suffix=f"lipsync-{job.id.hex}-{req.target_language}",
         )
+        await db.commit()
     else:
         require_background_pipelines()
-        render_lipsync_project_task.apply_async(
+        task = render_lipsync_project_task.apply_async(
             kwargs={
                 "job_id_str": str(job.id),
                 "media_file_id_str": str(req.media_file_id),
@@ -140,9 +151,13 @@ async def render_lipsync_project(
                 "target_language": req.target_language,
                 "model_preference": req.model_preference,
                 "burn_in_subtitles": req.burn_in_subtitles,
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
             },
             queue="lipsync_render",
         )
+        job.task_id = task.id
+        await db.commit()
 
     return LipSyncDispatchResponse(
         job_id=job.id,

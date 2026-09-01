@@ -58,6 +58,8 @@ def render_video_export_task(
     target_language: str,
     job_settings: Dict[str, Any],
     segments_data: Optional[Any] = None,
+    request_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ):
     """
     Asynchronous Celery task coordinating video exports:
@@ -68,6 +70,9 @@ def render_video_export_task(
     """
     job_id = uuid.UUID(job_id_str)
     media_file_id = uuid.UUID(media_file_id_str)
+    task_id = self.request.id
+    request_id = request_id or task_id or job_id_str
+    idempotency_key = idempotency_key or f"export:{job_id_str}:{target_language}"
     start_time = time.time()
 
     export_queue_manager.register_job(job_id_str)
@@ -87,6 +92,9 @@ def render_video_export_task(
             raise ValueError("Required database entities not found for export job.")
 
         job.status = "processing"
+        job.request_id = request_id
+        job.task_id = task_id
+        job.idempotency_key = idempotency_key
         db.commit()
 
         # Check for cancel request

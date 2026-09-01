@@ -40,6 +40,8 @@ class TranslateProjectTaskPayload(BaseModel):
     target_language: str
     project_id: Optional[uuid.UUID] = None
     job_id: str = Field(..., min_length=8)
+    request_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 
 class RenderLipSyncProjectTaskPayload(BaseModel):
@@ -50,6 +52,8 @@ class RenderLipSyncProjectTaskPayload(BaseModel):
     project_id: Optional[uuid.UUID] = None
     model_preference: str = "liveportrait"
     burn_in_subtitles: bool = False
+    request_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 
 async def _verify_cloud_tasks_request(
@@ -120,11 +124,21 @@ async def run_translate_project_task(
     if not segments:
         raise HTTPException(status_code=404, detail="No transcript segments found.")
 
+    transcript_stmt = select(Transcript).where(Transcript.id == payload.transcript_id)
+    transcript_result = await db.execute(transcript_stmt)
+    transcript = transcript_result.scalar_one_or_none()
+    workspace_id = transcript.workspace_id if transcript else None
+
     translated = await translation_service.translate_segments_batch_async(
         segments=segments,
         source_language=payload.source_language,
         target_language=payload.target_language,
         project_id=payload.project_id,
+        workspace_id=workspace_id,
+        request_id=payload.request_id or payload.job_id,
+        task_id=payload.job_id,
+        source_action="translate_project_cloud_task",
+        idempotency_key_prefix=payload.idempotency_key,
         concurrency_limit=5,
     )
 
@@ -173,6 +187,8 @@ async def run_render_lipsync_project_task(
         target_language=payload.target_language,
         model_preference=payload.model_preference,
         burn_in_subtitles=payload.burn_in_subtitles,
+        request_id=payload.request_id,
+        idempotency_key=payload.idempotency_key,
     )
     logger.info(
         "Cloud Tasks dub/lip-sync job %s completed (%s)",

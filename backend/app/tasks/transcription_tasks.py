@@ -212,6 +212,8 @@ def run_transcription_pipeline(
                 confidence=seg.confidence,
                 words=[w.model_dump() for w in seg.words],
                 sequence_order=idx,
+                origin_type="machine_generated",
+                source_action="transcription_pipeline",
             )
             db.add(segment_row)
 

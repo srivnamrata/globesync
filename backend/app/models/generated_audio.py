@@ -28,6 +28,9 @@ class GeneratedAudio(Base):
     )
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    request_id = Column(String(255), nullable=True, index=True)
+    task_id = Column(String(255), nullable=True, index=True)
+    idempotency_key = Column(String(255), nullable=True, index=True)
 
     storage_bucket = Column(String(255), nullable=False)
     storage_path = Column(String(1024), nullable=False)

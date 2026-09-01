@@ -50,6 +50,7 @@ router = APIRouter(prefix="/export", tags=["Video Export & Rendering Hub"])
 )
 async def enqueue_video_export(
     req: ExportRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -114,10 +115,15 @@ async def enqueue_video_export(
             for s in segments
         ]
 
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    idempotency_key = f"export:{effective_project_id or req.media_file_id}:{req.transcript_id}:{req.target_language}:{req.format}"
+
     # Create ExportJob record
     job = ExportJob(
         project_id=effective_project_id,
         workspace_id=context.workspace_id,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
         media_file_id=req.media_file_id,
         transcript_id=req.transcript_id,
         target_language=req.target_language,
@@ -142,16 +148,20 @@ async def enqueue_video_export(
     await db.refresh(job)
 
     # Dispatch Celery render task
-    render_video_export_task.apply_async(
+    task = render_video_export_task.apply_async(
         kwargs={
             "job_id_str": str(job.id),
             "media_file_id_str": str(req.media_file_id),
             "target_language": req.target_language,
             "job_settings": req.model_dump(),
             "segments_data": segments_payload,
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
         },
         queue="mux_export",
     )
+    job.task_id = task.id
+    await db.commit()
 
     return ExportDispatchResponse(
         job_id=job.id,

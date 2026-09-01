@@ -23,6 +23,9 @@ class LipSyncJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    request_id = Column(String(255), nullable=True, index=True)
+    task_id = Column(String(255), nullable=True, index=True)
+    idempotency_key = Column(String(255), nullable=True, index=True)
     media_file_id = Column(UUID(as_uuid=True), ForeignKey("media_files.id", ondelete="CASCADE"), nullable=False, index=True)
     transcript_id = Column(UUID(as_uuid=True), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False)
 

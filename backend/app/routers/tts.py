@@ -52,6 +52,7 @@ router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
 )
 async def synthesize_project(
     req: SynthesizeProjectTTSRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -85,12 +86,16 @@ async def synthesize_project(
         effective_project_id = project.id
 
     proj_id_str = str(effective_project_id or "")
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    idempotency_key = f"tts-project:{req.transcript_id}:{req.target_language}"
 
     task = synthesize_project_tts_task.apply_async(
         kwargs={
             "transcript_id_str": str(req.transcript_id),
             "target_language": req.target_language,
             "project_id_str": proj_id_str,
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
         },
         queue="tts_clone",
     )
@@ -111,6 +116,7 @@ async def synthesize_project(
 )
 async def synthesize_single_segment(
     req: SynthesizeSegmentTTSRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -131,7 +137,12 @@ async def synthesize_single_segment(
         not_found_detail="Translation not found.",
     )
 
-    gen_audio = await tts_orchestrator.synthesize_single_translation(translation)
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    gen_audio = await tts_orchestrator.synthesize_single_translation(
+        translation,
+        request_id=request_id,
+        idempotency_key=f"tts-segment:{translation.id}",
+    )
     gen_audio.project_id = translation.project_id
     gen_audio.workspace_id = context.workspace_id
     db.add(gen_audio)

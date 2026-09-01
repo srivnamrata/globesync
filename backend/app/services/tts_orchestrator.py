@@ -21,6 +21,9 @@ class TTSOrchestrator:
     async def synthesize_single_translation(
         cls,
         translation: Translation,
+        request_id: str | None = None,
+        task_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> GeneratedAudio:
         """
         Synthesizes translated speech, retimes audio with FFmpeg to match target duration (±100ms),
@@ -76,6 +79,10 @@ class TTSOrchestrator:
         return GeneratedAudio(
             translation_id=translation.id,
             project_id=translation.project_id,
+            workspace_id=translation.workspace_id,
+            request_id=request_id,
+            task_id=task_id,
+            idempotency_key=idempotency_key,
             storage_bucket=settings.GCS_BUCKET_NAME,
             storage_path=storage_key,
             raw_tts_duration_ms=actual_dur_ms,
@@ -92,6 +99,9 @@ class TTSOrchestrator:
     async def synthesize_batch_concurrent(
         cls,
         translations: List[Translation],
+        request_id: str | None = None,
+        task_id: str | None = None,
+        idempotency_key_prefix: str | None = None,
         concurrency: int = 10,
     ) -> List[GeneratedAudio]:
         """Synthesizes multiple translation segments concurrently using a semaphore."""
@@ -99,7 +109,12 @@ class TTSOrchestrator:
 
         async def _worker(t: Translation) -> GeneratedAudio:
             async with semaphore:
-                return await cls.synthesize_single_translation(t)
+                return await cls.synthesize_single_translation(
+                    t,
+                    request_id=request_id,
+                    task_id=task_id,
+                    idempotency_key=(f"{idempotency_key_prefix}:{t.id}" if idempotency_key_prefix else None),
+                )
 
         tasks = [_worker(t) for t in translations]
         return await asyncio.gather(*tasks)

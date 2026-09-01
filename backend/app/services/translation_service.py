@@ -22,6 +22,11 @@ class TranslationService:
         source_language: str,
         target_language: str,
         project_id: Optional[uuid.UUID] = None,
+        workspace_id: Optional[uuid.UUID] = None,
+        request_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        source_action: Optional[str] = None,
+        idempotency_key_prefix: Optional[str] = None,
         concurrency_limit: int = 10,
     ) -> List[Translation]:
         """
@@ -53,6 +58,10 @@ class TranslationService:
                 return Translation(
                     transcript_segment_id=seg.id,
                     project_id=project_id,
+                    workspace_id=workspace_id,
+                    request_id=request_id,
+                    task_id=task_id,
+                    idempotency_key=(f"{idempotency_key_prefix}:{seg.id}" if idempotency_key_prefix else None),
                     source_language=source_language,
                     target_language=target_language,
                     source_text=seg.text,
@@ -66,6 +75,7 @@ class TranslationService:
                     is_cached=res.is_cached,
                     speed_adjustment_factor=speed_factor,
                     iteration_history=res.iteration_history,
+                    source_action=source_action,
                 )
 
         tasks = [_translate_single_segment(i, seg) for i, seg in enumerate(segments)]

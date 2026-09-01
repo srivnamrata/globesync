@@ -29,6 +29,9 @@ class Translation(Base):
     )
     project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    request_id = Column(String(255), nullable=True, index=True)
+    task_id = Column(String(255), nullable=True, index=True)
+    idempotency_key = Column(String(255), nullable=True, index=True)
 
     source_language = Column(String(10), nullable=False, default="en")
     target_language = Column(String(10), nullable=False, index=True)
@@ -51,6 +54,7 @@ class Translation(Base):
 
     # Metadata & iteration history
     iteration_history = Column(JSONB, nullable=True, default=list)
+    source_action = Column(String(100), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

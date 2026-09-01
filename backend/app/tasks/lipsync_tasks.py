@@ -59,6 +59,9 @@ def run_lipsync_project_pipeline(
     target_language: str,
     model_preference: str = "liveportrait",
     burn_in_subtitles: bool = False,
+    request_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
     task_instance=None,
 ):
     """
@@ -73,6 +76,9 @@ def run_lipsync_project_pipeline(
     job_id = uuid.UUID(job_id_str)
     media_file_id = uuid.UUID(media_file_id_str)
     transcript_id = uuid.UUID(transcript_id_str)
+    task_id = task_id or (task_instance.request.id if task_instance is not None else None)
+    request_id = request_id or task_id or job_id_str
+    idempotency_key = idempotency_key or f"lipsync:{job_id_str}:{target_language}:{model_preference}"
     start_time = time.time()
 
     publish_lipsync_event(job_id_str, "in_progress", 5, "Initializing neural lip-sync video pipeline...")
@@ -92,6 +98,9 @@ def run_lipsync_project_pipeline(
             raise ValueError("Required database records not found for lip-sync task.")
 
         job.status = "in_progress"
+        job.request_id = job.request_id or request_id
+        job.task_id = job.task_id or task_id
+        job.idempotency_key = job.idempotency_key or idempotency_key
         db.commit()
 
         project_id_str = str(job.project_id or transcript.project_id) if (job.project_id or transcript.project_id) else None
@@ -100,6 +109,9 @@ def run_lipsync_project_pipeline(
             transcript_id_str=transcript_id_str,
             target_language=target_language,
             project_id_str=project_id_str,
+            request_id=job.request_id,
+            task_id=job.task_id,
+            idempotency_key=(f"{job.idempotency_key}:tts" if job.idempotency_key else None),
         )
 
         # 1. Download source video
@@ -359,6 +371,8 @@ def render_lipsync_project_task(
     target_language: str,
     model_preference: str = "liveportrait",
     burn_in_subtitles: bool = False,
+    request_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ):
     """Celery wrapper around the shared lip-sync pipeline implementation."""
     return run_lipsync_project_pipeline(
@@ -368,5 +382,8 @@ def render_lipsync_project_task(
         target_language=target_language,
         model_preference=model_preference,
         burn_in_subtitles=burn_in_subtitles,
+        request_id=request_id,
+        task_id=self.request.id,
+        idempotency_key=idempotency_key,
         task_instance=self,
     )

@@ -49,6 +49,9 @@ def translate_project_batch_task(
     source_language: str,
     target_language: str,
     project_id_str: Optional[str] = None,
+    workspace_id_str: Optional[str] = None,
+    request_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ):
     """
     Asynchronous Celery batch task:
@@ -59,6 +62,10 @@ def translate_project_batch_task(
     """
     transcript_id = uuid.UUID(transcript_id_str)
     project_id = uuid.UUID(project_id_str) if project_id_str else None
+    workspace_id = uuid.UUID(workspace_id_str) if workspace_id_str else None
+    task_id = self.request.id
+    request_id = request_id or task_id or transcript_id_str
+    idempotency_key = idempotency_key or f"translate-project:{transcript_id_str}:{target_language}"
     start_time = time.time()
 
     publish_translation_event(transcript_id_str, "in_progress", 10, "Loading transcript segments for translation...")
@@ -89,6 +96,11 @@ def translate_project_batch_task(
                 source_language=source_language,
                 target_language=target_language,
                 project_id=project_id,
+                workspace_id=workspace_id,
+                request_id=request_id,
+                task_id=task_id,
+                source_action="translate_project_celery",
+                idempotency_key_prefix=idempotency_key,
                 concurrency_limit=10,
             )
         )
