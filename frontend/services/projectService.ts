@@ -250,6 +250,10 @@ export class ProjectService {
     return Boolean(this.getProjectApiScope());
   }
 
+  async bootstrapAuthContext(): Promise<ProjectApiScope> {
+    return this.requireProjectApiScope();
+  }
+
   private getProjectApiScope(): ProjectApiScope | null {
     const workspaceId = process.env.NEXT_PUBLIC_WORKSPACE_ID?.trim();
     const actorUserId = process.env.NEXT_PUBLIC_ACTOR_USER_ID?.trim();
@@ -317,6 +321,15 @@ export class ProjectService {
     return mapProjectApiShape(response);
   }
 
+  async createProjectShellWithDraft(name: string, sourceLanguage: string, targetLanguage: string): Promise<Project> {
+    const project = await this.createProjectShell(name, sourceLanguage, targetLanguage);
+    await this.saveProjectDraft(project.id, this.buildLocalDraftFromProject(project), {
+      version: 1,
+      baseProjectUpdatedAt: project.updatedAt,
+    });
+    return project;
+  }
+
   async getProject(projectId: string): Promise<Project> {
     const scope = this.requireProjectApiScope();
     const response = await apiClient.get<ProjectDetailApiShape>(
@@ -374,6 +387,13 @@ export class ProjectService {
         draft_payload: draft,
       },
     );
+  }
+
+  async seedProjectDraft(project: Project): Promise<ProjectDraftPutApiResponse> {
+    return this.saveProjectDraft(project.id, this.buildLocalDraftFromProject(project), {
+      version: 1,
+      baseProjectUpdatedAt: project.updatedAt,
+    });
   }
 
   async getTranscript(mediaId: string): Promise<TranscriptSegment[]> {
