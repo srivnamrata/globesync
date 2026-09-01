@@ -32,6 +32,9 @@ class TranscribeTaskPayload(BaseModel):
     enable_noise_reduction: bool = True
     enable_loudness_norm: bool = True
     job_id: str = Field(..., min_length=8)
+    request_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    source_action: Optional[str] = None
 
 
 class TranslateProjectTaskPayload(BaseModel):
@@ -80,6 +83,7 @@ async def _verify_cloud_tasks_request(
 )
 async def run_transcribe_task(
     payload: TranscribeTaskPayload,
+    x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
     _: None = Depends(_verify_cloud_tasks_request),
 ):
     result = await asyncio.to_thread(
@@ -90,6 +94,10 @@ async def run_transcribe_task(
         max_speakers=payload.max_speakers,
         enable_noise_reduction=payload.enable_noise_reduction,
         enable_loudness_norm=payload.enable_loudness_norm,
+        request_id=payload.request_id or payload.job_id,
+        task_id=x_cloudtasks_taskname or payload.job_id,
+        idempotency_key=payload.idempotency_key,
+        source_action=payload.source_action or "transcription_pipeline_cloud_task",
     )
     logger.info(
         "Cloud Tasks transcription job %s completed (%s)",
@@ -112,6 +120,7 @@ async def run_transcribe_task(
 async def run_translate_project_task(
     payload: TranslateProjectTaskPayload,
     db: AsyncSession = Depends(get_db),
+    x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
     _: None = Depends(_verify_cloud_tasks_request),
 ):
     stmt = (
@@ -136,7 +145,7 @@ async def run_translate_project_task(
         project_id=payload.project_id,
         workspace_id=workspace_id,
         request_id=payload.request_id or payload.job_id,
-        task_id=payload.job_id,
+        task_id=x_cloudtasks_taskname or payload.job_id,
         source_action="translate_project_cloud_task",
         idempotency_key_prefix=payload.idempotency_key,
         concurrency_limit=5,
@@ -177,6 +186,7 @@ async def run_translate_project_task(
 )
 async def run_render_lipsync_project_task(
     payload: RenderLipSyncProjectTaskPayload,
+    x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
     _: None = Depends(_verify_cloud_tasks_request),
 ):
     result = await asyncio.to_thread(
@@ -188,6 +198,7 @@ async def run_render_lipsync_project_task(
         model_preference=payload.model_preference,
         burn_in_subtitles=payload.burn_in_subtitles,
         request_id=payload.request_id,
+        task_id=x_cloudtasks_taskname or str(payload.job_id),
         idempotency_key=payload.idempotency_key,
     )
     logger.info(

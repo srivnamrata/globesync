@@ -51,6 +51,7 @@ router = APIRouter(prefix="/transcription", tags=["Speech-to-Text & Diarization"
 )
 async def start_transcription(
     req: StartTranscriptionRequest,
+    request: Request,
     context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -93,6 +94,8 @@ async def start_transcription(
         await db.commit()
 
     job_id = uuid.uuid4().hex
+    request_id = request.headers.get("X-Request-ID") or job_id
+    idempotency_key = f"transcribe:{req.media_id}:{transcript.id}"
 
     if cloud_tasks_service.enabled:
         cloud_tasks_service.enqueue_http_task(
@@ -105,6 +108,9 @@ async def start_transcription(
                 "enable_noise_reduction": req.enable_noise_reduction,
                 "enable_loudness_norm": req.enable_loudness_norm,
                 "job_id": job_id,
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+                "source_action": "transcription_pipeline_cloud_task",
             },
             task_name_suffix=f"transcribe-{req.media_id.hex}-{job_id[:12]}",
         )
@@ -127,6 +133,9 @@ async def start_transcription(
             "max_speakers": req.max_speakers,
             "enable_noise_reduction": req.enable_noise_reduction,
             "enable_loudness_norm": req.enable_loudness_norm,
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
+            "source_action": "transcription_pipeline_celery",
         },
         queue="stt_diarize",
     )

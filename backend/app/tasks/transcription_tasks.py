@@ -52,6 +52,10 @@ def run_transcription_pipeline(
     max_speakers: Optional[int] = None,
     enable_noise_reduction: bool = True,
     enable_loudness_norm: bool = True,
+    request_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    source_action: str = "transcription_pipeline",
 ):
     """
     Core asynchronous transcription pipeline implementation shared by Celery
@@ -59,6 +63,8 @@ def run_transcription_pipeline(
     """
     media_id = uuid.UUID(media_id_str)
     transcript_id = uuid.UUID(transcript_id_str)
+    request_id = request_id or transcript_id_str
+    idempotency_key = idempotency_key or f"transcribe:{media_id_str}:{transcript_id_str}"
     start_time = time.time()
 
     local_temp_video = os.path.join(settings.TEMP_UPLOAD_DIR, f"{media_id.hex}_raw.media")
@@ -213,7 +219,7 @@ def run_transcription_pipeline(
                 words=[w.model_dump() for w in seg.words],
                 sequence_order=idx,
                 origin_type="machine_generated",
-                source_action="transcription_pipeline",
+                source_action=source_action,
             )
             db.add(segment_row)
 
@@ -222,7 +228,15 @@ def run_transcription_pipeline(
         transcript.speaker_count = speaker_count
         transcript.confidence_score = overall_avg_conf
         transcript.detected_language = language or "en"
-        transcript.raw_response = {"chunks": raw_responses}
+        transcript.raw_response = {
+            "chunks": raw_responses,
+            "correlation": {
+                "request_id": request_id,
+                "task_id": task_id,
+                "idempotency_key": idempotency_key,
+                "source_action": source_action,
+            },
+        }
         transcript.status = "completed"
         transcript.processing_duration_seconds = round(time.time() - start_time, 2)
         db.commit()
@@ -266,6 +280,9 @@ def preprocess_and_transcribe_pipeline_task(
     max_speakers: Optional[int] = None,
     enable_noise_reduction: bool = True,
     enable_loudness_norm: bool = True,
+    request_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    source_action: str = "transcription_pipeline_celery",
 ):
     """Celery wrapper around the shared transcription pipeline implementation."""
     try:
@@ -276,6 +293,10 @@ def preprocess_and_transcribe_pipeline_task(
             max_speakers=max_speakers,
             enable_noise_reduction=enable_noise_reduction,
             enable_loudness_norm=enable_loudness_norm,
+            request_id=request_id,
+            task_id=self.request.id,
+            idempotency_key=idempotency_key,
+            source_action=source_action,
         )
     except Exception as exc:
         raise self.retry(exc=exc)
