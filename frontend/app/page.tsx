@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore, Project } from '../store/projectStore';
 import { storageService } from '../services/storageService';
 import { apiClient } from '../services/apiClient';
 import { projectService } from '../services/projectService';
+import { authService, type AuthBootstrapResponse } from '../services/authService';
 import Link from 'next/link';
 
 type LanguageOption = {
@@ -51,13 +53,30 @@ export default function ProjectBrowser() {
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('es');
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
+  const [authContext, setAuthContext] = useState<AuthBootstrapResponse | null>(authService.getCachedContext());
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [googleSignInReady, setGoogleSignInReady] = useState(false);
+  const signInButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    async function initializeAuth() {
+      try {
+        const context = await authService.bootstrap();
+        setAuthContext(context);
+        setGoogleSignInReady(!context && await authService.isGoogleSignInAvailable());
+      } catch (err) {
+        console.error('Failed to initialize auth context:', err);
+        setAuthError(err instanceof Error ? err.message : 'Failed to initialize sign-in.');
+        setGoogleSignInReady(await authService.isGoogleSignInAvailable().catch(() => false));
+      }
+    }
+
     async function loadProjects() {
       try {
         if (projectService.hasProjectApiScope()) {
           try {
             await projectService.bootstrapAuthContext();
+            setAuthContext(authService.getCachedContext());
             const remoteProjects = await projectService.fetchAllProjects();
             setProjects(remoteProjects);
             return;
@@ -108,9 +127,41 @@ export default function ProjectBrowser() {
       }
     }
 
+    void initializeAuth();
     loadProjects();
     loadSupportedLanguages();
-  }, [setProjects]);
+  }, [setProjects, authContext?.workspace.id]);
+
+  useEffect(() => {
+    if (!googleSignInReady || authContext || !signInButtonRef.current) {
+      return;
+    }
+
+    authService.renderGoogleSignInButton(signInButtonRef.current).catch((err) => {
+      console.error('Failed to render Google sign-in button:', err);
+      setAuthError(err instanceof Error ? err.message : 'Failed to render Google sign-in.');
+    });
+  }, [authContext, googleSignInReady]);
+
+  const handleSignIn = async () => {
+    try {
+      setAuthError(null);
+      const context = await authService.ensureAuthenticatedContext();
+      setAuthContext(context);
+      const remoteProjects = await projectService.fetchAllProjects();
+      setProjects(remoteProjects);
+    } catch (err) {
+      console.error('Failed to sign in:', err);
+      setAuthError(err instanceof Error ? err.message : 'Sign-in failed.');
+    }
+  };
+
+  const handleSignOut = () => {
+    authService.signOut();
+    setAuthContext(null);
+    setProjects([]);
+    setGoogleSignInReady(true);
+  };
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,10 +207,39 @@ export default function ProjectBrowser() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-slate-800">
+      <header className="flex justify-between items-center mb-8 pb-4 border-b border-slate-800 gap-6">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white">Video Translation Studio</h1>
           <p className="text-slate-400 mt-1">Manage, translate, and dub your video assets</p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {authContext ? (
+            <>
+              <div className="text-right">
+                <p className="text-sm font-semibold text-white">{authContext.user.display_name || authContext.user.email}</p>
+                <p className="text-xs text-slate-400">{authContext.workspace.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <div ref={signInButtonRef} />
+              <button
+                type="button"
+                onClick={handleSignIn}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Sign in with Google
+              </button>
+            </>
+          )}
+          {authError ? <p className="max-w-sm text-right text-xs text-rose-400">{authError}</p> : null}
         </div>
       </header>
 

@@ -2,6 +2,29 @@ import { apiClient } from './apiClient';
 
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
 
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: Record<string, string | number | boolean>,
+          ) => void;
+          prompt: () => void;
+          disableAutoSelect: () => void;
+        };
+      };
+    };
+  }
+}
+
 export interface AuthBootstrapResponse {
   user: {
     id: string;
@@ -38,6 +61,7 @@ export interface AuthBootstrapResponse {
 
 const AUTH_CONTEXT_STORAGE_KEY = 'globesync.auth_context';
 const AUTH_TOKEN_STORAGE_KEY = 'globesync.auth_token';
+const GOOGLE_IDENTITY_SCRIPT_ID = 'google-identity-services-client';
 
 function readWindowStorage(key: string): string | null {
   if (typeof window === 'undefined') {
@@ -55,6 +79,11 @@ function getConfiguredBearerToken(): string | null {
   }
 
   return readWindowStorage(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function getGoogleClientId(): string | null {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim();
+  return clientId && clientId.length > 0 ? clientId : null;
 }
 
 function getConfiguredDebugHeaders(): Record<string, string> {
@@ -81,13 +110,22 @@ function getConfiguredDebugHeaders(): Record<string, string> {
   return debugHeaders;
 }
 
+function hasServerBootstrapInputs(): boolean {
+  return Boolean(
+    getConfiguredBearerToken()
+    || getConfiguredDebugHeaders()['X-Debug-User-Email'],
+  );
+}
+
 function hasBootstrapInputs(): boolean {
-  return Boolean(getConfiguredBearerToken() || getConfiguredDebugHeaders()['X-Debug-User-Email']);
+  return Boolean(hasServerBootstrapInputs() || getGoogleClientId());
 }
 
 export class AuthService {
   private bootstrapPromise: Promise<AuthBootstrapResponse | null> | null = null;
   private bootstrappedContext: AuthBootstrapResponse | null = null;
+  private googleScriptPromise: Promise<void> | null = null;
+  private googleIdentityInitialized = false;
 
   hasBootstrapConfig(): boolean {
     return Boolean(this.getCachedContext() || hasBootstrapInputs());
@@ -136,7 +174,7 @@ export class AuthService {
       return cachedContext;
     }
 
-    if (!hasBootstrapInputs()) {
+    if (!hasServerBootstrapInputs()) {
       return null;
     }
 
@@ -170,13 +208,91 @@ export class AuthService {
   }
 
   async ensureAuthenticatedContext(): Promise<AuthBootstrapResponse> {
-    const context = await this.bootstrap();
-    if (!context) {
-      throw new Error(
-        'Frontend auth bootstrap is not configured. Set NEXT_PUBLIC_AUTH_TOKEN or NEXT_PUBLIC_DEBUG_USER_EMAIL.',
-      );
+    let context = await this.bootstrap();
+    if (context) {
+      return context;
     }
-    return context;
+
+    if (typeof window !== 'undefined' && getGoogleClientId()) {
+      context = await this.signInWithGoogle();
+      return context;
+    }
+
+    throw new Error(
+      'Frontend auth bootstrap is not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID, NEXT_PUBLIC_AUTH_TOKEN, or NEXT_PUBLIC_DEBUG_USER_EMAIL.',
+    );
+  }
+
+  async isGoogleSignInAvailable(): Promise<boolean> {
+    if (!getGoogleClientId() || typeof window === 'undefined') {
+      return false;
+    }
+
+    await this.loadGoogleIdentityScript();
+    return Boolean(window.google?.accounts?.id);
+  }
+
+  async renderGoogleSignInButton(container: HTMLElement): Promise<void> {
+    const clientId = getGoogleClientId();
+    if (!clientId || typeof window === 'undefined') {
+      return;
+    }
+
+    await this.initializeGoogleIdentity();
+    container.innerHTML = '';
+    window.google?.accounts?.id?.renderButton(container, {
+      theme: 'outline',
+      size: 'large',
+      shape: 'pill',
+      text: 'signin_with',
+      width: 260,
+    });
+  }
+
+  async signInWithGoogle(): Promise<AuthBootstrapResponse> {
+    const clientId = getGoogleClientId();
+    if (!clientId || typeof window === 'undefined') {
+      throw new Error('Google sign-in is not configured for this deployment.');
+    }
+
+    await this.initializeGoogleIdentity();
+
+    return new Promise<AuthBootstrapResponse>((resolve, reject) => {
+      const callback = async (response: { credential?: string }) => {
+        if (!response.credential) {
+          reject(new Error('Google sign-in did not return an identity token.'));
+          return;
+        }
+
+        try {
+          this.setBearerToken(response.credential);
+          this.clearCachedContext();
+          const context = await this.bootstrap();
+          if (!context) {
+            throw new Error('Authenticated bootstrap returned no user context.');
+          }
+          resolve(context);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      window.google?.accounts?.id?.initialize({
+        client_id: clientId,
+        callback,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+      window.google?.accounts?.id?.prompt();
+    });
+  }
+
+  signOut() {
+    this.setBearerToken(null);
+    this.clearCachedContext();
+    if (typeof window !== 'undefined') {
+      window.google?.accounts?.id?.disableAutoSelect?.();
+    }
   }
 
   clearCachedContext() {
@@ -184,6 +300,66 @@ export class AuthService {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY);
     }
+  }
+
+  private async loadGoogleIdentityScript(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (window.google?.accounts?.id) {
+      return;
+    }
+
+    if (this.googleScriptPromise) {
+      return this.googleScriptPromise;
+    }
+
+    this.googleScriptPromise = new Promise<void>((resolve, reject) => {
+      const existingScript = document.getElementById(GOOGLE_IDENTITY_SCRIPT_ID) as HTMLScriptElement | null;
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(), { once: true });
+        existingScript.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services.')), { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.id = GOOGLE_IDENTITY_SCRIPT_ID;
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Identity Services.'));
+      document.head.appendChild(script);
+    });
+
+    return this.googleScriptPromise;
+  }
+
+  private async initializeGoogleIdentity(): Promise<void> {
+    const clientId = getGoogleClientId();
+    if (!clientId || typeof window === 'undefined') {
+      return;
+    }
+
+    await this.loadGoogleIdentityScript();
+    if (!window.google?.accounts?.id || this.googleIdentityInitialized) {
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: ({ credential }) => {
+        if (credential) {
+          this.setBearerToken(credential);
+          this.clearCachedContext();
+          void this.bootstrap();
+        }
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    this.googleIdentityInitialized = true;
   }
 
   private configureApiClient() {
