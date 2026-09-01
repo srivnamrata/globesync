@@ -1,4 +1,4 @@
-
+while 
 import { ApiError, apiClient } from './apiClient';
 import { authService } from './authService';
 import type { Project } from '../store/projectStore';
@@ -291,13 +291,21 @@ export class ProjectService {
     return mapDraftPayloadToLocalDraft(project.id, {}, project);
   }
 
+  private async ensureApiRequestAuth(): Promise<void> {
+    if (authService.hasBootstrapConfig()) {
+      await authService.ensureAuthenticatedContext();
+    }
+  }
+
   async uploadMedia(file: File): Promise<UploadedMedia> {
+    await this.ensureApiRequestAuth();
     const formData = new FormData();
     formData.append('file', file);
     return apiClient.post<UploadedMedia>('/media/uploads/direct', formData);
   }
 
   async startTranscription(mediaId: string, language: string): Promise<{ transcript_id: string }> {
+    await this.ensureApiRequestAuth();
     return apiClient.post('/transcription/start', {
       media_id: mediaId,
       language,
@@ -408,6 +416,7 @@ export class ProjectService {
   }
 
   async getTranscript(mediaId: string): Promise<TranscriptSegment[]> {
+    await this.ensureApiRequestAuth();
     const response = await apiClient.get<TranscriptStatus>(`/transcription/media/${mediaId}`);
     return response.segments.map((segment) => ({
       id: segment.id ?? '',
@@ -422,6 +431,7 @@ export class ProjectService {
   }
 
   async triggerProjectTranslation(transcriptId: string, sourceLanguage: string, targetLanguage: string): Promise<TranslationJobStatus> {
+    await this.ensureApiRequestAuth();
     return apiClient.post<TranslationJobStatus>('/translation/translate-project', {
       transcript_id: transcriptId,
       source_language: sourceLanguage,
@@ -430,6 +440,7 @@ export class ProjectService {
   }
 
   async fetchProjectTranslations(transcriptId: string, lang: string): Promise<ProjectTranslationResponse> {
+    await this.ensureApiRequestAuth();
     return apiClient.get<ProjectTranslationResponse>(`/translation/${transcriptId}?target_language=${lang}`);
   }
 
@@ -439,6 +450,7 @@ export class ProjectService {
   }
 
   async updateTranslationSegment(translationId: string, text: string): Promise<TranslatedSegment> {
+    await this.ensureApiRequestAuth();
     const response = await apiClient.put<TranslationItemResponse>(`/translation/segment/${translationId}`, {
       translated_text: text,
     });
@@ -446,6 +458,7 @@ export class ProjectService {
   }
 
   async triggerTtsSynthesis(transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {
+    await this.ensureApiRequestAuth();
     const normalizedProjectId = normalizeOptionalUuid(projectId);
     return apiClient.post<{ job_id: string }>('/tts/synthesize-project', {
       transcript_id: transcriptId,
@@ -455,6 +468,7 @@ export class ProjectService {
   }
 
   async triggerLipSync(mediaId: string, transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {
+    await this.ensureApiRequestAuth();
     const normalizedProjectId = normalizeOptionalUuid(projectId);
     return apiClient.post<{ job_id: string }>('/lipsync/render-project', {
       media_file_id: mediaId,
@@ -467,6 +481,7 @@ export class ProjectService {
   }
 
   async getExportStatus(jobId: string): Promise<any> {
+    await this.ensureApiRequestAuth();
     return apiClient.get<any>(`/lipsync/job/${jobId}`);
   }
 }

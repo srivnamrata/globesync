@@ -106,6 +106,9 @@ gcloud run services update "$API_SERVICE" \
 WEB_BUILD_ARGS=(
   "--build-arg=NEXT_PUBLIC_API_URL=${API_URL}"
 )
+if [[ -n "${NEXT_PUBLIC_AUTH_TOKEN:-}" ]]; then
+  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_AUTH_TOKEN=${NEXT_PUBLIC_AUTH_TOKEN}")
+fi
 if [[ -n "${NEXT_PUBLIC_DEBUG_USER_EMAIL:-}" ]]; then
   WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_DEBUG_USER_EMAIL=${NEXT_PUBLIC_DEBUG_USER_EMAIL}")
 fi
