@@ -1,5 +1,6 @@
 
 import { ApiError, apiClient } from './apiClient';
+import { authService } from './authService';
 import type { Project } from '../store/projectStore';
 import type { TranscriptSegment } from '../store/mediaStore';
 import type { TranslatedSegment } from '../store/translationStore';
@@ -247,16 +248,26 @@ function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
 
 export class ProjectService {
   hasProjectApiScope(): boolean {
-    return Boolean(this.getProjectApiScope());
+    return Boolean(this.getProjectApiScope()) || authService.hasBootstrapConfig();
   }
 
   async bootstrapAuthContext(): Promise<ProjectApiScope> {
-    return this.requireProjectApiScope();
+    const existingScope = this.getProjectApiScope();
+    if (existingScope) {
+      return existingScope;
+    }
+
+    const context = await authService.ensureAuthenticatedContext();
+    return {
+      workspaceId: context.workspace.id,
+      actorUserId: context.user.id,
+    };
   }
 
   private getProjectApiScope(): ProjectApiScope | null {
-    const workspaceId = process.env.NEXT_PUBLIC_WORKSPACE_ID?.trim();
-    const actorUserId = process.env.NEXT_PUBLIC_ACTOR_USER_ID?.trim();
+    const cachedContext = authService.getCachedContext();
+    const workspaceId = process.env.NEXT_PUBLIC_WORKSPACE_ID?.trim() || cachedContext?.workspace.id;
+    const actorUserId = process.env.NEXT_PUBLIC_ACTOR_USER_ID?.trim() || cachedContext?.user.id;
 
     if (!workspaceId || !actorUserId) {
       return null;
@@ -271,7 +282,7 @@ export class ProjectService {
   private requireProjectApiScope(): ProjectApiScope {
     const scope = this.getProjectApiScope();
     if (!scope) {
-      throw new Error('Project API scope is not configured. Set NEXT_PUBLIC_WORKSPACE_ID and NEXT_PUBLIC_ACTOR_USER_ID.');
+      throw new Error('Project API scope is not configured. Set NEXT_PUBLIC_WORKSPACE_ID and NEXT_PUBLIC_ACTOR_USER_ID, or provide frontend auth bootstrap inputs so the scope can be derived automatically.');
     }
     return scope;
   }
