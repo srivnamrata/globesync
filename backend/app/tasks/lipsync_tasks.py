@@ -116,7 +116,13 @@ def run_lipsync_project_pipeline(
 
         # 1. Download source video
         publish_lipsync_event(job_id_str, "in_progress", 10, "Downloading high-resolution source video...")
-        asyncio.run(storage_service.download_file(media_file.storage_path, local_source_video))
+        asyncio.run(
+            storage_service.download_file(
+                media_file.storage_path,
+                local_source_video,
+                bucket_name=media_file.storage_bucket,
+            )
+        )
 
         # 2. Fetch segment translations and retimed audio
         segments = (
@@ -182,7 +188,13 @@ def run_lipsync_project_pipeline(
 
             local_audio_seg = os.path.join(temp_dir, f"audio_{seg.id.hex}.wav")
             if gen_audio:
-                asyncio.run(storage_service.download_file(gen_audio.storage_path, local_audio_seg))
+                asyncio.run(
+                    storage_service.download_file(
+                        gen_audio.storage_path,
+                        local_audio_seg,
+                        bucket_name=gen_audio.storage_bucket,
+                    )
+                )
             else:
                 # Fallback: extract original audio slice
                 from app.services.audio_extraction_service import audio_extractor
@@ -335,7 +347,19 @@ def run_lipsync_project_pipeline(
 
     except Exception as exc:
         db.rollback()
-        logger.error(f"Error in lip-sync pipeline: {exc}", exc_info=True)
+        logger.error(
+            "Error in lip-sync pipeline for job=%s media_file=%s transcript=%s bucket=%s storage_path=%s request_id=%s task_id=%s idempotency_key=%s: %s",
+            job_id_str,
+            media_file_id_str,
+            transcript_id_str,
+            getattr(media_file, "storage_bucket", None) if 'media_file' in locals() else None,
+            getattr(media_file, "storage_path", None) if 'media_file' in locals() else None,
+            request_id,
+            task_id,
+            idempotency_key,
+            exc,
+            exc_info=True,
+        )
         if 'job' in locals() and job:
             job.status = "failed"
             job.error_message = str(exc)

@@ -355,15 +355,33 @@ class StorageService:
 
         return await asyncio.to_thread(_upload)
 
-    async def download_file(self, key: str, target_local_path: str) -> None:
+    async def download_file(
+        self,
+        key: str,
+        target_local_path: str,
+        bucket_name: Optional[str] = None,
+    ) -> None:
         """Downloads an object from GCS to a local file path."""
 
         def _download() -> None:
             os.makedirs(os.path.dirname(target_local_path) or ".", exist_ok=True)
-            blob = self._bucket().blob(key)
+            blob = self._bucket(bucket_name).blob(key)
             blob.download_to_filename(target_local_path)
 
-        await asyncio.to_thread(_download)
+        try:
+            await asyncio.to_thread(_download)
+        except Exception as e:
+            raise MediaAppException(
+                status_code=404 if "No such object" in str(e) else 500,
+                error_code=ErrorCode.STORAGE_UPLOAD_FAILED,
+                message="Failed to download file from Google Cloud Storage.",
+                details={
+                    "error": str(e),
+                    "key": key,
+                    "bucket": bucket_name or self.bucket_name,
+                    "target_local_path": target_local_path,
+                },
+            ) from e
 
     def generate_presigned_download_url(
         self,
