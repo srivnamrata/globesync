@@ -99,71 +99,71 @@ const languagePillRow = ['Hindi', 'Spanish', 'French', 'Arabic', 'Japanese', 'Po
 
 export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      {/* Background glow */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_-10%,rgba(99,102,241,0.25),transparent),radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(14,165,233,0.12),transparent)]" />
+    <div className="min-h-screen bg-white text-slate-900">
+      {/* Background soft gradient */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_-10%,rgba(99,102,241,0.1),transparent),radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(14,165,233,0.05),transparent)]" />
 
       <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-6 lg:px-10">
 
-        {/* Nav — wordmark only; sign-in lives in the hero CTA so the Google SDK mounts once */}
+        {/* Nav */}
         <nav className="flex items-center justify-between py-6">
-          <span className="text-lg font-bold tracking-tight text-white">Globe<span className="text-indigo-400">Sync</span></span>
-          <span className="hidden text-sm text-slate-500 lg:inline">Translate · Dub · Export</span>
+          <span className="text-lg font-bold tracking-tight text-slate-900">Globe<span className="text-indigo-600">Sync</span></span>
+          <span className="hidden text-sm font-medium text-slate-500 lg:inline">Translate · Dub · Export</span>
         </nav>
 
         {/* Hero */}
         <main className="flex flex-1 flex-col items-center justify-center pb-16 pt-12 text-center">
 
           {/* Eyebrow */}
-          <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-4 py-1.5 text-sm font-medium text-indigo-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+          <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-600/20 bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
             20+ languages · AI dubbing · Segment-level review
           </span>
 
           {/* Headline */}
-          <h1 className="mx-auto max-w-4xl text-5xl font-bold leading-tight tracking-tight text-white sm:text-6xl lg:text-7xl">
+          <h1 className="mx-auto max-w-4xl text-5xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
             If language is the barrier,<br />
-            <span className="text-indigo-400">GlobeSync</span> breaks it.
+            <span className="text-indigo-600">GlobeSync</span> breaks it.
           </h1>
 
           {/* Sub-headline */}
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-300">
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-600">
             Translate your videos into 20+ languages in a few clicks — with AI dubbing, editable transcripts, and full control at every step. No studios. No back-and-forth. Just reach.
           </p>
 
-          {/* Primary CTA — single mount point for the Google SDK button */}
+          {/* Primary CTA */}
           <div className="mt-10 flex flex-col items-center gap-3">
-            <div className="flex min-h-[52px] items-center">{signInSlot}</div>
+            <div className="flex min-h-[52px] items-center rounded-xl bg-white p-2 shadow-xl shadow-indigo-500/10 ring-1 ring-slate-900/5">{signInSlot}</div>
             {authError ? (
-              <p className="max-w-sm rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">{authError}</p>
+              <p className="max-w-sm rounded-2xl border border-rose-500/30 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{authError}</p>
             ) : (
-              <p className="text-xs text-slate-500">Free to start · No credit card required · Your workspace is ready in seconds</p>
+              <p className="text-xs font-medium text-slate-500">Free to start · No credit card required · Your workspace is ready in seconds</p>
             )}
           </div>
 
           {/* Language pills */}
           <div className="mt-12 flex flex-wrap justify-center gap-2">
             {languagePillRow.map((lang) => (
-              <span key={lang} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+              <span key={lang} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
                 {lang}
               </span>
             ))}
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">+ more</span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500 shadow-sm">+ more</span>
           </div>
 
           {/* Feature cards */}
           <div className="mt-16 grid w-full gap-4 sm:grid-cols-3">
             {productHighlights.map((item) => (
-              <div key={item.heading} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 text-left backdrop-blur">
+              <div key={item.heading} className="rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:shadow-md">
                 <div className="mb-3 text-2xl">{item.icon}</div>
-                <h3 className="text-base font-semibold text-white">{item.heading}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-400">{item.body}</p>
+                <h3 className="text-base font-bold text-slate-900">{item.heading}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.body}</p>
               </div>
             ))}
           </div>
 
           {/* Social proof strip */}
-          <p className="mt-16 text-xs uppercase tracking-[0.2em] text-slate-600">
+          <p className="mt-16 text-xs uppercase tracking-[0.2em] font-bold text-slate-400">
             Built for creators, educators, and global teams who need real control — not a black box
           </p>
 
