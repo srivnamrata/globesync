@@ -227,17 +227,16 @@ export default function ProjectBrowser() {
                 Sign out
               </button>
             </>
+          ) : googleSignInReady ? (
+            <div ref={signInButtonRef} />
           ) : (
-            <>
-              <div ref={signInButtonRef} />
-              <button
-                type="button"
-                onClick={handleSignIn}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-              >
-                Sign in with Google
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={handleSignIn}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Sign in with Google
+            </button>
           )}
           {authError ? <p className="max-w-sm text-right text-xs text-rose-400">{authError}</p> : null}
         </div>
