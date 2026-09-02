@@ -509,6 +509,38 @@ export class ProjectService {
     await this.ensureApiRequestAuth();
     return apiClient.get<any>(`/lipsync/job/${jobId}`);
   }
+
+  async retranslateSegment(params: {
+    segmentId: string;
+    sourceText: string;
+    originalDurationMs: number;
+    sourceLanguage: string;
+    targetLanguage: string;
+    speakerTag?: string;
+    previousContext?: string;
+    nextContext?: string;
+  }): Promise<TranslatedSegment> {
+    await this.ensureApiRequestAuth();
+    const response = await apiClient.post<TranslationItemResponse>('/translation/translate-segment', {
+      segment_id: params.segmentId,
+      source_text: params.sourceText,
+      original_duration_ms: params.originalDurationMs,
+      source_language: params.sourceLanguage,
+      target_language: params.targetLanguage,
+      speaker_tag: params.speakerTag ?? 'Speaker 1',
+      previous_context: params.previousContext ?? null,
+      next_context: params.nextContext ?? null,
+    });
+    return mapTranslationItem(response);
+  }
+
+  async synthesizeSegment(translationId: string): Promise<{ audioUrl: string }> {
+    await this.ensureApiRequestAuth();
+    const response = await apiClient.post<{ audio_url: string }>('/tts/synthesize-segment', {
+      translation_id: translationId,
+    });
+    return { audioUrl: response.audio_url };
+  }
 }
 
 export const projectService = new ProjectService();

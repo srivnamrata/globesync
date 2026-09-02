@@ -37,8 +37,8 @@ GlobeSync should compete on control, reliability, and operational clarity rather
 ## Current execution status
 
 * Overall status: In progress
-* Current focus: Phase C — Core editor interaction upgrades
-* Current priority: P1 core usability (Playback controls, auto-scroll, dirty states, keyboard shortcuts)
+* Current focus: Phase D — Translation quality and review workflow
+* Current priority: P2 quality and recovery (risk indicators, segment retranslate, regenerate audio)
 * Execution rule: Complete work in phase order unless a blocker requires a prerequisite fix
 * Documentation rule: Update this file after each meaningful implementation, validation, or scope decision so progress stays traceable
 

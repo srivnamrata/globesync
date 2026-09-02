@@ -66,6 +66,10 @@ export default function TranslationEditor() {
   const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
   const [isReloadingProject, setIsReloadingProject] = useState(false);
   const [dirtySegments, setDirtySegments] = useState<Set<string>>(new Set());
+  const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null);
+  const [segmentBusy, setSegmentBusy] = useState<Record<string, 'retranslating' | 'synthesizing'>>({});
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [originalTranslations, setOriginalTranslations] = useState<Record<string, string>>({});
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -244,6 +248,10 @@ export default function TranslationEditor() {
       // than replacing it with an empty array.
       if (resolvedTranslations.length > 0) {
         setTranslations(resolvedTranslations);
+        // Snapshot original translations for "Reset to original" action.
+        const snapshot: Record<string, string> = {};
+        resolvedTranslations.forEach((t) => { snapshot[t.transcriptSegmentId] = t.translatedText; });
+        setOriginalTranslations(snapshot);
       }
     } catch (err) {
       console.error('Failed to load project draft in editor:', err);
@@ -353,6 +361,7 @@ export default function TranslationEditor() {
 
     await storageService.saveDraft(nextDraft);
     setDirtySegments(new Set());
+    setLastSavedAt(new Date());
   }, [currentProject, segments, translations, hasRemoteDraftConflict, remoteDraftVersion, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
@@ -442,6 +451,56 @@ export default function TranslationEditor() {
     setBaseProjectUpdatedAt(hydratedProject.updatedAt);
     return hydratedProject;
   }, [currentProject, hasRemoteDraftConflict, setCurrentProject]);
+
+  const handleRetranslateSegment = useCallback(async (segId: string) => {
+    if (!currentProject) return;
+    const seg = segments.find((s) => s.id === segId);
+    if (!seg) return;
+    setSegmentBusy((prev) => ({ ...prev, [segId]: 'retranslating' }));
+    setActiveActionMenu(null);
+    try {
+      const idx = segments.indexOf(seg);
+      const result = await projectService.retranslateSegment({
+        segmentId: seg.id,
+        sourceText: seg.text,
+        originalDurationMs: Math.round(seg.durationSeconds * 1000),
+        sourceLanguage: currentProject.sourceLanguage,
+        targetLanguage: currentProject.targetLanguage,
+        speakerTag: seg.speakerTag,
+        previousContext: idx > 0 ? segments[idx - 1].text : undefined,
+        nextContext: idx < segments.length - 1 ? segments[idx + 1].text : undefined,
+      });
+      updateTranslationText(segId, result.translatedText);
+      setDirtySegments((prev) => new Set(prev).add(segId));
+    } catch (err) {
+      console.error('Retranslate failed:', err);
+    } finally {
+      setSegmentBusy((prev) => { const n = { ...prev }; delete n[segId]; return n; });
+    }
+  }, [currentProject, segments, updateTranslationText]);
+
+  const handleSynthesizeSegment = useCallback(async (segId: string) => {
+    const trans = translations[segId];
+    if (!trans?.id) return;
+    setSegmentBusy((prev) => ({ ...prev, [segId]: 'synthesizing' }));
+    setActiveActionMenu(null);
+    try {
+      await projectService.synthesizeSegment(trans.id);
+    } catch (err) {
+      console.error('Synthesize segment failed:', err);
+    } finally {
+      setSegmentBusy((prev) => { const n = { ...prev }; delete n[segId]; return n; });
+    }
+  }, [translations]);
+
+  const handleResetTranslation = useCallback((segId: string) => {
+    const original = originalTranslations[segId];
+    if (original !== undefined) {
+      updateTranslationText(segId, original);
+      setDirtySegments((prev) => { const n = new Set(prev); n.delete(segId); return n; });
+    }
+    setActiveActionMenu(null);
+  }, [originalTranslations, updateTranslationText]);
 
   const handleManualSave = useCallback(async () => {
     await persistDraft();
@@ -802,17 +861,24 @@ export default function TranslationEditor() {
             Redo
           </button>
           <div className="w-px h-6 bg-slate-800 mx-2" />
-          <button
-            onClick={handleManualSave}
-            className={`px-3 py-1.5 rounded transition text-sm font-semibold border ${
-              dirtySegments.size > 0 
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20' 
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'
-            }`}
-            title="Save changes (Ctrl+S)"
-          >
-            {dirtySegments.size > 0 ? `Save (${dirtySegments.size})` : 'Saved'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleManualSave}
+              className={`px-3 py-1.5 rounded transition text-sm font-semibold border ${
+                dirtySegments.size > 0
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'
+              }`}
+              title="Save changes (Ctrl+S)"
+            >
+              {dirtySegments.size > 0 ? `Save (${dirtySegments.size})` : 'Saved'}
+            </button>
+            {lastSavedAt && dirtySegments.size === 0 && (
+              <span className="text-xs text-slate-600" title="Last saved">
+                · {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
           <div className="w-px h-6 bg-slate-800 mx-2" />
           <button
             onClick={handleBuildDubOnly}
@@ -884,6 +950,15 @@ export default function TranslationEditor() {
             ) : (
               segments.map((seg) => {
                 const trans = translations[seg.id];
+                const busy = segmentBusy[seg.id];
+
+                // Risk indicators
+                const isMissingTranslation = !trans;
+                const isDurationOverflow = trans && trans.durationRatio > 1.15;
+                const isDurationUnderflow = trans && trans.durationRatio < 0.75;
+                const isLowConfidence = trans && trans.qualityScore < 0.5;
+                const hasRisk = isMissingTranslation || isDurationOverflow || isDurationUnderflow || isLowConfidence;
+
                 return (
                   <div
                     key={seg.id}
@@ -894,9 +969,12 @@ export default function TranslationEditor() {
                         ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
                         : dirtySegments.has(seg.id)
                         ? 'border-amber-500/50 bg-amber-950/20'
+                        : hasRisk
+                        ? 'border-red-800/50 bg-red-950/10'
                         : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
                     }`}
                   >
+                    {/* Left column: source transcript */}
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
@@ -914,6 +992,7 @@ export default function TranslationEditor() {
                             ▶ Play
                           </button>
                           <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
+                          <span className="text-[10px] text-slate-600">{seg.durationSeconds.toFixed(1)}s</span>
                         </div>
                         <button
                           type="button"
@@ -927,28 +1006,89 @@ export default function TranslationEditor() {
                         </button>
                       </div>
                       <textarea
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-slate-700 resize-none h-16"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
                         value={seg.text}
                         onChange={(e) => handleTextChange(seg.id, e.target.value)}
                       />
                     </div>
 
+                    {/* Right column: translation + risk + actions */}
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-indigo-400 uppercase">Translation ({currentProject.targetLanguage})</span>
-                        {trans && (
-                          <span className={`text-xs px-2 py-0.5 rounded font-bold ${
-                            trans.durationRatio > 1.1 ? 'bg-red-950 text-red-400' : 'bg-green-950 text-green-400'
-                          }`}>
-                            Speed: {trans.speedAdjustmentFactor}x
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-indigo-400 uppercase">Translation ({currentProject.targetLanguage})</span>
+                          {/* Risk badges */}
+                          {isMissingTranslation && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold">Missing</span>
+                          )}
+                          {isDurationOverflow && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold" title="Translation is too long — will be sped up">
+                              Too long · {trans!.durationRatio.toFixed(2)}x
+                            </span>
+                          )}
+                          {isDurationUnderflow && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-semibold" title="Translation is too short — may have silence gaps">
+                              Too short · {trans!.durationRatio.toFixed(2)}x
+                            </span>
+                          )}
+                          {isLowConfidence && !isMissingTranslation && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-semibold" title="Low translation confidence score">
+                              Low confidence
+                            </span>
+                          )}
+                          {trans && !hasRisk && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-950 text-green-400 font-semibold">OK</span>
+                          )}
+                        </div>
+
+                        {/* ⋯ Action menu */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setActiveActionMenu(activeActionMenu === seg.id ? null : seg.id)}
+                            disabled={!!busy}
+                            className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded transition text-sm disabled:opacity-40"
+                            title="Segment actions"
+                          >
+                            {busy === 'retranslating' ? '⟳ Translating…' : busy === 'synthesizing' ? '⟳ Synthesizing…' : '⋯'}
+                          </button>
+                          {activeActionMenu === seg.id && (
+                            <div className="absolute right-0 top-6 z-20 w-44 rounded-xl border border-slate-700 bg-slate-900 shadow-xl py-1 text-sm">
+                              <button
+                                type="button"
+                                onClick={() => void handleRetranslateSegment(seg.id)}
+                                className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition"
+                              >
+                                ↻ Retranslate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleSynthesizeSegment(seg.id)}
+                                disabled={!trans?.id}
+                                className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition disabled:opacity-40"
+                              >
+                                🔊 Regenerate audio
+                              </button>
+                              <div className="my-1 border-t border-slate-800" />
+                              <button
+                                type="button"
+                                onClick={() => handleResetTranslation(seg.id)}
+                                disabled={!originalTranslations[seg.id]}
+                                className="w-full text-left px-3 py-2 text-red-400 hover:bg-slate-800 transition disabled:opacity-40"
+                              >
+                                ✕ Reset to original
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <textarea
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-indigo-100 focus:outline-none focus:border-slate-700 resize-none h-16"
+                        className={`w-full bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
+                          dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
+                        }`}
                         value={trans?.translatedText || ''}
                         onChange={(e) => handleTranslationChange(seg.id, e.target.value)}
-                        placeholder="Translating segment text..."
+                        placeholder={isMissingTranslation ? 'No translation yet — use ⋯ to retranslate' : 'Edit translation…'}
                       />
                     </div>
                   </div>
