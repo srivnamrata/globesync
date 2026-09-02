@@ -76,6 +76,7 @@ class ProjectSummaryResponse(BaseModel):
     transcript_id: Optional[UUID] = None
     latest_draft_version: int = Field(0)
     last_rendered_video_gcs_path: Optional[str] = None
+    last_rendered_video_url: Optional[str] = None
     last_opened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -102,6 +103,7 @@ class ProjectDetailResponse(BaseModel):
     current_lipsync_job_id: Optional[UUID] = None
     current_export_job_id: Optional[UUID] = None
     last_rendered_video_gcs_path: Optional[str] = None
+    last_rendered_video_url: Optional[str] = None
     latest_draft_version: int = Field(0)
     archived_at: Optional[datetime] = None
     last_opened_at: Optional[datetime] = None

@@ -92,6 +92,7 @@ async def render_lipsync_project(
     )
 
     effective_project_id = media.project_id or transcript.project_id
+    project = None
     if req.project_id is not None:
         project = await get_scoped_project(
             project_id=req.project_id,
@@ -101,6 +102,14 @@ async def render_lipsync_project(
             not_found_detail="Project not found.",
         )
         effective_project_id = project.id
+    elif effective_project_id is not None:
+        project = await get_scoped_project(
+            project_id=effective_project_id,
+            db=db,
+            context=context,
+            require_write=True,
+            not_found_detail="Project not found.",
+        )
 
     request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     idempotency_key = (
@@ -123,6 +132,11 @@ async def render_lipsync_project(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+
+    if project is not None:
+        project.current_lipsync_job_id = job.id
+        project.status = "processing"
+        await db.commit()
 
     if cloud_tasks_service.enabled:
         job.task_id = cloud_tasks_service.enqueue_http_task(

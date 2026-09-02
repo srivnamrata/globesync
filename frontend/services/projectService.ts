@@ -84,6 +84,8 @@ interface ProjectApiShape {
   media_file_id: string | null;
   transcript_id: string | null;
   latest_draft_version: number;
+  last_rendered_video_gcs_path: string | null;
+  last_rendered_video_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,7 +95,6 @@ interface ProjectDetailApiShape extends ProjectApiShape {
   slug: string | null;
   current_lipsync_job_id: string | null;
   current_export_job_id: string | null;
-  last_rendered_video_gcs_path: string | null;
   archived_at: string | null;
 }
 
@@ -192,6 +193,9 @@ function mapProjectApiShape(project: ProjectApiShape | ProjectDetailApiShape): P
     updatedAt: project.updated_at,
     transcriptId: project.transcript_id || undefined,
     mediaId: project.media_file_id || undefined,
+    currentLipsyncJobId: 'current_lipsync_job_id' in project ? project.current_lipsync_job_id || undefined : undefined,
+    lastRenderedVideoPath: project.last_rendered_video_gcs_path || undefined,
+    lastRenderedVideoUrl: project.last_rendered_video_url || undefined,
   };
 }
 

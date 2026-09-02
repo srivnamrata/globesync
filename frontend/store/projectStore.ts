@@ -10,6 +10,9 @@ export interface Project {
   updatedAt: string;
   transcriptId?: string;
   mediaId?: string;
+  currentLipsyncJobId?: string;
+  lastRenderedVideoPath?: string;
+  lastRenderedVideoUrl?: string;
   originalVideoUrl?: string;
   dubbedAudioUrl?: string;
 }

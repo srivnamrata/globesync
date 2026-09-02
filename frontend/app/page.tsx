@@ -298,10 +298,10 @@ export default function ProjectBrowser() {
 
         {/* Project Browser list */}
         <div className="md:col-span-2 space-y-4">
-          <h2 className="text-xl font-bold text-white mb-2">Your Draft Projects</h2>
+          <h2 className="text-xl font-bold text-white mb-2">Your Projects</h2>
           {projects.length === 0 ? (
             <div className="border border-dashed border-slate-800 rounded-xl p-12 text-center text-slate-500">
-              No active drafts found. Create a project on the left panel to begin.
+              No projects found yet. Create a project on the left panel to begin.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

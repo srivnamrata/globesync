@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ChangeEvent, useCallback, useEffect, useState } from 'react';
+import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useProjectStore, type Project } from '../../../store/projectStore';
 import { useMediaStore, type TranscriptSegment } from '../../../store/mediaStore';
@@ -41,6 +41,9 @@ const buildProjectFromDraft = (draft: HeygenXFile, project?: Project | null): Pr
   updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
   transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
   mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
+  currentLipsyncJobId: project?.currentLipsyncJobId,
+  lastRenderedVideoPath: project?.lastRenderedVideoPath,
+  lastRenderedVideoUrl: project?.lastRenderedVideoUrl,
   originalVideoUrl: project?.originalVideoUrl ?? draft.mediaReferences.videoFilename,
   dubbedAudioUrl: project?.dubbedAudioUrl,
 });
@@ -61,6 +64,7 @@ export default function TranslationEditor() {
   const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
   const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
   const [isReloadingProject, setIsReloadingProject] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const timeline = useTimeline();
   const history = useHistory();
@@ -193,6 +197,7 @@ export default function TranslationEditor() {
       const hydratedProject = buildProjectFromDraft(draft, backendProject);
 
       setCurrentProject(hydratedProject);
+      setRenderedVideoUrl(backendProject?.lastRenderedVideoUrl ?? hydratedProject.lastRenderedVideoUrl ?? null);
       setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
       setHasRemoteDraftConflict(false);
       setUploadMessage(null);
@@ -235,6 +240,28 @@ export default function TranslationEditor() {
   useEffect(() => {
     void loadProjectData();
   }, [loadProjectData]);
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      return;
+    }
+
+    const syncTime = () => timeline.setCurrentTimeSeconds(videoElement.currentTime);
+    const syncPlaying = () => timeline.setPlaying(!videoElement.paused);
+
+    videoElement.addEventListener('timeupdate', syncTime);
+    videoElement.addEventListener('play', syncPlaying);
+    videoElement.addEventListener('pause', syncPlaying);
+    videoElement.addEventListener('loadedmetadata', syncTime);
+
+    return () => {
+      videoElement.removeEventListener('timeupdate', syncTime);
+      videoElement.removeEventListener('play', syncPlaying);
+      videoElement.removeEventListener('pause', syncPlaying);
+      videoElement.removeEventListener('loadedmetadata', syncTime);
+    };
+  }, [renderedVideoUrl, timeline]);
 
   const persistDraft = async ({
     projectOverride,
@@ -298,7 +325,7 @@ export default function TranslationEditor() {
         const conflictDetail = getProjectDraftConflictDetail(error);
         if (conflictDetail) {
           setHasRemoteDraftConflict(true);
-          setUploadMessage('A newer backend draft exists for this project. Reload the latest backend state before saving more changes. Your browser draft is still cached locally for recovery.');
+          setUploadMessage('A newer backend draft exists for this project. Backend autosave is paused until you reload the latest shared draft. Your browser edits are still cached locally for recovery.');
           await storageService.saveDraft(nextDraft);
           console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
           return;
@@ -310,6 +337,23 @@ export default function TranslationEditor() {
 
     await storageService.saveDraft(nextDraft);
   };
+
+  const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
+  const totalDurationSeconds = useMemo(
+    () => segments.reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
+    [segments],
+  );
+
+  const seekToTime = useCallback((seconds: number, segmentId?: string) => {
+    timeline.setCurrentTimeSeconds(seconds);
+    if (segmentId) {
+      timeline.setSelectedSegmentId(segmentId);
+    }
+
+    if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+    }
+  }, [timeline]);
 
   const applyProjectPatch = useCallback(async ({
     name,
@@ -489,14 +533,33 @@ export default function TranslationEditor() {
 
       setUploadMessage('Dub and lip-sync queued. Building dubbed audio…');
       const completedJob = await pollForLipSyncCompletion(job.job_id);
+      const skippedSegments = Array.isArray(completedJob?.segments_metadata)
+        ? completedJob.segments_metadata.filter((segment: { render_status?: string }) => segment.render_status && segment.render_status !== 'completed')
+        : [];
 
       if (completedJob?.output_video_url) {
         setRenderedVideoUrl(completedJob.output_video_url);
-        await applyProjectPatch({ status: 'completed' });
-        setUploadMessage('Dub & Lip-Sync complete. Preview is ready.');
+        const refreshedProject = await projectService.getProject(projectForBuild.id).catch(() => null);
+        if (refreshedProject) {
+          setCurrentProject({
+            ...refreshedProject,
+            originalVideoUrl: projectForBuild.originalVideoUrl,
+            dubbedAudioUrl: projectForBuild.dubbedAudioUrl,
+          });
+        } else {
+          await applyProjectPatch({ status: 'completed' });
+        }
+
+        if (skippedSegments.length === 0) {
+          setUploadMessage('Dub & Lip-Sync complete. Preview is ready, and you can download the finished video below.');
+        } else if (skippedSegments.length === segments.length) {
+          setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video below.');
+        } else {
+          setUploadMessage(`Dub completed. Lip-sync was skipped for ${skippedSegments.length} segment${skippedSegments.length === 1 ? '' : 's'}, so parts of the video may keep the original facial motion.`);
+        }
       } else {
         await applyProjectPatch({ status: 'completed' });
-        setUploadMessage('Dub & Lip-Sync completed successfully.');
+        setUploadMessage('Dub & Lip-Sync completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
       }
     } catch (error) {
       setUploadMessage(error instanceof Error ? error.message : 'Unable to build dub and lip-sync output.');
@@ -666,6 +729,9 @@ export default function TranslationEditor() {
 
         {/* History & Mux Export Triggers */}
         <div className="flex items-center gap-3">
+          {!history.canUndo && !history.canRedo && (
+            <span className="hidden text-xs text-slate-500 lg:inline">Undo and redo become available after transcript or translation edits.</span>
+          )}
           <button
             onClick={history.undo}
             disabled={!history.canUndo}
@@ -698,7 +764,7 @@ export default function TranslationEditor() {
         <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-amber-100">
-              A newer backend draft was saved in another session. Reload the latest project state to resume backend saves. Your browser draft remains cached locally until you reload.
+              A newer backend draft was saved in another session. Backend autosave is paused so this tab does not overwrite newer work. Reload the latest project state to resume shared saves. Your unsynced browser edits remain cached locally until you reload.
             </p>
             <button
               onClick={() => void loadProjectData()}
@@ -754,7 +820,16 @@ export default function TranslationEditor() {
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
-                        <span className="text-xs font-mono text-slate-500">{timeline.formatTimecode(seg.startTimeSeconds)}</span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            seekToTime(seg.startTimeSeconds, seg.id);
+                          }}
+                          className="text-xs font-mono text-slate-500 transition hover:text-white"
+                        >
+                          {timeline.formatTimecode(seg.startTimeSeconds)}
+                        </button>
                       </div>
                       <textarea
                         className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-slate-700 resize-none h-16"
@@ -797,6 +872,7 @@ export default function TranslationEditor() {
             {renderedVideoUrl ? (
               <video
                 key={renderedVideoUrl}
+                ref={videoRef}
                 src={renderedVideoUrl}
                 controls
                 className="h-full w-full"
@@ -808,15 +884,93 @@ export default function TranslationEditor() {
             )}
           </div>
 
-          <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Audio Waveform Timeline</h3>
-            <div className="h-24 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center text-slate-600 text-xs">
-              Zoom Level: {timeline.zoomLevel}%
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Export Output</h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  {renderedVideoUrl
+                    ? `Your ${currentProject.targetLanguage.toUpperCase()} dubbed video preview is ready.`
+                    : 'Run dub and lip-sync to generate a preview and downloadable output.'}
+                </p>
+              </div>
+              {renderedVideoUrl && (
+                <div className="flex shrink-0 gap-2">
+                  <a
+                    href={renderedVideoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
+                  >
+                    Open video
+                  </a>
+                  <a
+                    href={renderedVideoUrl}
+                    download={`${currentProject.name}-${currentProject.targetLanguage}.mp4`}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    Download video
+                  </a>
+                </div>
+              )}
             </div>
-            <div className="flex justify-between items-center mt-4">
-              <span className="text-sm font-mono text-slate-400">{timeline.formatTimecode(timeline.currentTimeSeconds)}</span>
+          </div>
+
+          <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Audio Waveform Timeline</h3>
+              <span className="text-xs text-slate-500">Click timestamps or segment bars to seek the preview.</span>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+              {segments.length === 0 || totalDurationSeconds === 0 ? (
+                <div className="flex h-24 items-center justify-center text-xs text-slate-600">
+                  Upload media to populate the review timeline.
+                </div>
+              ) : (
+                <div className="flex h-24 items-end gap-1">
+                  {segments.map((segment) => {
+                    const widthPercent = Math.max(8, (segment.durationSeconds / totalDurationSeconds) * 100);
+                    const isActive = timeline.selectedSegmentId === segment.id;
+                    return (
+                      <button
+                        key={segment.id}
+                        type="button"
+                        onClick={() => seekToTime(segment.startTimeSeconds, segment.id)}
+                        title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
+                        className={`min-w-[2rem] rounded-md border transition ${
+                          isActive
+                            ? 'border-indigo-400 bg-indigo-500/40'
+                            : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
+                        }`}
+                        style={{ width: `${widthPercent}%`, height: `${Math.max(30, Math.min(96, 28 + segment.durationSeconds * 18))}px` }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between items-center">
+              <div>
+                <span className="text-sm font-mono text-slate-400">{timeline.formatTimecode(timeline.currentTimeSeconds)}</span>
+                {selectedSegment && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Focused segment: {selectedSegment.speakerTag} at {timeline.formatTimecode(selectedSegment.startTimeSeconds)}
+                  </p>
+                )}
+              </div>
               <button
-                onClick={() => timeline.setPlaying(!timeline.isPlaying)}
+                onClick={() => {
+                  if (!videoRef.current) {
+                    timeline.setPlaying(!timeline.isPlaying);
+                    return;
+                  }
+
+                  if (videoRef.current.paused) {
+                    void videoRef.current.play();
+                  } else {
+                    videoRef.current.pause();
+                  }
+                }}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition"
               >
                 {timeline.isPlaying ? '⏸' : '▶'}

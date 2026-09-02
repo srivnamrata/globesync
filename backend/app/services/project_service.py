@@ -22,6 +22,7 @@ from app.schemas.projects import (
     ProjectSummaryResponse,
     ProjectUpdateRequest,
 )
+from app.services.storage_service import storage_service
 
 
 class ProjectServiceError(Exception):
@@ -274,8 +275,17 @@ class ProjectService:
         draft = project.__dict__.get("draft")
         return draft.version if draft else 0
 
+    def _build_rendered_video_url(self, project: Project) -> Optional[str]:
+        if not project.last_rendered_video_gcs_path:
+            return None
+        return storage_service.generate_presigned_download_url(
+            project.last_rendered_video_gcs_path,
+            expires_in_seconds=7200,
+        )
+
     def _build_project_summary(self, project: Project) -> ProjectSummaryResponse:
         latest_draft_version = self._loaded_draft_version(project)
+        rendered_video_url = self._build_rendered_video_url(project)
         return ProjectSummaryResponse(
             id=project.id,
             workspace_id=project.workspace_id,
@@ -289,6 +299,7 @@ class ProjectService:
             transcript_id=project.transcript_id,
             latest_draft_version=latest_draft_version,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
+            last_rendered_video_url=rendered_video_url,
             last_opened_at=project.last_opened_at,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -296,6 +307,7 @@ class ProjectService:
 
     def _build_project_detail(self, project: Project) -> ProjectDetailResponse:
         latest_draft_version = self._loaded_draft_version(project)
+        rendered_video_url = self._build_rendered_video_url(project)
         return ProjectDetailResponse(
             id=project.id,
             workspace_id=project.workspace_id,
@@ -312,6 +324,7 @@ class ProjectService:
             current_lipsync_job_id=project.current_lipsync_job_id,
             current_export_job_id=project.current_export_job_id,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
+            last_rendered_video_url=rendered_video_url,
             latest_draft_version=latest_draft_version,
             archived_at=project.archived_at,
             last_opened_at=project.last_opened_at,

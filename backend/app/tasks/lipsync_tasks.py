@@ -15,6 +15,7 @@ from app.models.frame_metadata import FrameMetadata
 from app.models.generated_audio import GeneratedAudio
 from app.models.lipsync_job import LipSyncJob
 from app.models.media import MediaFile
+from app.models.project import Project
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
 from app.services.av_sync_service import av_sync_service
@@ -97,10 +98,15 @@ def run_lipsync_project_pipeline(
         if not job or not media_file or not transcript:
             raise ValueError("Required database records not found for lip-sync task.")
 
+        project = db.query(Project).filter(Project.id == job.project_id).first() if job.project_id else None
+
         job.status = "in_progress"
         job.request_id = job.request_id or request_id
         job.task_id = job.task_id or task_id
         job.idempotency_key = job.idempotency_key or idempotency_key
+        if project is not None:
+            project.current_lipsync_job_id = job.id
+            project.status = "processing"
         db.commit()
 
         project_id_str = str(job.project_id or transcript.project_id) if (job.project_id or transcript.project_id) else None
@@ -328,6 +334,10 @@ def run_lipsync_project_pipeline(
         job.output_filesize_bytes = final_filesize
         job.quality_score = avg_quality
         job.execution_time_seconds = execution_dur
+        if project is not None:
+            project.status = "completed"
+            project.current_lipsync_job_id = job.id
+            project.last_rendered_video_gcs_path = export_storage_key
         db.commit()
 
         publish_lipsync_event(
@@ -363,6 +373,9 @@ def run_lipsync_project_pipeline(
         if 'job' in locals() and job:
             job.status = "failed"
             job.error_message = str(exc)
+            if 'project' in locals() and project is not None:
+                project.status = "failed"
+                project.current_lipsync_job_id = job.id
             db.commit()
 
         publish_lipsync_event(job_id_str, "failed", 0, f"Lip-sync rendering failed: {str(exc)}")
