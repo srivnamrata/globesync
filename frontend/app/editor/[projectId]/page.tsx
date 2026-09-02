@@ -9,6 +9,7 @@ import { storageService, type HeygenXFile } from '../../../services/storageServi
 import { useProjectAutoSave } from '../../../hooks/useProject';
 import { useTimeline } from '../../../hooks/useTimeline';
 import { useHistory } from '../../../hooks/useHistory';
+import { ApiError } from '../../../services/apiClient';
 import { getProjectDraftConflictDetail, projectService } from '../../../services/projectService';
 
 const mergeDraftWithProject = (draft: HeygenXFile, project?: Project | null): HeygenXFile => ({
@@ -63,6 +64,79 @@ export default function TranslationEditor() {
 
   const timeline = useTimeline();
   const history = useHistory();
+
+  const ensureCanonicalProjectForWrite = useCallback(async (): Promise<Project | null> => {
+    if (!currentProject || !projectService.hasProjectApiScope()) {
+      return currentProject;
+    }
+
+    try {
+      await projectService.bootstrapAuthContext();
+      return await projectService.getProject(currentProject.id);
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) {
+        throw error;
+      }
+
+      const localDraft = mergeDraftWithProject(
+        {
+          version: '1.2.0',
+          projectMetadata: {
+            id: currentProject.id,
+            name: currentProject.name,
+            sourceLanguage: currentProject.sourceLanguage,
+            targetLanguage: currentProject.targetLanguage,
+            createdAt: currentProject.createdAt,
+            updatedAt: currentProject.updatedAt,
+          },
+          mediaReferences: {
+            videoFilename: currentProject.originalVideoUrl ?? 'source_video.mp4',
+            durationSeconds: segments.reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
+            originalTranscriptSegments: segments,
+            transcriptId: currentProject.transcriptId,
+            mediaId: currentProject.mediaId,
+          },
+          translations: Object.values(translations),
+          timelineState: undefined,
+        },
+        currentProject,
+      );
+
+      const canonicalProject = await projectService.createProjectShell(
+        currentProject.name,
+        currentProject.sourceLanguage,
+        currentProject.targetLanguage,
+      );
+      const canonicalDraft = mergeDraftWithProject(localDraft, canonicalProject);
+      const seededDraft = await projectService.saveProjectDraft(canonicalProject.id, canonicalDraft, {
+        version: 1,
+        baseProjectUpdatedAt: canonicalProject.updatedAt,
+      });
+      const hydratedProject = buildProjectFromDraft(canonicalDraft, canonicalProject);
+
+      if (currentProject.transcriptId || currentProject.mediaId) {
+        const patchedProject = await projectService.updateProject(canonicalProject.id, {
+          ...(currentProject.transcriptId ? { transcriptId: currentProject.transcriptId } : {}),
+          ...(currentProject.mediaId ? { mediaId: currentProject.mediaId } : {}),
+        });
+        hydratedProject.transcriptId = patchedProject.transcriptId;
+        hydratedProject.mediaId = patchedProject.mediaId;
+        hydratedProject.updatedAt = patchedProject.updatedAt;
+      }
+
+      setCurrentProject(hydratedProject);
+      setRemoteDraftVersion(seededDraft.version);
+      setBaseProjectUpdatedAt(seededDraft.base_project_updated_at ?? hydratedProject.updatedAt);
+      setHasRemoteDraftConflict(false);
+      await storageService.saveDraft(canonicalDraft);
+      if (currentProject.id !== canonicalProject.id) {
+        await storageService.deleteDraft(currentProject.id);
+        router.replace(`/editor/${canonicalProject.id}`);
+      }
+      setUploadMessage('This project was restored into your cloud workspace so uploads and transcription can continue.');
+      return hydratedProject;
+    }
+  }, [currentProject, router, segments, setCurrentProject, translations]);
 
   const loadProjectData = useCallback(async () => {
     if (!projectId) {
@@ -470,12 +544,17 @@ export default function TranslationEditor() {
     }
 
     try {
+      const projectForUpload = await ensureCanonicalProjectForWrite();
+      if (!projectForUpload) {
+        throw new Error('Project context is unavailable. Reload the project and try again.');
+      }
+
       setUploadState('uploading');
       setUploadMessage(`Uploading ${file.name}…`);
       const media = await projectService.uploadMedia(file);
       setUploadState('transcribing');
       setUploadMessage('Upload complete. Starting transcription…');
-      const job = await projectService.startTranscription(media.media_id, currentProject.sourceLanguage);
+      const job = await projectService.startTranscription(media.media_id, projectForUpload.sourceLanguage);
 
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
