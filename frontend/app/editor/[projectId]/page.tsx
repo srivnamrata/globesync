@@ -199,9 +199,11 @@ export default function TranslationEditor() {
 
       setCurrentProject(hydratedProject);
       setRenderedVideoUrl(backendProject?.lastRenderedVideoUrl ?? hydratedProject.lastRenderedVideoUrl ?? null);
-      setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
+      // Clear conflict state and stale upload message together before
+      // updating segments/translations so the banner disappears atomically.
       setHasRemoteDraftConflict(false);
       setUploadMessage(null);
+      setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
 
       const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
       const draftTranslations = draft.translations || [];
@@ -912,13 +914,28 @@ export default function TranslationEditor() {
                   >
                     Open video
                   </a>
-                  <a
-                    href={renderedVideoUrl}
-                    download={`${currentProject.name}-${currentProject.targetLanguage}.mp4`}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  <button
+                    type="button"
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(renderedVideoUrl);
+                        const blob = await response.blob();
+                        const objectUrl = URL.createObjectURL(blob);
+                        const anchor = document.createElement('a');
+                        anchor.href = objectUrl;
+                        anchor.download = `${currentProject.name}-${currentProject.targetLanguage}.mp4`;
+                        document.body.appendChild(anchor);
+                        anchor.click();
+                        document.body.removeChild(anchor);
+                        URL.revokeObjectURL(objectUrl);
+                      } catch {
+                        window.open(renderedVideoUrl, '_blank');
+                      }
+                    }}
                   >
                     Download video
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
@@ -926,8 +943,8 @@ export default function TranslationEditor() {
 
           <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between gap-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Audio Waveform Timeline</h3>
-              <span className="text-xs text-slate-500">Click timestamps or segment bars to seek the preview.</span>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Segment Timeline</h3>
+              <span className="text-xs text-slate-500">Click a segment bar to seek the preview player.</span>
             </div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
               {segments.length === 0 || totalDurationSeconds === 0 ? (
