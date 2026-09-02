@@ -11,6 +11,7 @@ class RenderLipSyncProjectRequest(BaseModel):
     project_id: Optional[UUID] = None
     model_preference: str = Field("liveportrait", examples=["liveportrait"], description="'liveportrait' or 'wav2lip'")
     burn_in_subtitles: bool = Field(False, description="Burn subtitles directly into video pixels")
+    enable_lipsync: bool = Field(True, description="When False, produces a dubbed video with audio replacement only — skips neural face synthesis entirely")
 
 
 class RenderSegmentLipSyncRequest(BaseModel):

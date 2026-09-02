@@ -507,19 +507,17 @@ export default function TranslationEditor() {
     return latestStatus;
   };
 
-  const handleBuildDubAndLipSync = async () => {
+  const runBuildPipeline = async (withLipSync: boolean) => {
     if (!currentProject?.id || !currentProject.mediaId || !currentProject.transcriptId) {
-      setUploadMessage('Upload and transcribe media before building dub and lip-sync.');
+      setUploadMessage('Upload and transcribe media before building.');
       return;
     }
-
     if (segments.length === 0) {
-      setUploadMessage('Transcript segments are required before building dub and lip-sync.');
+      setUploadMessage('Transcript segments are required before building.');
       return;
     }
-
     if (Object.keys(translations).length < segments.length) {
-      setUploadMessage('Wait until all translated segments are available before building dub and lip-sync.');
+      setUploadMessage('Wait until all translated segments are available before building.');
       return;
     }
 
@@ -536,19 +534,19 @@ export default function TranslationEditor() {
       const projectForBuild = (await applyProjectPatch({ status: 'processing' })) ?? currentProject;
 
       setBuildState('building');
-      setUploadMessage('Queuing dub and lip-sync pipeline…');
-      const job = await projectService.triggerLipSync(
+      setUploadMessage(withLipSync ? 'Queuing dub and lip-sync pipeline…' : 'Queuing dub-only pipeline…');
+
+      const trigger = withLipSync ? projectService.triggerLipSync : projectService.triggerDubOnly;
+      const job = await trigger.call(
+        projectService,
         projectForBuild.mediaId!,
         projectForBuild.transcriptId!,
         projectForBuild.targetLanguage,
         projectForBuild.id,
       );
 
-      setUploadMessage('Dub and lip-sync queued. Building dubbed audio…');
+      setUploadMessage(withLipSync ? 'Building dubbed audio and syncing lip motion…' : 'Building dubbed audio…');
       const completedJob = await pollForLipSyncCompletion(job.job_id);
-      const skippedSegments = Array.isArray(completedJob?.segments_metadata)
-        ? completedJob.segments_metadata.filter((segment: { render_status?: string }) => segment.render_status && segment.render_status !== 'completed')
-        : [];
 
       if (completedJob?.output_video_url) {
         setRenderedVideoUrl(completedJob.output_video_url);
@@ -563,23 +561,33 @@ export default function TranslationEditor() {
           await applyProjectPatch({ status: 'completed' });
         }
 
-        if (skippedSegments.length === 0) {
-          setUploadMessage('Dub & Lip-Sync complete. Preview is ready, and you can download the finished video below.');
-        } else if (skippedSegments.length === segments.length) {
-          setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video below.');
+        if (!withLipSync) {
+          setUploadMessage('Dub complete. Preview is ready — download the dubbed video below.');
         } else {
-          setUploadMessage(`Dub completed. Lip-sync was skipped for ${skippedSegments.length} segment${skippedSegments.length === 1 ? '' : 's'}, so parts of the video may keep the original facial motion.`);
+          const skippedSegments = Array.isArray(completedJob?.segments_metadata)
+            ? completedJob.segments_metadata.filter((s: { render_status?: string }) => s.render_status && s.render_status !== 'completed')
+            : [];
+          if (skippedSegments.length === 0) {
+            setUploadMessage('Dub & Lip-Sync complete. Preview is ready, and you can download the finished video below.');
+          } else if (skippedSegments.length === segments.length) {
+            setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video below.');
+          } else {
+            setUploadMessage(`Dub completed. Lip-sync was skipped for ${skippedSegments.length} segment${skippedSegments.length === 1 ? '' : 's'}, so parts of the video may keep the original facial motion.`);
+          }
         }
       } else {
         await applyProjectPatch({ status: 'completed' });
-        setUploadMessage('Dub & Lip-Sync completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
+        setUploadMessage('Build completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
       }
     } catch (error) {
-      setUploadMessage(mapUserFacingError(error, 'Unable to build dub and lip-sync output.'));
+      setUploadMessage(mapUserFacingError(error, withLipSync ? 'Unable to build dub and lip-sync output.' : 'Unable to build dubbed output.'));
     } finally {
       setBuildState('idle');
     }
   };
+
+  const handleBuildDubOnly = () => runBuildPipeline(false);
+  const handleBuildDubAndLipSync = () => runBuildPipeline(true);
 
   const handleTextChange = (segId: string, text: string) => {
     const oldText = segments.find((s) => s.id === segId)?.text || '';
@@ -726,7 +734,7 @@ export default function TranslationEditor() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-white">
+    <div className="h-screen overflow-hidden flex flex-col bg-slate-950 text-white">
       {/* Editor Header Bar */}
       <header className="h-14 border-b border-slate-800 bg-slate-900/50 px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -757,15 +765,24 @@ export default function TranslationEditor() {
             Redo
           </button>
           <button
+            onClick={handleBuildDubOnly}
+            disabled={buildState !== 'idle' || uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject}
+            className="border border-indigo-500 text-indigo-300 hover:bg-indigo-500/10 px-4 py-1.5 rounded-lg text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Replace audio with dubbed voice — no facial animation"
+          >
+            {buildState !== 'idle' ? '…' : 'Dub only'}
+          </button>
+          <button
             onClick={handleBuildDubAndLipSync}
             disabled={buildState !== 'idle' || uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Replace audio and animate lip movement to match translated speech"
           >
             {buildState === 'syncing'
-              ? 'Saving Translations…'
+              ? 'Saving…'
               : buildState === 'building'
                 ? 'Building…'
-                : 'Build Dub & Lip-Sync'}
+                : 'Dub + Lip-Sync'}
           </button>
         </div>
       </header>

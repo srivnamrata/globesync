@@ -487,6 +487,21 @@ export class ProjectService {
       ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
       model_preference: 'liveportrait',
       burn_in_subtitles: false,
+      enable_lipsync: true,
+    });
+  }
+
+  async triggerDubOnly(mediaId: string, transcriptId: string, lang: string, projectId: string): Promise<{ job_id: string }> {
+    await this.ensureApiRequestAuth();
+    const normalizedProjectId = normalizeOptionalUuid(projectId);
+    return apiClient.post<{ job_id: string }>('/lipsync/render-project', {
+      media_file_id: mediaId,
+      transcript_id: transcriptId,
+      target_language: lang,
+      ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
+      model_preference: 'liveportrait',
+      burn_in_subtitles: false,
+      enable_lipsync: false,
     });
   }
 

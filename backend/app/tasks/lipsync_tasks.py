@@ -60,6 +60,7 @@ def run_lipsync_project_pipeline(
     target_language: str,
     model_preference: str = "liveportrait",
     burn_in_subtitles: bool = False,
+    enable_lipsync: bool = True,
     request_id: Optional[str] = None,
     task_id: Optional[str] = None,
     idempotency_key: Optional[str] = None,
@@ -215,7 +216,7 @@ def run_lipsync_project_pipeline(
 
             rendered_seg_path = os.path.join(temp_dir, f"rendered_{seg.id.hex}.mp4")
 
-            if face_res.face_detected and face_res.is_suitable_for_lipsync:
+            if enable_lipsync and face_res.face_detected and face_res.is_suitable_for_lipsync:
                 # Invoke Replicate Neural Lip-Sync
                 asyncio.run(
                     replicate_lipsync.render_segment_lipsync(
@@ -229,7 +230,7 @@ def run_lipsync_project_pipeline(
                 )
                 render_status = "completed"
             else:
-                # Fallback: mux audio into original video slice without neural modification
+                # Dub-only mode or no suitable face: mux dubbed audio into original video slice
                 asyncio.run(
                     replicate_lipsync._generate_mock_synced_video(
                         video_slice_path=seg_video_slice,
@@ -237,7 +238,7 @@ def run_lipsync_project_pipeline(
                         output_path=rendered_seg_path,
                     )
                 )
-                render_status = "skipped_no_face"
+                render_status = "dub_only" if not enable_lipsync else "skipped_no_face"
 
             # Measure A/V sync drift
             drift_ms = asyncio.run(av_sync_service.measure_av_drift_ms(rendered_seg_path, local_audio_seg))
@@ -408,6 +409,7 @@ def render_lipsync_project_task(
     target_language: str,
     model_preference: str = "liveportrait",
     burn_in_subtitles: bool = False,
+    enable_lipsync: bool = True,
     request_id: Optional[str] = None,
     idempotency_key: Optional[str] = None,
 ):
@@ -419,6 +421,7 @@ def render_lipsync_project_task(
         target_language=target_language,
         model_preference=model_preference,
         burn_in_subtitles=burn_in_subtitles,
+        enable_lipsync=enable_lipsync,
         request_id=request_id,
         task_id=self.request.id,
         idempotency_key=idempotency_key,
