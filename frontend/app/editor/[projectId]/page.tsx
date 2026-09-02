@@ -11,6 +11,7 @@ import { useTimeline } from '../../../hooks/useTimeline';
 import { useHistory } from '../../../hooks/useHistory';
 import { ApiError } from '../../../services/apiClient';
 import { getProjectDraftConflictDetail, projectService } from '../../../services/projectService';
+import { mapUserFacingError } from '../../../services/userFacingErrors';
 
 const mergeDraftWithProject = (draft: HeygenXFile, project?: Project | null): HeygenXFile => ({
   ...draft,
@@ -562,7 +563,7 @@ export default function TranslationEditor() {
         setUploadMessage('Dub & Lip-Sync completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
       }
     } catch (error) {
-      setUploadMessage(error instanceof Error ? error.message : 'Unable to build dub and lip-sync output.');
+      setUploadMessage(mapUserFacingError(error, 'Unable to build dub and lip-sync output.'));
     } finally {
       setBuildState('idle');
     }
@@ -698,7 +699,7 @@ export default function TranslationEditor() {
         break;
       }
     } catch (error) {
-      setUploadMessage(error instanceof Error ? error.message : 'Unable to upload and transcribe the media.');
+      setUploadMessage(mapUserFacingError(error, 'Unable to upload and transcribe the media.'));
     } finally {
       setUploadState('idle');
     }

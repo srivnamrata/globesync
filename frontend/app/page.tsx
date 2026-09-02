@@ -101,6 +101,25 @@ export default function ProjectBrowser() {
   const signInButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const unsubscribe = authService.subscribeToAuthState((nextContext) => {
+      if (!nextContext) {
+        return;
+      }
+
+      setAuthContext(nextContext);
+      setAuthError(null);
+      setProjectError(null);
+      setProjectsInitialized(false);
+      setAuthLoading(false);
+      setGoogleSignInReady(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     async function initializeAuth() {
@@ -152,7 +171,7 @@ export default function ProjectBrowser() {
           return options.some((option) => option.value === 'es') ? 'es' : options[0].value;
         });
       } catch (error) {
-        console.error('Failed to load supported languages:', error);
+        console.warn('Could not load supported languages from API, using fallback list:', error instanceof Error ? error.message : error);
         if (isMounted) {
           setLanguageLoadError(mapLanguageLoadError(error));
         }

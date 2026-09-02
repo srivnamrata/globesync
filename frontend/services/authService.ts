@@ -167,9 +167,17 @@ export class AuthService {
   private bootstrappedContext: AuthBootstrapResponse | null = null;
   private googleScriptPromise: Promise<void> | null = null;
   private googleIdentityInitialized = false;
+  private authStateListeners = new Set<(context: AuthBootstrapResponse | null) => void>();
 
   hasBootstrapConfig(): boolean {
     return Boolean(this.getCachedContext() || hasBootstrapInputs());
+  }
+
+  subscribeToAuthState(listener: (context: AuthBootstrapResponse | null) => void): () => void {
+    this.authStateListeners.add(listener);
+    return () => {
+      this.authStateListeners.delete(listener);
+    };
   }
 
   setBearerToken(token: string | null) {
@@ -235,6 +243,7 @@ export class AuthService {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(AUTH_CONTEXT_STORAGE_KEY, JSON.stringify(context));
         }
+        this.notifyAuthStateListeners(context);
         return context;
       })
       .catch((error) => {
@@ -242,6 +251,7 @@ export class AuthService {
           window.localStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY);
         }
         this.bootstrappedContext = null;
+        this.notifyAuthStateListeners(null);
         throw error;
       })
       .finally(() => {
@@ -334,6 +344,7 @@ export class AuthService {
   signOut() {
     this.setBearerToken(null);
     this.clearCachedContext();
+    this.notifyAuthStateListeners(null);
     if (typeof window !== 'undefined') {
       window.google?.accounts?.id?.disableAutoSelect?.();
     }
@@ -404,6 +415,12 @@ export class AuthService {
       cancel_on_tap_outside: true,
     });
     this.googleIdentityInitialized = true;
+  }
+
+  private notifyAuthStateListeners(context: AuthBootstrapResponse | null) {
+    this.authStateListeners.forEach((listener) => {
+      listener(context);
+    });
   }
 
   private configureApiClient() {
