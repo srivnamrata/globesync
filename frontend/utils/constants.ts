@@ -9,7 +9,18 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'zh', name: 'Chinese (中文)' },
   { code: 'ru', name: 'Russian (Русский)' },
   { code: 'ko', name: 'Korean (한국어)' },
+  // Indian languages (Google STT + TTS supported)
   { code: 'hi', name: 'Hindi (हिन्दी)' },
+  { code: 'bn', name: 'Bengali (বাংলা)' },
+  { code: 'ta', name: 'Tamil (தமிழ்)' },
+  { code: 'te', name: 'Telugu (తెలుగు)' },
+  { code: 'mr', name: 'Marathi (मराठी)' },
+  { code: 'gu', name: 'Gujarati (ગુજરાતી)' },
+  { code: 'kn', name: 'Kannada (ಕನ್ನಡ)' },
+  { code: 'ml', name: 'Malayalam (മലയാളം)' },
+  { code: 'pa', name: 'Punjabi (ਪੰਜਾਬੀ)' },
+  { code: 'ur', name: 'Urdu (اردو)' },
+  // Other languages
   { code: 'ar', name: 'Arabic (العربية)' },
   { code: 'nl', name: 'Dutch (Nederlands)' },
   { code: 'pl', name: 'Polish (Polski)' },

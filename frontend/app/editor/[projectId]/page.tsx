@@ -278,7 +278,7 @@ export default function TranslationEditor() {
     };
   }, [renderedVideoUrl, timeline]);
 
-  const persistDraft = async ({
+  const persistDraft = useCallback(async ({
     projectOverride,
     segmentsOverride,
     translationsOverride,
@@ -335,6 +335,7 @@ export default function TranslationEditor() {
         setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
         setHasRemoteDraftConflict(false);
         await storageService.saveDraft(nextDraft);
+        setDirtySegments(new Set());
         return;
       } catch (error) {
         const conflictDetail = getProjectDraftConflictDetail(error);
