@@ -207,12 +207,15 @@ export default function TranslationEditor() {
       const draftTranslations = draft.translations || [];
 
       setSegments(draftSegments);
-      setTranslations(draftTranslations);
+
+      // Resolve the best available translations before updating UI so the
+      // translation pane never flashes blank during a reload.
+      // Priority: backend API fetch > draft blob > keep whatever is already in store.
+      let resolvedTranslations = draftTranslations;
 
       if (
         draft.mediaReferences.transcriptId &&
-        draftSegments.length > 0 &&
-        draftTranslations.length < draftSegments.length
+        draftSegments.length > 0
       ) {
         try {
           const fetchedTranslations = await projectService.fetchTranslations(
@@ -221,15 +224,22 @@ export default function TranslationEditor() {
           );
 
           if (fetchedTranslations.length > 0) {
-            setTranslations(fetchedTranslations);
+            resolvedTranslations = fetchedTranslations;
             await storageService.saveDraft({
               ...draft,
               translations: fetchedTranslations,
             });
           }
         } catch (translationErr) {
-          console.warn('No persisted translations available yet for this transcript:', translationErr);
+          console.warn('Could not fetch translations from API; using draft copy if available:', translationErr);
         }
+      }
+
+      // Only call setTranslations once, with the fully resolved set.
+      // If nothing was found anywhere, keep the existing store state rather
+      // than replacing it with an empty array.
+      if (resolvedTranslations.length > 0) {
+        setTranslations(resolvedTranslations);
       }
     } catch (err) {
       console.error('Failed to load project draft in editor:', err);
