@@ -302,197 +302,258 @@ export function WorkspaceHome({
   const hasProjects = projects.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.12),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.1),_transparent_28%)]" />
-      <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-8 lg:px-10">
-        <header className="flex flex-col gap-6 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-indigo-300">GlobeSync Workspace</p>
-            <div>
-              <h1 className="text-4xl font-semibold tracking-tight text-white">Welcome back{authContext.user.display_name ? `, ${authContext.user.display_name}` : ''}.</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Manage multilingual video projects, monitor progress, and jump back into review without losing your place.
-              </p>
-            </div>
-          </div>
+    <div className="flex min-h-screen bg-slate-950 text-white">
+      {/* Sidebar Layout */}
+      <aside className="hidden w-[260px] shrink-0 flex-col border-r border-white/5 bg-slate-900/40 p-6 lg:flex">
+        <div className="mb-10">
+          <span className="text-xl font-bold tracking-tight text-white">Globe<span className="text-indigo-400">Sync</span></span>
+        </div>
+        
+        <nav className="space-y-1.5">
+          <Link href="#" className="flex items-center gap-3 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Home
+          </Link>
+          <Link href="#" className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Uploads
+          </Link>
+        </nav>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-slate-200 backdrop-blur">
-            <p className="font-semibold text-white">{authContext.user.display_name || authContext.user.email}</p>
-            <p className="mt-1 text-slate-400">{authContext.workspace.name}</p>
+        {projects.length > 0 && (
+          <div className="mt-10">
+            <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Recents</div>
+            <ul className="space-y-0.5">
+              {projects.slice(0, 5).map((p) => (
+                <li key={p.id}>
+                  <Link href={`/editor/${p.id}`} className="block truncate rounded-lg px-2 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
+                    {p.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-auto pt-6 border-t border-white/5">
+          <div className="rounded-2xl p-2 text-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-300 font-bold">
+                {(authContext.user.display_name || authContext.user.email)[0].toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-medium text-white">{authContext.user.display_name || authContext.user.email}</p>
+                <p className="truncate text-xs text-slate-400">{authContext.workspace.name}</p>
+              </div>
+            </div>
             <button
-              type="button"
               onClick={onSignOut}
-              className="mt-4 rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:text-white"
+              className="w-full flex justify-center rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
             >
               Sign out
             </button>
           </div>
-        </header>
+        </div>
+      </aside>
 
-        <main className="grid flex-1 gap-8 py-10 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <section className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur">
-            <div className="space-y-3">
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Create a project</p>
-              <h2 className="text-2xl font-semibold text-white">Start a new localization run</h2>
-              <p className="text-sm leading-6 text-slate-300">
-                Create a project shell first, then move into transcript, translation, dubbing, and export review.
-              </p>
-            </div>
+      {/* Main Content Area */}
+      <main className="flex-1 relative overflow-y-auto">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(99,102,241,0.15),_transparent_40%)] pointer-events-none" />
+        
+        <div className="relative mx-auto max-w-6xl p-6 lg:p-12">
+          {/* Mobile Header (only visible on small screens) */}
+          <div className="mb-8 flex items-center justify-between lg:hidden">
+            <span className="text-xl font-bold tracking-tight text-white">Globe<span className="text-indigo-400">Sync</span></span>
+            <button onClick={onSignOut} className="text-sm text-slate-400">Sign out</button>
+          </div>
 
-            {languageLoadError ? <div className="mt-6"><StatusBanner tone="info" message={languageLoadError} /></div> : null}
+          <header className="mb-12">
+            <h1 className="text-4xl font-bold tracking-tight text-white">
+              Welcome, <span className="text-indigo-100">{authContext.user.display_name?.split(' ')[0] || 'User'}</span>
+            </h1>
+          </header>
 
-            <form onSubmit={onCreateProject} className="mt-6 space-y-5">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Project name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Product Launch Hindi Dub"
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-indigo-400"
-                  value={newProjectName}
-                  onChange={(event) => onProjectNameChange(event.target.value)}
-                />
+          {/* Onboarding Tracker or Project Creation */}
+          {!hasProjects ? (
+            <section className="mb-12">
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-lg font-semibold text-white">Finish your account setup</h2>
+                <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-xs font-bold text-indigo-300">0/4</span>
               </div>
+              
+              <div className="grid gap-4 sm:grid-cols-4">
+                {/* Active Step */}
+                <div className="rounded-2xl border border-indigo-500/50 bg-indigo-500/10 p-5 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
+                  <div className="flex items-center justify-between mb-3 text-xs font-semibold tracking-wider text-indigo-300">
+                    <span className="h-4 w-4 rounded-full border-2 border-indigo-400" />
+                    STEP 1
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">Create a project</h3>
+                  <p className="text-xs text-slate-300 mb-4">Start your first translation run by uploading a video.</p>
+                  
+                  {languageLoadError ? <div className="mb-3"><StatusBanner tone="info" message={languageLoadError} /></div> : null}
+                  {projectError ? <div className="mb-3"><StatusBanner tone="warning" message={projectError} /></div> : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Source language</label>
-                  <select
-                    className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-indigo-400"
-                    value={sourceLang}
-                    onChange={(event) => onSourceLangChange(event.target.value)}
-                  >
-                    {languageOptions.map((language) => (
-                      <option key={language.value} value={language.value}>
-                        {language.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Target language</label>
-                  <select
-                    className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-indigo-400"
-                    value={targetLang}
-                    onChange={(event) => onTargetLangChange(event.target.value)}
-                  >
-                    {languageOptions.map((language) => (
-                      <option key={language.value} value={language.value}>
-                        {language.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isCreatingProject || newProjectName.trim().length === 0}
-                className="w-full rounded-2xl bg-indigo-500 px-4 py-3 font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
-              >
-                {isCreatingProject ? 'Creating project…' : 'Create project'}
-              </button>
-            </form>
-          </section>
-
-          <section className="space-y-6">
-            {/* Section header */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Your workspace</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Projects ready for review</h2>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                {projects.length} {projects.length === 1 ? 'project' : 'projects'}
-              </div>
-            </div>
-
-            {/* Search + sort toolbar */}
-            {hasProjects && (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <svg className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" width="15" height="15" viewBox="0 0 15 15" fill="none">
-                    <path d="M10 6.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM9.5 10.207l3.146 3.147a.5.5 0 0 0 .708-.708L10.207 9.5A4.5 4.5 0 1 0 9.5 10.207Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/>
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search projects…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-slate-900/80 py-2.5 pl-9 pr-4 text-sm text-white outline-none placeholder:text-slate-500 transition focus:border-indigo-400"
-                  />
-                </div>
-                <select
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as SortKey)}
-                  className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-300 outline-none transition focus:border-indigo-400"
-                >
-                  <option value="updatedAt">Sort: Last updated</option>
-                  <option value="createdAt">Sort: Date created</option>
-                  <option value="name">Sort: Name A–Z</option>
-                </select>
-              </div>
-            )}
-
-            {projectError ? <StatusBanner tone="warning" message={projectError} /> : null}
-
-            {!hasProjects ? (
-              <div className="rounded-3xl border border-dashed border-white/15 bg-slate-900/60 p-12 text-center">
-                <h3 className="text-2xl font-semibold text-white">Create your first project</h3>
-                <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">
-                  GlobeSync is ready for a new upload-to-export workflow. Start by naming the project and choosing the source and target languages.
-                </p>
-              </div>
-            ) : visibleProjects.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-white/15 bg-slate-900/60 p-10 text-center">
-                <p className="text-sm text-slate-400">No projects match <span className="text-white">"{search}"</span>.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {visibleProjects.map((project) => (
-                  <article key={project.id} className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-slate-950/25 transition hover:border-white/20">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-xl font-semibold text-white">{project.name}</h3>
-                        <p className="mt-1.5 text-sm text-slate-400">
-                          <span className="font-mono text-slate-300">{project.sourceLanguage.toUpperCase()}</span>
-                          <span className="mx-1.5 text-slate-600">→</span>
-                          <span className="font-mono text-slate-300">{project.targetLanguage.toUpperCase()}</span>
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${getProjectStatusClasses(project.status)}`}>
-                          {formatProjectStatus(project.status)}
-                        </span>
-                        <ProjectActionsMenu projectId={project.id} projectName={project.name} />
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-                      <div className="rounded-2xl bg-white/5 px-4 py-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Updated</p>
-                        <p className="mt-1.5 text-white">{formatProjectDate(project.updatedAt)}</p>
-                      </div>
-                      <div className="rounded-2xl bg-white/5 px-4 py-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Created</p>
-                        <p className="mt-1.5 text-white">{formatProjectDate(project.createdAt)}</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex items-center justify-end">
-                      <Link
-                        href={`/editor/${project.id}`}
-                        className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+                  <form onSubmit={onCreateProject} className="space-y-3">
+                    <input
+                      type="text"
+                      placeholder="Project name"
+                      className="w-full rounded-xl border border-white/20 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-indigo-400"
+                      value={newProjectName}
+                      onChange={(e) => onProjectNameChange(e.target.value)}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className="w-full rounded-xl border border-white/20 bg-slate-950 px-2 py-2 text-xs text-slate-300 outline-none transition focus:border-indigo-400"
+                        value={sourceLang}
+                        onChange={(e) => onSourceLangChange(e.target.value)}
                       >
-                        Open editor
-                      </Link>
+                        {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+                      </select>
+                      <select
+                        className="w-full rounded-xl border border-white/20 bg-slate-950 px-2 py-2 text-xs text-slate-300 outline-none transition focus:border-indigo-400"
+                        value={targetLang}
+                        onChange={(e) => onTargetLangChange(e.target.value)}
+                      >
+                        {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+                      </select>
                     </div>
-                  </article>
+                    <button
+                      type="submit"
+                      disabled={isCreatingProject || !newProjectName.trim()}
+                      className="w-full rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-200 disabled:opacity-50"
+                    >
+                      {isCreatingProject ? 'Creating...' : 'Start Upload'}
+                    </button>
+                  </form>
+                </div>
+                
+                {/* Inactive Steps */}
+                {['Transcribe & Translate', 'Review & Edit', 'Generate Dub'].map((step, i) => (
+                  <div key={step} className="rounded-2xl border border-white/5 bg-slate-900/40 p-5 opacity-60 grayscale">
+                    <div className="flex items-center justify-between mb-3 text-xs font-semibold tracking-wider text-slate-500">
+                      <span className="h-4 w-4 rounded-full border-2 border-slate-700" />
+                      STEP {i + 2}
+                    </div>
+                    <h3 className="font-semibold text-slate-300 mb-2">{step}</h3>
+                    <p className="text-xs text-slate-500">Unlocks after step {i + 1}</p>
+                  </div>
                 ))}
               </div>
-            )}
-          </section>
-        </main>
-      </div>
+            </section>
+          ) : (
+             <section className="mb-12 rounded-2xl border border-white/5 bg-white/5 p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Create a new project</h2>
+                    <p className="text-sm text-slate-400">Start another translation workflow</p>
+                  </div>
+                </div>
+                <form onSubmit={onCreateProject} className="grid gap-4 sm:grid-cols-[1fr_auto_auto_auto] items-end">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Project name</label>
+                      <input type="text" placeholder="e.g. Product Launch Hindi Dub" className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-400" value={newProjectName} onChange={(e) => onProjectNameChange(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Source</label>
+                      <select className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-300 outline-none focus:border-indigo-400" value={sourceLang} onChange={(e) => onSourceLangChange(e.target.value)}>
+                        {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Target</label>
+                      <select className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-300 outline-none focus:border-indigo-400" value={targetLang} onChange={(e) => onTargetLangChange(e.target.value)}>
+                        {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+                      </select>
+                    </div>
+                    <button type="submit" disabled={isCreatingProject || !newProjectName.trim()} className="rounded-xl bg-indigo-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+                      {isCreatingProject ? 'Creating...' : '+ New Project'}
+                    </button>
+                </form>
+             </section>
+          )}
+
+          {hasProjects && (
+            <section>
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-white">All Projects</h2>
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 15 15" fill="none"><path d="M10 6.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM9.5 10.207l3.146 3.147a.5.5 0 0 0 .708-.708L10.207 9.5A4.5 4.5 0 1 0 9.5 10.207Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/></svg>
+                    <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-48 rounded-full border border-white/10 bg-slate-900/60 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-400" />
+                  </div>
+                  <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-indigo-400">
+                    <option value="updatedAt">Last updated</option>
+                    <option value="createdAt">Date created</option>
+                    <option value="name">Name</option>
+                  </select>
+                </div>
+              </div>
+
+              {visibleProjects.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-500">No projects match your search.</div>
+              ) : (
+                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                  {visibleProjects.map((project) => (
+                    <article key={project.id} className="group relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/60 transition hover:border-white/20 hover:bg-slate-800/80">
+                      {/* HeyGen style Thumbnail Area */}
+                      <div className="relative aspect-video w-full bg-slate-950/80">
+                        {/* Mock Image / Placeholder */}
+                        <div className="absolute inset-0 flex items-center justify-center text-slate-700">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        </div>
+                        
+                        {/* Play button overlay on hover */}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                           <Link href={`/editor/${project.id}`} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md transition hover:bg-white hover:text-slate-900">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8z"/></svg>
+                           </Link>
+                        </div>
+
+                        {/* Top Right Actions */}
+                        <div className="absolute right-2 top-2 z-10 flex gap-1">
+                           <div className="rounded-full bg-black/60 p-1 text-white backdrop-blur-md">
+                              <ProjectActionsMenu projectId={project.id} projectName={project.name} />
+                           </div>
+                        </div>
+
+                        {/* Bottom Left Badges */}
+                        <div className="absolute bottom-2 left-2 flex gap-2">
+                           <span className="flex items-center gap-1.5 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+                              Translation
+                           </span>
+                           <span className={`rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md ${getProjectStatusClasses(project.status)}`}>
+                             {formatProjectStatus(project.status)}
+                           </span>
+                        </div>
+                        
+                        {/* Bottom Right Duration Badge */}
+                        <div className="absolute bottom-2 right-2 flex gap-2">
+                           <span className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                              1m 30s
+                           </span>
+                        </div>
+                      </div>
+
+                      {/* Card Content */}
+                      <div className="p-4">
+                        <Link href={`/editor/${project.id}`} className="block">
+                          <h3 className="truncate text-base font-semibold text-white group-hover:text-indigo-300 transition">{project.name}</h3>
+                        </Link>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {formatProjectDate(project.createdAt)} • {project.sourceLanguage.toUpperCase()} → {project.targetLanguage.toUpperCase()}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
