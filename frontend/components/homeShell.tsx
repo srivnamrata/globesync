@@ -14,8 +14,8 @@ type PublicLandingProps = {
 };
 
 type WorkspaceLoadingStateProps = {
-  authContext: AuthBootstrapResponse;
-  onSignOut: () => void;
+  authContext?: AuthBootstrapResponse | null;
+  onSignOut?: () => void;
   title: string;
   description: string;
 };
@@ -177,17 +177,25 @@ export function WorkspaceLoadingState({ authContext, onSignOut, title, descripti
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">{title}</h1>
             <p className="mt-2 text-sm text-slate-400">{description}</p>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-semibold text-white">{authContext.user.display_name || authContext.user.email}</p>
-            <p className="mt-1 text-xs text-slate-400">{authContext.workspace.name}</p>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="mt-3 rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:text-white"
-            >
-              Sign out
-            </button>
-          </div>
+          {authContext ? (
+            <div className="text-right">
+              <p className="text-sm font-semibold text-white">{authContext.user.display_name || authContext.user.email}</p>
+              <p className="mt-1 text-xs text-slate-400">{authContext.workspace.name}</p>
+              {onSignOut ? (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="mt-3 rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:text-white"
+                >
+                  Sign out
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-right text-sm text-slate-400">
+              Restoring session state
+            </div>
+          )}
         </header>
 
         <div className="flex flex-1 items-center justify-center">

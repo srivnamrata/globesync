@@ -340,40 +340,8 @@ export default function ProjectBrowser() {
   if (entryViewState === 'auth-loading') {
     return (
       <WorkspaceLoadingState
-        authContext={authContext || {
-          user: {
-            id: 'signed-out',
-            email: 'Opening GlobeSync',
-            display_name: null,
-            auth_provider: 'google',
-            auth_subject: null,
-            is_active: true,
-            last_login_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          workspace: {
-            id: 'signed-out',
-            name: 'Preparing workspace',
-            slug: null,
-            owner_user_id: 'signed-out',
-            is_personal: true,
-            archived_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          membership: {
-            workspace_id: 'signed-out',
-            user_id: 'signed-out',
-            role: 'owner',
-            invited_by_user_id: null,
-            joined_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          bootstrap_completed: false,
-        }}
-        onSignOut={handleSignOut}
+        authContext={authContext}
+        onSignOut={authContext ? handleSignOut : undefined}
         title="Opening GlobeSync"
         description="Restoring your session and preparing your workspace."
       />
