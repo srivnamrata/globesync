@@ -319,10 +319,12 @@ export class ProjectService {
   }
 
   async getTranscription(transcriptId: string): Promise<TranscriptStatus> {
+    await this.ensureApiRequestAuth();
     return apiClient.get<TranscriptStatus>(`/transcription/${transcriptId}`);
   }
 
   async fetchAllProjects(): Promise<Project[]> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     const response = await apiClient.get<ProjectListApiResponse>(
       buildScopedEndpoint('/projects', scope),
@@ -331,6 +333,7 @@ export class ProjectService {
   }
 
   async createProjectShell(name: string, sourceLanguage: string, targetLanguage: string): Promise<Project> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     const response = await apiClient.post<ProjectDetailApiShape>(
       buildScopedEndpoint('/projects', scope),
@@ -353,6 +356,7 @@ export class ProjectService {
   }
 
   async getProject(projectId: string): Promise<Project> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     const response = await apiClient.get<ProjectDetailApiShape>(
       buildScopedEndpoint(`/projects/${projectId}`, scope),
@@ -361,6 +365,7 @@ export class ProjectService {
   }
 
   async updateProject(projectId: string, payload: ProjectUpdateRequest): Promise<Project> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     const apiPayload: ProjectUpdateApiRequest = {
       ...(payload.name !== undefined ? { name: payload.name } : {}),
@@ -382,6 +387,7 @@ export class ProjectService {
   }
 
   async getProjectDraft(projectId: string): Promise<{ draft: HeygenXFile; version: number; baseProjectUpdatedAt: string | null }> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     const response = await apiClient.get<ProjectDraftApiResponse>(
       buildScopedEndpoint(`/projects/${projectId}/draft`, scope),
@@ -399,6 +405,7 @@ export class ProjectService {
     draft: HeygenXFile,
     options: { version: number; baseProjectUpdatedAt?: string | null },
   ): Promise<ProjectDraftPutApiResponse> {
+    await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
     return apiClient.put<ProjectDraftPutApiResponse>(
       buildScopedEndpoint(`/projects/${projectId}/draft`, scope),

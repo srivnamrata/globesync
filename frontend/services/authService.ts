@@ -62,6 +62,7 @@ export interface AuthBootstrapResponse {
 const AUTH_CONTEXT_STORAGE_KEY = 'globesync.auth_context';
 const AUTH_TOKEN_STORAGE_KEY = 'globesync.auth_token';
 const GOOGLE_IDENTITY_SCRIPT_ID = 'google-identity-services-client';
+const AUTH_TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
 
 function readWindowStorage(key: string): string | null {
   if (typeof window === 'undefined') {
@@ -72,13 +73,53 @@ function readWindowStorage(key: string): string | null {
   return value && value.trim().length > 0 ? value.trim() : null;
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const [, payloadSegment] = token.split('.');
+  if (!payloadSegment) {
+    return null;
+  }
+
+  try {
+    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = typeof window === 'undefined'
+      ? Buffer.from(padded, 'base64').toString('utf-8')
+      : window.atob(padded);
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isJwtExpired(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp !== 'number') {
+    return false;
+  }
+
+  return (exp * 1000) <= (Date.now() + AUTH_TOKEN_EXPIRY_SKEW_MS);
+}
+
 function getConfiguredBearerToken(): string | null {
   const envToken = process.env.NEXT_PUBLIC_AUTH_TOKEN?.trim();
   if (envToken) {
     return envToken;
   }
 
-  return readWindowStorage(AUTH_TOKEN_STORAGE_KEY);
+  const storedToken = readWindowStorage(AUTH_TOKEN_STORAGE_KEY);
+  if (!storedToken) {
+    return null;
+  }
+
+  if (isJwtExpired(storedToken)) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+    return null;
+  }
+
+  return storedToken;
 }
 
 function getGoogleClientId(): string | null {
@@ -171,7 +212,10 @@ export class AuthService {
     const cachedContext = this.getCachedContext();
     if (cachedContext) {
       this.configureApiClient();
-      return cachedContext;
+      if (hasServerBootstrapInputs()) {
+        return cachedContext;
+      }
+      this.clearCachedContext();
     }
 
     if (!hasServerBootstrapInputs()) {
