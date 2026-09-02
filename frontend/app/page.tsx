@@ -7,12 +7,8 @@ import { storageService } from '../services/storageService';
 import { apiClient } from '../services/apiClient';
 import { projectService } from '../services/projectService';
 import { authService, type AuthBootstrapResponse } from '../services/authService';
-import Link from 'next/link';
-
-type LanguageOption = {
-  value: string;
-  label: string;
-};
+import { PublicLanding, WorkspaceHome, WorkspaceLoadingState, type HomeShellLanguageOption } from '../components/homeShell';
+import { mapAuthError, mapLanguageLoadError, mapProjectCreateError, mapProjectLoadError } from '../services/userFacingErrors';
 
 type SupportedLanguagesResponse = {
   languages: Array<{
@@ -22,7 +18,7 @@ type SupportedLanguagesResponse = {
   }>;
 };
 
-const fallbackLanguageOptions: LanguageOption[] = [
+const fallbackLanguageOptions: HomeShellLanguageOption[] = [
   { value: 'ar', label: 'Arabic' },
   { value: 'de', label: 'German' },
   { value: 'el', label: 'Greek' },
@@ -47,57 +43,90 @@ const fallbackLanguageOptions: LanguageOption[] = [
   { value: 'zh', label: 'Chinese (Simplified)' },
 ];
 
+type EntryViewState = 'auth-loading' | 'signed-out' | 'workspace-loading' | 'workspace-empty' | 'workspace-ready';
+
+function mapLocalDraftsToProjects(drafts: Awaited<ReturnType<typeof storageService.listDrafts>>): Project[] {
+  return drafts.map((draft) => ({
+    id: draft.projectMetadata.id,
+    name: draft.projectMetadata.name,
+    sourceLanguage: draft.projectMetadata.sourceLanguage,
+    targetLanguage: draft.projectMetadata.targetLanguage,
+    status: 'draft',
+    createdAt: draft.projectMetadata.createdAt,
+    updatedAt: draft.projectMetadata.updatedAt,
+  }));
+}
+
+function deriveEntryViewState(
+  authLoading: boolean,
+  authContext: AuthBootstrapResponse | null,
+  projectsLoading: boolean,
+  projectsInitialized: boolean,
+  projects: Project[],
+): EntryViewState {
+  if (authLoading) {
+    return 'auth-loading';
+  }
+
+  if (!authContext) {
+    return 'signed-out';
+  }
+
+  if (projectsLoading || !projectsInitialized) {
+    return 'workspace-loading';
+  }
+
+  if (projects.length === 0) {
+    return 'workspace-empty';
+  }
+
+  return 'workspace-ready';
+}
+
 export default function ProjectBrowser() {
   const { projects, setProjects, addProject } = useProjectStore();
   const [newProjectName, setNewProjectName] = useState('');
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('es');
-  const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
+  const [languageOptions, setLanguageOptions] = useState<HomeShellLanguageOption[]>(fallbackLanguageOptions);
   const [authContext, setAuthContext] = useState<AuthBootstrapResponse | null>(authService.getCachedContext());
   const [authError, setAuthError] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [languageLoadError, setLanguageLoadError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsInitialized, setProjectsInitialized] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [googleSignInReady, setGoogleSignInReady] = useState(false);
   const signInButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function initializeAuth() {
+      setAuthLoading(true);
+      setAuthError(null);
+
       try {
         const context = await authService.bootstrap();
-        setAuthContext(context);
-        setGoogleSignInReady(!context && await authService.isGoogleSignInAvailable());
-      } catch (err) {
-        console.error('Failed to initialize auth context:', err);
-        setAuthError(err instanceof Error ? err.message : 'Failed to initialize sign-in.');
-        setGoogleSignInReady(await authService.isGoogleSignInAvailable().catch(() => false));
-      }
-    }
-
-    async function loadProjects() {
-      try {
-        if (projectService.hasProjectApiScope()) {
-          try {
-            await projectService.bootstrapAuthContext();
-            setAuthContext(authService.getCachedContext());
-            const remoteProjects = await projectService.fetchAllProjects();
-            setProjects(remoteProjects);
-            return;
-          } catch (remoteError) {
-            console.warn('Failed to load backend projects, falling back to local drafts:', remoteError);
-          }
+        if (!isMounted) {
+          return;
         }
 
-        const drafts = await storageService.listDrafts();
-        const mapped: Project[] = drafts.map((d) => ({
-          id: d.projectMetadata.id,
-          name: d.projectMetadata.name,
-          sourceLanguage: d.projectMetadata.sourceLanguage,
-          targetLanguage: d.projectMetadata.targetLanguage,
-          status: 'draft',
-          createdAt: d.projectMetadata.createdAt,
-          updatedAt: d.projectMetadata.updatedAt,
-        }));
-        setProjects(mapped);
-      } catch (err) {
-        console.error('Failed to load projects:', err);
+        setAuthContext(context);
+        setGoogleSignInReady(!context && await authService.isGoogleSignInAvailable().catch(() => false));
+      } catch (error) {
+        console.error('Failed to initialize auth context:', error);
+        if (!isMounted) {
+          return;
+        }
+        setAuthContext(null);
+        setAuthError(mapAuthError(error));
+        setGoogleSignInReady(await authService.isGoogleSignInAvailable().catch(() => false));
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
       }
     }
 
@@ -109,7 +138,7 @@ export default function ProjectBrowser() {
           label: language.name,
         }));
 
-        if (options.length === 0) {
+        if (!isMounted || options.length === 0) {
           return;
         }
 
@@ -122,37 +151,113 @@ export default function ProjectBrowser() {
 
           return options.some((option) => option.value === 'es') ? 'es' : options[0].value;
         });
-      } catch (err) {
-        console.error('Failed to load supported languages:', err);
+      } catch (error) {
+        console.error('Failed to load supported languages:', error);
+        if (isMounted) {
+          setLanguageLoadError(mapLanguageLoadError(error));
+        }
       }
     }
 
     void initializeAuth();
-    loadProjects();
-    loadSupportedLanguages();
-  }, [setProjects, authContext?.workspace.id]);
+    void loadSupportedLanguages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProjects() {
+      if (!authContext) {
+        setProjects([]);
+        setProjectError(null);
+        setProjectsLoading(false);
+        setProjectsInitialized(false);
+        return;
+      }
+
+      setProjectsLoading(true);
+      setProjectsInitialized(false);
+      setProjectError(null);
+
+      try {
+        await projectService.bootstrapAuthContext();
+        const refreshedContext = authService.getCachedContext();
+        if (refreshedContext && isMounted) {
+          setAuthContext(refreshedContext);
+        }
+
+        const remoteProjects = await projectService.fetchAllProjects();
+        if (!isMounted) {
+          return;
+        }
+
+        setProjects(remoteProjects);
+      } catch (remoteError) {
+        console.warn('Failed to load backend projects, falling back to local drafts:', remoteError);
+
+        try {
+          const drafts = await storageService.listDrafts();
+          if (!isMounted) {
+            return;
+          }
+
+          setProjects(mapLocalDraftsToProjects(drafts));
+          setProjectError('We could not refresh your workspace from the cloud just now. Showing any locally saved drafts while you reconnect.');
+        } catch (draftError) {
+          console.error('Failed to load projects:', draftError);
+          if (!isMounted) {
+            return;
+          }
+
+          setProjects([]);
+          setProjectError(mapProjectLoadError(remoteError));
+        }
+      } finally {
+        if (isMounted) {
+          setProjectsLoading(false);
+          setProjectsInitialized(true);
+        }
+      }
+    }
+
+    void loadProjects();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authContext, setProjects]);
 
   useEffect(() => {
     if (!googleSignInReady || authContext || !signInButtonRef.current) {
       return;
     }
 
-    authService.renderGoogleSignInButton(signInButtonRef.current).catch((err) => {
-      console.error('Failed to render Google sign-in button:', err);
-      setAuthError(err instanceof Error ? err.message : 'Failed to render Google sign-in.');
+    authService.renderGoogleSignInButton(signInButtonRef.current).catch((error) => {
+      console.error('Failed to render Google sign-in button:', error);
+      setAuthError(mapAuthError(error));
     });
   }, [authContext, googleSignInReady]);
 
   const handleSignIn = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    setProjectError(null);
+    setProjectsInitialized(false);
+
     try {
-      setAuthError(null);
       const context = await authService.ensureAuthenticatedContext();
       setAuthContext(context);
-      const remoteProjects = await projectService.fetchAllProjects();
-      setProjects(remoteProjects);
-    } catch (err) {
-      console.error('Failed to sign in:', err);
-      setAuthError(err instanceof Error ? err.message : 'Sign-in failed.');
+      setGoogleSignInReady(false);
+    } catch (error) {
+      console.error('Failed to sign in:', error);
+      setAuthError(mapAuthError(error));
+      setGoogleSignInReady(await authService.isGoogleSignInAvailable().catch(() => false));
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -160,26 +265,51 @@ export default function ProjectBrowser() {
     authService.signOut();
     setAuthContext(null);
     setProjects([]);
+    setAuthError(null);
+    setProjectError(null);
+    setProjectsLoading(false);
+    setProjectsInitialized(false);
     setGoogleSignInReady(true);
   };
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProjectName.trim()) return;
+  const handleCreateProject = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedProjectName = newProjectName.trim();
+
+    if (!trimmedProjectName) {
+      return;
+    }
+
+    setIsCreatingProject(true);
+    setProjectError(null);
 
     const now = new Date().toISOString();
     const fallbackProjectId = crypto.randomUUID();
-    let newProj: Project;
 
-    if (projectService.hasProjectApiScope()) {
-      try {
-        await projectService.bootstrapAuthContext();
-        newProj = await projectService.createProjectShellWithDraft(newProjectName, sourceLang, targetLang);
-      } catch (remoteError) {
-        console.warn('Failed to create canonical backend project draft, falling back to local draft:', remoteError);
-        newProj = {
+    try {
+      let newProject: Project;
+
+      if (projectService.hasProjectApiScope()) {
+        try {
+          await projectService.bootstrapAuthContext();
+          newProject = await projectService.createProjectShellWithDraft(trimmedProjectName, sourceLang, targetLang);
+        } catch (remoteError) {
+          console.warn('Failed to create canonical backend project draft, falling back to local draft:', remoteError);
+          newProject = {
+            id: fallbackProjectId,
+            name: trimmedProjectName,
+            sourceLanguage: sourceLang,
+            targetLanguage: targetLang,
+            status: 'draft',
+            createdAt: now,
+            updatedAt: now,
+          };
+          setProjectError('We saved this project locally, but could not sync it to your workspace yet. Keep this tab open and try again shortly.');
+        }
+      } else {
+        newProject = {
           id: fallbackProjectId,
-          name: newProjectName,
+          name: trimmedProjectName,
           sourceLanguage: sourceLang,
           targetLanguage: targetLang,
           status: 'draft',
@@ -187,148 +317,115 @@ export default function ProjectBrowser() {
           updatedAt: now,
         };
       }
-    } else {
-      newProj = {
-        id: fallbackProjectId,
-        name: newProjectName,
-        sourceLanguage: sourceLang,
-        targetLanguage: targetLang,
-        status: 'draft',
-        createdAt: now,
-        updatedAt: now,
-      };
+
+      await storageService.saveDraft(projectService.buildLocalDraftFromProject(newProject));
+      addProject(newProject);
+      setNewProjectName('');
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      setProjectError(mapProjectCreateError(error));
+    } finally {
+      setIsCreatingProject(false);
     }
-
-    await storageService.saveDraft(projectService.buildLocalDraftFromProject(newProj));
-
-    addProject(newProj);
-    setNewProjectName('');
   };
 
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-slate-800 gap-6">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">Video Translation Studio</h1>
-          <p className="text-slate-400 mt-1">Manage, translate, and dub your video assets</p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          {authContext ? (
-            <>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-white">{authContext.user.display_name || authContext.user.email}</p>
-                <p className="text-xs text-slate-400">{authContext.workspace.name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
-              >
-                Sign out
-              </button>
-            </>
-          ) : googleSignInReady ? (
-            <div ref={signInButtonRef} />
-          ) : (
-            <button
-              type="button"
-              onClick={handleSignIn}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              Sign in with Google
-            </button>
-          )}
-          {authError ? <p className="max-w-sm text-right text-xs text-rose-400">{authError}</p> : null}
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Create Project Panel */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 h-fit">
-          <h2 className="text-lg font-bold text-white mb-4">Create New Project</h2>
-          <form onSubmit={handleCreateProject} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Project Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Tutorial Video ES"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500"
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Source Lang</label>
-                <select
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
-                  value={sourceLang}
-                  onChange={(e) => setSourceLang(e.target.value)}
-                >
-                  {languageOptions.map((language) => (
-                    <option key={language.value} value={language.value}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Target Lang</label>
-                <select
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
-                  value={targetLang}
-                  onChange={(e) => setTargetLang(e.target.value)}
-                >
-                  {languageOptions.map((language) => (
-                    <option key={language.value} value={language.value}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition"
-            >
-              Initialize Draft
-            </button>
-          </form>
-        </div>
-
-        {/* Project Browser list */}
-        <div className="md:col-span-2 space-y-4">
-          <h2 className="text-xl font-bold text-white mb-2">Your Projects</h2>
-          {projects.length === 0 ? (
-            <div className="border border-dashed border-slate-800 rounded-xl p-12 text-center text-slate-500">
-              No projects found yet. Create a project on the left panel to begin.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {projects.map((proj) => (
-                <div key={proj.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-lg font-bold text-white truncate">{proj.name}</h3>
-                    <div className="flex gap-2 items-center mt-2">
-                      <span className="bg-slate-850 px-2 py-0.5 rounded text-xs text-slate-400 uppercase font-mono">{proj.sourceLanguage} &rarr; {proj.targetLanguage}</span>
-                      <span className="bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded text-xs font-semibold uppercase">{proj.status}</span>
-                    </div>
-                  </div>
-                  <div className="mt-6 flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Updated: {new Date(proj.updatedAt).toLocaleDateString()}</span>
-                    <Link
-                      href={`/editor/${proj.id}`}
-                      className="bg-slate-800 hover:bg-slate-700 text-white font-semibold py-1.5 px-4 rounded-lg text-sm transition"
-                    >
-                      Open Editor
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+  const entryViewState = deriveEntryViewState(
+    authLoading,
+    authContext,
+    projectsLoading,
+    projectsInitialized,
+    projects,
   );
+
+  if (entryViewState === 'auth-loading') {
+    return (
+      <WorkspaceLoadingState
+        authContext={authContext || {
+          user: {
+            id: 'signed-out',
+            email: 'Opening GlobeSync',
+            display_name: null,
+            auth_provider: 'google',
+            auth_subject: null,
+            is_active: true,
+            last_login_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          workspace: {
+            id: 'signed-out',
+            name: 'Preparing workspace',
+            slug: null,
+            owner_user_id: 'signed-out',
+            is_personal: true,
+            archived_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          membership: {
+            workspace_id: 'signed-out',
+            user_id: 'signed-out',
+            role: 'owner',
+            invited_by_user_id: null,
+            joined_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          bootstrap_completed: false,
+        }}
+        onSignOut={handleSignOut}
+        title="Opening GlobeSync"
+        description="Restoring your session and preparing your workspace."
+      />
+    );
+  }
+
+  if (entryViewState === 'signed-out') {
+    return (
+      <PublicLanding
+        signInSlot={googleSignInReady ? (
+          <div ref={signInButtonRef} />
+        ) : (
+          <button
+            type="button"
+            onClick={handleSignIn}
+            className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+          >
+            Continue with Google
+          </button>
+        )}
+        authError={authError}
+      />
+    );
+  }
+
+  if (entryViewState === 'workspace-loading' && authContext) {
+    return (
+      <WorkspaceLoadingState
+        authContext={authContext}
+        onSignOut={handleSignOut}
+        title="Loading your workspace"
+        description="Restoring your GlobeSync projects and preparing project creation."
+      />
+    );
+  }
+
+  return authContext ? (
+    <WorkspaceHome
+      authContext={authContext}
+      projects={projects}
+      newProjectName={newProjectName}
+      sourceLang={sourceLang}
+      targetLang={targetLang}
+      languageOptions={languageOptions}
+      isCreatingProject={isCreatingProject}
+      projectError={projectError}
+      languageLoadError={languageLoadError}
+      onProjectNameChange={setNewProjectName}
+      onSourceLangChange={setSourceLang}
+      onTargetLangChange={setTargetLang}
+      onCreateProject={handleCreateProject}
+      onSignOut={handleSignOut}
+    />
+  ) : null;
 }
