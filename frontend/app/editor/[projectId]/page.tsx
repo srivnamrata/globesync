@@ -65,6 +65,8 @@ export default function TranslationEditor() {
   const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
   const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
   const [isReloadingProject, setIsReloadingProject] = useState(false);
+  const [dirtySegments, setDirtySegments] = useState<Set<string>>(new Set());
+  const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const timeline = useTimeline();
@@ -349,7 +351,8 @@ export default function TranslationEditor() {
     }
 
     await storageService.saveDraft(nextDraft);
-  };
+    setDirtySegments(new Set());
+  }, [currentProject, segments, translations, hasRemoteDraftConflict, remoteDraftVersion, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
   const totalDurationSeconds = useMemo(
@@ -438,6 +441,37 @@ export default function TranslationEditor() {
     setBaseProjectUpdatedAt(hydratedProject.updatedAt);
     return hydratedProject;
   }, [currentProject, hasRemoteDraftConflict, setCurrentProject]);
+
+  const handleManualSave = useCallback(async () => {
+    await persistDraft();
+  }, [persistDraft]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        void handleManualSave();
+      }
+      if (e.key === ' ' && e.target instanceof HTMLElement && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        if (videoRef.current) {
+          if (videoRef.current.paused) void videoRef.current.play();
+          else videoRef.current.pause();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleManualSave]);
+
+  useEffect(() => {
+    if (timeline.selectedSegmentId && transcriptContainerRef.current) {
+      const activeEl = transcriptContainerRef.current.querySelector(`[data-segment-id="${timeline.selectedSegmentId}"]`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [timeline.selectedSegmentId]);
 
   // Keep the existing local cache, but also push draft changes to the backend when scope is configured.
   useProjectAutoSave(persistDraft);
@@ -599,6 +633,7 @@ export default function TranslationEditor() {
       description: `Edit transcript segment text`,
     });
     updateSegmentText(segId, text);
+    setDirtySegments((prev) => new Set(prev).add(segId));
   };
 
   const handleTranslationChange = (segId: string, text: string) => {
@@ -611,6 +646,7 @@ export default function TranslationEditor() {
       description: `Edit translation text`,
     });
     updateTranslationText(segId, text);
+    setDirtySegments((prev) => new Set(prev).add(segId));
   };
 
   const handleMediaSelected = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -764,6 +800,19 @@ export default function TranslationEditor() {
           >
             Redo
           </button>
+          <div className="w-px h-6 bg-slate-800 mx-2" />
+          <button
+            onClick={handleManualSave}
+            className={`px-3 py-1.5 rounded transition text-sm font-semibold border ${
+              dirtySegments.size > 0 
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20' 
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'
+            }`}
+            title="Save changes (Ctrl+S)"
+          >
+            {dirtySegments.size > 0 ? `Save (${dirtySegments.size})` : 'Saved'}
+          </button>
+          <div className="w-px h-6 bg-slate-800 mx-2" />
           <button
             onClick={handleBuildDubOnly}
             disabled={buildState !== 'idle' || uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject}
@@ -825,7 +874,7 @@ export default function TranslationEditor() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div ref={transcriptContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
             {segments.length === 0 ? (
               <div className="text-center text-slate-600 py-12">
                 <p>No transcript segments available.</p>
@@ -837,16 +886,34 @@ export default function TranslationEditor() {
                 return (
                   <div
                     key={seg.id}
+                    data-segment-id={seg.id}
                     onClick={() => timeline.setSelectedSegmentId(seg.id)}
                     className={`border rounded-xl p-4 transition grid grid-cols-2 gap-4 cursor-pointer ${
                       timeline.selectedSegmentId === seg.id
-                        ? 'border-indigo-500 bg-indigo-950/10'
-                        : 'border-slate-800 bg-slate-900/30'
+                        ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+                        : dirtySegments.has(seg.id)
+                        ? 'border-amber-500/50 bg-amber-950/20'
+                        : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
                     }`}
                   >
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              seekToTime(seg.startTimeSeconds, seg.id);
+                              if (videoRef.current && videoRef.current.paused) {
+                                void videoRef.current.play();
+                              }
+                            }}
+                            className="text-[10px] bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500 hover:text-white px-2 py-0.5 rounded transition flex items-center gap-1 font-semibold uppercase tracking-wider"
+                          >
+                            ▶ Play
+                          </button>
+                          <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
+                        </div>
                         <button
                           type="button"
                           onClick={(event) => {
