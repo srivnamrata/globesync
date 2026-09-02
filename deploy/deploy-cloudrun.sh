@@ -23,6 +23,20 @@ API_CONCURRENCY="${API_CONCURRENCY:-10}"
 API_MAX_INSTANCES="${API_MAX_INSTANCES:-8}"
 API_MIN_INSTANCES="${API_MIN_INSTANCES:-0}"
 API_TIMEOUT="${API_TIMEOUT:-300}"
+GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com}}"
+
+if [[ -z "$GOOGLE_WEB_CLIENT_ID" ]]; then
+  EXISTING_GOOGLE_CLIENT_IDS="$(gcloud run services describe "$API_SERVICE" --project="$PROJECT_ID" --region="$REGION" --format='value(spec.template.spec.containers[0].env[?name="GOOGLE_OAUTH_CLIENT_IDS"].value)' 2>/dev/null || true)"
+  if [[ "$EXISTING_GOOGLE_CLIENT_IDS" =~ ([[:alnum:]-]+\.apps\.googleusercontent\.com) ]]; then
+    GOOGLE_WEB_CLIENT_ID="${BASH_REMATCH[1]}"
+    echo "==> Reusing configured Google web client ID from $API_SERVICE"
+  fi
+fi
+
+if [[ -z "$GOOGLE_WEB_CLIENT_ID" ]]; then
+  echo "ERROR: No Google web client ID is configured yet. Create one once in Google Cloud OAuth credentials, then set GOOGLE_WEB_CLIENT_ID for the first deploy." >&2
+  exit 1
+fi
 
 gcloud config set project "$PROJECT_ID"
 
@@ -98,17 +112,15 @@ gcloud run deploy "$API_SERVICE" \
 API_URL="$(gcloud run services describe "$API_SERVICE" --region="$REGION" --format='value(status.url)')"
 echo "API URL: $API_URL"
 
-# Patch Cloud Tasks target placeholders if still unset in the running service.
+# Patch Cloud Tasks target placeholders and auth client configuration in the running API service.
 gcloud run services update "$API_SERVICE" \
   --region="$REGION" \
-  --update-env-vars="CLOUD_TASKS_TARGET_URL=${API_URL},INTERNAL_TASKS_AUDIENCE=${API_URL},GCS_BUCKET_NAME=${RAW_BUCKET},GCS_EXPORTS_BUCKET=${EXPORTS_BUCKET}"
+  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=${API_URL}##INTERNAL_TASKS_AUDIENCE=${API_URL}##GCS_BUCKET_NAME=${RAW_BUCKET}##GCS_EXPORTS_BUCKET=${EXPORTS_BUCKET}##GOOGLE_OAUTH_CLIENT_IDS=[\"${GOOGLE_WEB_CLIENT_ID}\"]"
 
 WEB_BUILD_ARGS=(
   "--build-arg=NEXT_PUBLIC_API_URL=${API_URL}"
 )
-if [[ -n "${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}" ]]; then
-  WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}")
-fi
+WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}")
 if [[ -n "${NEXT_PUBLIC_AUTH_TOKEN:-}" ]]; then
   WEB_BUILD_ARGS+=("--build-arg=NEXT_PUBLIC_AUTH_TOKEN=${NEXT_PUBLIC_AUTH_TOKEN}")
 fi
@@ -130,7 +142,7 @@ for arg in "${WEB_BUILD_ARGS[@]}"; do
   WEB_BUILD_ARGS_YAML+=$'      - '\"${arg}\"$'\n'
 done
 
-echo "==> Building web image with NEXT_PUBLIC_API_URL=$API_URL"
+echo "==> Building web image with NEXT_PUBLIC_API_URL=$API_URL and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID"
 gcloud builds submit \
   --config=/dev/stdin <<EOF
 steps:
@@ -175,4 +187,5 @@ echo
 echo "Deploy complete."
 echo "  API: $API_URL"
 echo "  Web: $WEB_URL"
+echo "Google web client ID: $GOOGLE_WEB_CLIENT_ID"
 echo "Create queue '${CLOUD_TASKS_QUEUE:-translation-jobs}' before testing Cloud Tasks-backed routes."
