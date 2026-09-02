@@ -270,8 +270,12 @@ class ProjectService:
             raise ProjectNotFoundError("Project not found.")
         return project
 
+    def _loaded_draft_version(self, project: Project) -> int:
+        draft = project.__dict__.get("draft")
+        return draft.version if draft else 0
+
     def _build_project_summary(self, project: Project) -> ProjectSummaryResponse:
-        latest_draft_version = project.draft.version if project.draft else 0
+        latest_draft_version = self._loaded_draft_version(project)
         return ProjectSummaryResponse(
             id=project.id,
             workspace_id=project.workspace_id,
@@ -291,7 +295,7 @@ class ProjectService:
         )
 
     def _build_project_detail(self, project: Project) -> ProjectDetailResponse:
-        latest_draft_version = project.draft.version if project.draft else 0
+        latest_draft_version = self._loaded_draft_version(project)
         return ProjectDetailResponse(
             id=project.id,
             workspace_id=project.workspace_id,
