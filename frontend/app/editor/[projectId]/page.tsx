@@ -729,9 +729,6 @@ export default function TranslationEditor() {
 
         {/* History & Mux Export Triggers */}
         <div className="flex items-center gap-3">
-          {!history.canUndo && !history.canRedo && (
-            <span className="hidden text-xs text-slate-500 lg:inline">Undo and redo become available after transcript or translation edits.</span>
-          )}
           <button
             onClick={history.undo}
             disabled={!history.canUndo}
