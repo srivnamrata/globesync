@@ -270,7 +270,33 @@ class StorageService:
         origin: Optional[str] = None,
         size_bytes: Optional[int] = None,
     ) -> str:
-        """Issues a GCS resumable upload session URL for direct browser PUT/POST."""
+        """Issues a GCS resumable upload session URL for direct browser PUT/POST.
+
+        Args:
+            key: GCS object path (must be non-empty).
+            mime_type: Content-Type of the upload (e.g. "video/mp4").
+            origin: If provided, sets the CORS origin header on the session
+                so browsers can PUT directly without a preflight rejection.
+            size_bytes: Known upload size in bytes. When supplied GCS enforces
+                the exact byte count; must be a positive integer.
+
+        Returns:
+            The resumable upload session URI as a string.
+        """
+        if not key or not key.strip():
+            raise MediaAppException(
+                status_code=400,
+                error_code=ErrorCode.STORAGE_UPLOAD_FAILED,
+                message="key must be a non-empty string.",
+                details={"key": key},
+            )
+        if size_bytes is not None and size_bytes <= 0:
+            raise MediaAppException(
+                status_code=400,
+                error_code=ErrorCode.STORAGE_UPLOAD_FAILED,
+                message="size_bytes must be a positive integer.",
+                details={"size_bytes": size_bytes, "key": key},
+            )
         try:
             blob = self._bucket().blob(key)
             return blob.create_resumable_upload_session(
