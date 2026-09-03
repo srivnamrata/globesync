@@ -381,7 +381,13 @@ async def update_translation(
     """Allows user to edit translated text. Re-calculates estimated speech duration in real-time."""
     stmt = (
         select(Translation)
-        .options(selectinload(Translation.segment))
+        # The response includes generated-audio readiness. Load it before the
+        # commit so response formatting never triggers a lazy database query
+        # from the async request path.
+        .options(
+            selectinload(Translation.segment),
+            selectinload(Translation.generated_audio),
+        )
         .where(Translation.id == translation_id)
     )
     res = await db.execute(stmt)
