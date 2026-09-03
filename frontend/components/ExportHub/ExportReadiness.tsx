@@ -17,6 +17,11 @@ type ReadinessIssue = {
   severity: 'blocker' | 'warning';
 };
 
+function formatIssue(issue: ReadinessIssue): string {
+  if (issue.count === 1) return issue.label;
+  return `${issue.count} ${issue.label.replace('segment ', 'segments ')}`;
+}
+
 export function ExportReadiness({
   hasDraftConflict,
   hasMedia,
@@ -42,14 +47,14 @@ export function ExportReadiness({
   const blockers: ReadinessIssue[] = [
     ...(!hasMedia ? [{ count: 1, label: 'Source media is required', severity: 'blocker' as const }] : []),
     ...(!hasTranscript || segments.length === 0 ? [{ count: 1, label: 'A completed transcript is required', severity: 'blocker' as const }] : []),
-    ...(missingTranslations > 0 ? [{ count: missingTranslations, label: 'segments have no translation', severity: 'blocker' as const }] : []),
+    ...(missingTranslations > 0 ? [{ count: missingTranslations, label: 'segment has no translation', severity: 'blocker' as const }] : []),
     ...(hasDraftConflict ? [{ count: 1, label: 'draft conflict needs review before rendering', severity: 'blocker' as const }] : []),
   ];
   const warnings: ReadinessIssue[] = [
     ...(dirtySegmentCount > 0 ? [{ count: dirtySegmentCount, label: 'edited segments have not been saved', severity: 'warning' as const }] : []),
-    ...(timingRisks > 0 ? [{ count: timingRisks, label: 'segments have timing-fit risks', severity: 'warning' as const }] : []),
-    ...(confidenceRisks > 0 ? [{ count: confidenceRisks, label: 'segments have low translation confidence', severity: 'warning' as const }] : []),
-    ...(missingAudio > 0 ? [{ count: missingAudio, label: 'segments do not have ready audio', severity: 'warning' as const }] : []),
+    ...(timingRisks > 0 ? [{ count: timingRisks, label: 'segment needs timing-fit review', severity: 'warning' as const }] : []),
+    ...(confidenceRisks > 0 ? [{ count: confidenceRisks, label: 'segment has low translation confidence', severity: 'warning' as const }] : []),
+    ...(missingAudio > 0 ? [{ count: missingAudio, label: 'segment audio will be synthesized during build', severity: 'warning' as const }] : []),
   ];
   const isReady = blockers.length === 0;
 
@@ -60,7 +65,7 @@ export function ExportReadiness({
           <h2 id="export-readiness-heading" className="text-sm font-bold text-white">Export readiness</h2>
           <p className="mt-1 text-xs leading-5 text-slate-400">Review requirements and quality signals before starting a render.</p>
         </div>
-        <StatusBadge tone={isReady ? 'success' : 'error'}>{isReady ? 'Ready to render' : 'Action required'}</StatusBadge>
+        <StatusBadge tone={isReady ? 'success' : 'error'}>{isReady ? 'Ready to build' : 'Action required'}</StatusBadge>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-center">
@@ -77,7 +82,7 @@ export function ExportReadiness({
       {blockers.length > 0 ? (
         <StatePanel title="Resolve before rendering" tone="error">
           <ul className="mt-1 list-disc space-y-1 pl-4">
-            {blockers.map((issue) => <li key={issue.label}>{issue.count > 1 ? `${issue.count} ${issue.label}` : issue.label}</li>)}
+            {blockers.map((issue) => <li key={issue.label}>{formatIssue(issue)}</li>)}
           </ul>
         </StatePanel>
       ) : null}
@@ -85,13 +90,13 @@ export function ExportReadiness({
       {warnings.length > 0 ? (
         <StatePanel title="Quality checks recommended" tone="warning">
           <ul className="mt-1 list-disc space-y-1 pl-4">
-            {warnings.map((issue) => <li key={issue.label}>{issue.count} {issue.label}</li>)}
+            {warnings.map((issue) => <li key={issue.label}>{formatIssue(issue)}</li>)}
           </ul>
         </StatePanel>
       ) : null}
 
       {isReady && warnings.length === 0 ? (
-        <StatePanel title="All checks passed" tone="success">The available media, transcript, translations, and save state are ready for rendering.</StatePanel>
+        <StatePanel title="All checks passed" tone="success">The available media, transcript, translations, and save state are ready for a build.</StatePanel>
       ) : null}
     </section>
   );

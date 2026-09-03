@@ -1226,9 +1226,10 @@ export default function TranslationEditor() {
       </header>
 
       {isHistoryOpen && (
-        <aside className="absolute right-6 top-16 z-30 w-80 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+        <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="version-history-heading">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-white">Version history</h2>
+            <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
             <Button
               onClick={() => setIsHistoryOpen(false)}
               variant="quiet"
@@ -1258,10 +1259,12 @@ export default function TranslationEditor() {
             </ul>
           )}
         </aside>
+        </div>
       )}
 
       {isExportHistoryOpen && (
-        <aside id="project-export-history" className="absolute right-6 top-16 z-30 w-[min(28rem,calc(100vw-3rem))]">
+        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+          <aside id="project-export-history" className="h-full w-full max-w-md overflow-y-auto" role="dialog" aria-modal="true" aria-label="Project outputs">
           <div className="mb-2 flex justify-end">
             <Button
               onClick={() => setIsExportHistoryOpen(false)}
@@ -1272,11 +1275,13 @@ export default function TranslationEditor() {
             </Button>
           </div>
           <ExportHistory projectId={currentProject.id} />
-        </aside>
+          </aside>
+        </div>
       )}
 
       {isExportReadinessOpen && (
-        <aside id="project-export-readiness" className="absolute right-6 top-16 z-30 w-[min(28rem,calc(100vw-3rem))]">
+        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+          <aside id="project-export-readiness" className="h-full w-full max-w-md overflow-y-auto" role="dialog" aria-modal="true" aria-label="Export readiness">
           <div className="mb-2 flex justify-end">
             <Button
               onClick={() => setIsExportReadinessOpen(false)}
@@ -1294,7 +1299,8 @@ export default function TranslationEditor() {
             segments={segments}
             translations={translations}
           />
-        </aside>
+          </aside>
+        </div>
       )}
 
       {hasRemoteDraftConflict && (

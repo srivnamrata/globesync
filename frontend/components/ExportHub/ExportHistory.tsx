@@ -19,29 +19,35 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
   const [history, setHistory] = useState<ProjectExportHistoryItem[]>([]);
   const [renderHistory, setRenderHistory] = useState<ProjectRenderHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function loadHistory() {
       setLoading(true);
-      setError(null);
-      try {
-        const [exportResponse, renderResponse] = await Promise.all([
+      setExportError(null);
+      setRenderError(null);
+      const [exportResult, renderResult] = await Promise.allSettled([
           projectService.getProjectExportHistory(projectId),
           projectService.getProjectRenderHistory(projectId),
-        ]);
-        if (active) {
-          setHistory(exportResponse);
-          setRenderHistory(renderResponse);
-        }
-      } catch (loadError) {
-        console.error('Failed to load project export history:', loadError);
-        if (active) setError('Export history is unavailable right now. Your existing outputs are unchanged.');
-      } finally {
-        if (active) setLoading(false);
+      ]);
+      if (!active) return;
+
+      if (exportResult.status === 'fulfilled') {
+        setHistory(exportResult.value);
+      } else {
+        console.error('Failed to load format export history:', exportResult.reason);
+        setExportError('Format export history is unavailable right now. Existing outputs are unchanged.');
       }
+      if (renderResult.status === 'fulfilled') {
+        setRenderHistory(renderResult.value);
+      } else {
+        console.error('Failed to load dub and lip-sync history:', renderResult.reason);
+        setRenderError('Dub and lip-sync history is unavailable right now. Existing outputs are unchanged.');
+      }
+      setLoading(false);
     }
 
     void loadHistory();
@@ -57,12 +63,11 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
 
       {loading && history.length === 0 && renderHistory.length === 0 ? (
         <div className="py-8 text-center text-xs text-slate-500" role="status">Loading export history...</div>
-      ) : error ? (
-        <StatePanel title="Could not load export history" tone="warning">{error}</StatePanel>
-      ) : history.length === 0 && renderHistory.length === 0 ? (
+      ) : history.length === 0 && renderHistory.length === 0 && !exportError && !renderError ? (
         <div className="py-8 text-center text-xs text-slate-500">No exports have been created for this project yet.</div>
       ) : (
         <div className="max-h-80 space-y-5 overflow-y-auto pr-2">
+          {renderError && <StatePanel title="Dub and Lip-Sync history unavailable" tone="warning">{renderError}</StatePanel>}
           {renderHistory.length > 0 && (
             <section className="space-y-3" aria-label="Dub and lip-sync outputs">
               <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dub and lip-sync builds</h3>
@@ -86,6 +91,7 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
               ))}
             </section>
           )}
+          {exportError && <StatePanel title="Format export history unavailable" tone="warning">{exportError}</StatePanel>}
           {history.length > 0 && <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format exports</h3>}
           {history.map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
