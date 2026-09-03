@@ -357,6 +357,31 @@ export default function ProjectBrowser() {
     }
   };
 
+  const handleSwapLanguages = () => {
+    setSourceLang(targetLang);
+    setTargetLang(sourceLang);
+  };
+
+  const refreshProjects = async () => {
+    const refreshedProjects = await projectService.fetchAllProjects();
+    setProjects(refreshedProjects);
+  };
+
+  const handleRenameProject = async (projectId: string, name: string) => {
+    await projectService.renameProject(projectId, name);
+    await refreshProjects();
+  };
+
+  const handleArchiveProject = async (projectId: string) => {
+    await projectService.archiveProject(projectId);
+    await refreshProjects();
+  };
+
+  const handleDuplicateProject = async (projectId: string) => {
+    await projectService.duplicateProject(projectId);
+    await refreshProjects();
+  };
+
   const entryViewState = deriveEntryViewState(
     authLoading,
     authContext,
@@ -420,8 +445,12 @@ export default function ProjectBrowser() {
       onProjectNameChange={setNewProjectName}
       onSourceLangChange={setSourceLang}
       onTargetLangChange={setTargetLang}
+      onSwapLanguages={handleSwapLanguages}
       onCreateProject={handleCreateProject}
       onSignOut={handleSignOut}
+      onRename={handleRenameProject}
+      onArchive={handleArchiveProject}
+      onDuplicate={handleDuplicateProject}
     />
   ) : null;
 }

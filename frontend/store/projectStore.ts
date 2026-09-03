@@ -10,11 +10,14 @@ export interface Project {
   updatedAt: string;
   transcriptId?: string;
   mediaId?: string;
+  mediaFilename?: string;
+  mediaDurationSeconds?: number;
+  pipelineStage?: string;
+  pipelineStatus?: string;
+  pipelineProgressPercent?: number;
+  pipelineErrorMessage?: string;
   currentLipsyncJobId?: string;
   lastRenderedVideoPath?: string;
-  lastRenderedVideoUrl?: string;
-  originalVideoUrl?: string;
-  dubbedAudioUrl?: string;
 }
 
 interface ProjectState {

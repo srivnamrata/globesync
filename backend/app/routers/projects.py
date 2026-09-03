@@ -21,6 +21,8 @@ from app.schemas.projects import (
     ProjectListQueryParams,
     ProjectListResponse,
     ProjectUpdateRequest,
+    ProjectVersionListResponse,
+    ProjectVersionResponse,
 )
 from app.services.project_service import (
     ProjectDraftConflictError,
@@ -50,12 +52,15 @@ async def list_projects(
         cursor=cursor,
         include_archived=include_archived,
     )
-    return await project_service.list_projects(
-        db=db,
-        workspace_id=context.workspace_id,
-        filters=filters,
-        actor_user_id=context.user_id,
-    )
+    try:
+        return await project_service.list_projects(
+            db=db,
+            workspace_id=context.workspace_id,
+            filters=filters,
+            actor_user_id=context.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(
@@ -183,6 +188,72 @@ async def archive_project(
             db=db,
             workspace_id=context.workspace_id,
             project_id=project_id,
+            actor_user_id=context.user_id,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{project_id}/versions",
+    response_model=ProjectVersionListResponse,
+    summary="List Project Draft Versions",
+)
+async def list_project_versions(
+    project_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await project_service.list_project_versions(
+            db=db,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            actor_user_id=context.user_id,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{project_id}/duplicate",
+    response_model=ProjectDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate Project Shell",
+)
+async def duplicate_project(
+    project_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await project_service.duplicate_project(
+            db=db,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            actor_user_id=context.user_id,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{project_id}/versions/{version_number}",
+    response_model=ProjectVersionResponse,
+    summary="Get Project Draft Version",
+)
+async def get_project_version(
+    version_number: int = Path(..., ge=1),
+    project_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await project_service.get_project_version(
+            db=db,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            version_number=version_number,
             actor_user_id=context.user_id,
         )
     except ProjectNotFoundError as exc:

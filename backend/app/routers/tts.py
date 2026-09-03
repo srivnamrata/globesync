@@ -145,6 +145,15 @@ async def synthesize_single_segment(
     )
     gen_audio.project_id = translation.project_id
     gen_audio.workspace_id = context.workspace_id
+
+    # Regeneration is replacement, not versioning. Multiple rows for one
+    # translation make the API's audio readiness state nondeterministic.
+    existing_audio_result = await db.execute(
+        select(GeneratedAudio).where(GeneratedAudio.translation_id == translation.id)
+    )
+    for existing_audio in existing_audio_result.scalars().all():
+        await db.delete(existing_audio)
+
     db.add(gen_audio)
     await db.commit()
     await db.refresh(gen_audio)

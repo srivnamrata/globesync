@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
+import json
+import base64
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.project import Project, ProjectDraft
+from app.models.project import Project, ProjectDraft, ProjectVersion
 from app.schemas.projects import (
     DraftConflictErrorDetail,
     ProjectArchiveResponse,
@@ -21,6 +24,9 @@ from app.schemas.projects import (
     ProjectListResponse,
     ProjectSummaryResponse,
     ProjectUpdateRequest,
+    ProjectVersionListResponse,
+    ProjectVersionSummaryResponse,
+    ProjectVersionResponse,
 )
 from app.services.storage_service import storage_service
 
@@ -56,13 +62,30 @@ class ProjectService:
         filters: Optional[ProjectListQueryParams] = None,
     ) -> ProjectListResponse:
         query_params = filters or ProjectListQueryParams()
+        cursor_updated_at, cursor_project_id = self._decode_project_cursor(query_params.cursor)
         stmt: Select[tuple[Project]] = (
             select(Project)
-            .options(selectinload(Project.draft), selectinload(Project.media_file))
+            .options(
+                selectinload(Project.draft),
+                selectinload(Project.media_file),
+                selectinload(Project.current_lipsync_job),
+                selectinload(Project.current_export_job),
+            )
             .where(Project.workspace_id == workspace_id)
-            .order_by(Project.updated_at.desc())
-            .limit(query_params.limit)
+            .order_by(Project.updated_at.desc(), Project.id.desc())
+            .limit(query_params.limit + 1)
         )
+
+        if cursor_updated_at is not None and cursor_project_id is not None:
+            stmt = stmt.where(
+                or_(
+                    Project.updated_at < cursor_updated_at,
+                    and_(
+                        Project.updated_at == cursor_updated_at,
+                        Project.id < cursor_project_id,
+                    ),
+                )
+            )
 
         if query_params.status:
             stmt = stmt.where(Project.status == query_params.status)
@@ -70,8 +93,14 @@ class ProjectService:
             stmt = stmt.where(Project.archived_at.is_(None))
 
         result = await db.execute(stmt)
-        projects = result.scalars().all()
-        return ProjectListResponse(items=[self._build_project_summary(project) for project in projects])
+        projects = list(result.scalars().all())
+        has_next_page = len(projects) > query_params.limit
+        page = projects[:query_params.limit]
+        next_cursor = self._encode_project_cursor(page[-1]) if has_next_page and page else None
+        return ProjectListResponse(
+            items=[self._build_project_summary(project) for project in page],
+            next_cursor=next_cursor,
+        )
 
     async def create_project(
         self,
@@ -182,13 +211,14 @@ class ProjectService:
                         last_saved_by_user_id=project.created_by_user_id,
                     )
                 )
+            merged_payload = self._merge_project_metadata(project, payload.draft_payload)
             draft = ProjectDraft(
                 id=uuid.uuid4(),
                 project_id=project.id,
                 workspace_id=workspace_id,
                 version=1,
                 draft_schema_version=payload.draft_schema_version,
-                draft_payload=self._merge_project_metadata(project, payload.draft_payload),
+                draft_payload=merged_payload,
                 base_project_updated_at=payload.base_project_updated_at,
                 last_saved_by_user_id=actor_user_id,
                 created_at=now,
@@ -208,7 +238,8 @@ class ProjectService:
                 )
             draft.version += 1
             draft.draft_schema_version = payload.draft_schema_version
-            draft.draft_payload = self._merge_project_metadata(project, payload.draft_payload)
+            merged_payload = self._merge_project_metadata(project, payload.draft_payload)
+            draft.draft_payload = merged_payload
             draft.base_project_updated_at = payload.base_project_updated_at
             draft.last_saved_by_user_id = actor_user_id
             draft.updated_at = now
@@ -216,6 +247,40 @@ class ProjectService:
         project.updated_at = now
         await db.flush()
         await db.refresh(draft)
+        if payload.checkpoint_reason:
+            payload_hash = self._hash_payload(draft.draft_payload)
+            latest_version = await db.scalar(
+                select(ProjectVersion)
+                .where(ProjectVersion.project_id == project.id)
+                .order_by(ProjectVersion.version.desc())
+                .limit(1)
+            )
+            if latest_version is None or not self._checkpoint_matches(
+                latest_version,
+                payload_hash,
+                draft.draft_payload,
+            ):
+                db.add(ProjectVersion(
+                    project_id=project.id,
+                    workspace_id=workspace_id,
+                    version=draft.version,
+                    draft_schema_version=draft.draft_schema_version,
+                    draft_payload=draft.draft_payload,
+                    payload_hash=payload_hash,
+                    checkpoint_reason=payload.checkpoint_reason,
+                    created_by_user_id=actor_user_id,
+                    created_at=now,
+                ))
+
+                version_ids = await db.scalars(
+                    select(ProjectVersion.id)
+                    .where(ProjectVersion.project_id == project.id)
+                    .order_by(ProjectVersion.version.desc())
+                    .offset(50)
+                )
+                stale_ids = list(version_ids)
+                if stale_ids:
+                    await db.execute(ProjectVersion.__table__.delete().where(ProjectVersion.id.in_(stale_ids)))
 
         return ProjectDraftPutResponse(
             project_id=draft.project_id,
@@ -225,6 +290,58 @@ class ProjectService:
             base_project_updated_at=draft.base_project_updated_at,
             last_saved_by_user_id=draft.last_saved_by_user_id,
             updated_at=draft.updated_at,
+        )
+
+    async def list_project_versions(
+        self,
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> ProjectVersionListResponse:
+        await self._get_scoped_project(db, workspace_id, project_id, actor_user_id)
+        result = await db.execute(
+            select(ProjectVersion)
+            .where(
+                ProjectVersion.project_id == project_id,
+                ProjectVersion.workspace_id == workspace_id,
+            )
+            .order_by(ProjectVersion.version.desc())
+        )
+        return ProjectVersionListResponse(items=[
+            ProjectVersionSummaryResponse(
+                version=version.version,
+                draft_schema_version=version.draft_schema_version,
+                created_by_user_id=version.created_by_user_id,
+                created_at=version.created_at,
+            )
+            for version in result.scalars().all()
+        ])
+
+    async def get_project_version(
+        self,
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        version_number: int,
+        actor_user_id: uuid.UUID,
+    ) -> ProjectVersionResponse:
+        await self._get_scoped_project(db, workspace_id, project_id, actor_user_id)
+        version = await db.scalar(
+            select(ProjectVersion).where(
+                ProjectVersion.project_id == project_id,
+                ProjectVersion.workspace_id == workspace_id,
+                ProjectVersion.version == version_number,
+            )
+        )
+        if version is None:
+            raise ProjectNotFoundError("Project version not found.")
+        return ProjectVersionResponse(
+            version=version.version,
+            draft_schema_version=version.draft_schema_version,
+            draft_payload=version.draft_payload,
+            created_by_user_id=version.created_by_user_id,
+            created_at=version.created_at,
         )
 
     async def archive_project(
@@ -248,6 +365,30 @@ class ProjectService:
             archived_at=project.archived_at,
             updated_at=project.updated_at,
         )
+
+    async def duplicate_project(
+        self,
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> ProjectDetailResponse:
+        project = await self._get_scoped_project(db, workspace_id, project_id, actor_user_id)
+        duplicate = Project(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            owner_user_id=actor_user_id,
+            created_by_user_id=actor_user_id,
+            name=f"{project.name} copy",
+            status="draft",
+            source_language=project.source_language,
+            target_language=project.target_language,
+            active_translation_language=project.active_translation_language,
+        )
+        db.add(duplicate)
+        await db.flush()
+        await db.refresh(duplicate)
+        return self._build_project_detail(duplicate)
 
     async def _get_scoped_project(
         self,
@@ -275,17 +416,27 @@ class ProjectService:
         draft = project.__dict__.get("draft")
         return draft.version if draft else 0
 
-    def _build_rendered_video_url(self, project: Project) -> Optional[str]:
-        if not project.last_rendered_video_gcs_path:
-            return None
-        return storage_service.generate_presigned_download_url(
-            project.last_rendered_video_gcs_path,
-            expires_in_seconds=7200,
-        )
-
     def _build_project_summary(self, project: Project) -> ProjectSummaryResponse:
         latest_draft_version = self._loaded_draft_version(project)
-        rendered_video_url = self._build_rendered_video_url(project)
+        media = project.media_file
+        export_job = project.current_export_job
+        lipsync_job = project.current_lipsync_job
+        pipeline_stage: str | None = None
+        pipeline_status: str | None = None
+        pipeline_progress_percent: int | None = None
+        pipeline_error_message: str | None = None
+
+        if export_job is not None:
+            pipeline_stage = f"Export: {export_job.current_stage.replace('_', ' ')}"
+            pipeline_status = export_job.status
+            pipeline_progress_percent = int(export_job.progress_percent)
+            pipeline_error_message = export_job.error_message
+        elif lipsync_job is not None:
+            pipeline_stage = "Lip-sync"
+            pipeline_status = lipsync_job.status
+            pipeline_progress_percent = int(lipsync_job.progress_percent)
+            pipeline_error_message = lipsync_job.error_message
+
         return ProjectSummaryResponse(
             id=project.id,
             workspace_id=project.workspace_id,
@@ -296,10 +447,15 @@ class ProjectService:
             target_language=project.target_language,
             active_translation_language=project.active_translation_language,
             media_file_id=project.media_file_id,
+            media_filename=media.original_filename if media else None,
+            media_duration_seconds=float(media.duration_seconds) if media else None,
+            pipeline_stage=pipeline_stage,
+            pipeline_status=pipeline_status,
+            pipeline_progress_percent=pipeline_progress_percent,
+            pipeline_error_message=pipeline_error_message,
             transcript_id=project.transcript_id,
             latest_draft_version=latest_draft_version,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
-            last_rendered_video_url=rendered_video_url,
             last_opened_at=project.last_opened_at,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -307,7 +463,6 @@ class ProjectService:
 
     def _build_project_detail(self, project: Project) -> ProjectDetailResponse:
         latest_draft_version = self._loaded_draft_version(project)
-        rendered_video_url = self._build_rendered_video_url(project)
         return ProjectDetailResponse(
             id=project.id,
             workspace_id=project.workspace_id,
@@ -324,7 +479,6 @@ class ProjectService:
             current_lipsync_job_id=project.current_lipsync_job_id,
             current_export_job_id=project.current_export_job_id,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
-            last_rendered_video_url=rendered_video_url,
             latest_draft_version=latest_draft_version,
             archived_at=project.archived_at,
             last_opened_at=project.last_opened_at,
@@ -371,6 +525,31 @@ class ProjectService:
     @staticmethod
     def _utcnow() -> datetime:
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _hash_payload(payload: Dict[str, Any]) -> str:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _checkpoint_matches(version: ProjectVersion, payload_hash: str, payload: Dict[str, Any]) -> bool:
+        return version.payload_hash == payload_hash or version.draft_payload == payload
+
+    @staticmethod
+    def _encode_project_cursor(project: Project) -> str:
+        value = f"{project.updated_at.isoformat()}|{project.id}"
+        return base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_project_cursor(cursor: Optional[str]) -> tuple[datetime | None, uuid.UUID | None]:
+        if not cursor:
+            return None, None
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            updated_at, project_id = base64.urlsafe_b64decode(padded).decode("utf-8").split("|", 1)
+            return datetime.fromisoformat(updated_at), uuid.UUID(project_id)
+        except (ValueError, UnicodeDecodeError, base64.binascii.Error) as exc:
+            raise ValueError("Invalid project cursor.") from exc
 
 
 project_service = ProjectService()

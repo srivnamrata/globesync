@@ -6,6 +6,16 @@
   --foreground-rgb: 255, 255, 255;
   --background-start-rgb: 2, 6, 23;
   --background-end-rgb: 15, 23, 42;
+  --gs-brand: #6366f1;
+  --gs-brand-hover: #4f46e5;
+  --gs-focus-ring: rgba(129, 140, 248, 0.55);
+  --gs-surface: #0f172a;
+  --gs-surface-raised: #172033;
+  --gs-border: rgba(148, 163, 184, 0.16);
+  --gs-text-muted: #94a3b8;
+  --gs-success: #34d399;
+  --gs-warning: #fbbf24;
+  --gs-danger: #fb7185;
 }
 
 body {
@@ -16,6 +26,44 @@ body {
       rgb(var(--background-end-rgb))
     )
     rgb(var(--background-start-rgb));
+}
+
+* {
+  border-color: var(--gs-border);
+}
+
+:focus-visible {
+  outline: 3px solid var(--gs-focus-ring);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .gs-panel {
+    @apply rounded-panel border border-white/10 bg-slate-900/70 shadow-panel;
+  }
+
+  .gs-button-primary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-control bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition duration-interface ease-interface hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .gs-button-secondary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-control border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition duration-interface ease-interface hover:border-white/25 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .gs-field {
+    @apply w-full rounded-control border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white placeholder:text-slate-500 transition duration-interface ease-interface focus:border-brand-400 focus:outline-none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Custom Scrollbars */

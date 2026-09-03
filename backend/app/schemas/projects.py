@@ -61,6 +61,7 @@ class ProjectDraftPutRequest(BaseModel):
     draft_schema_version: str = Field(..., min_length=1, json_schema_extra={"example": "heygenx/v1"})
     base_project_updated_at: Optional[datetime] = Field(None, json_schema_extra={"example": "2026-08-29T09:42:10Z"})
     draft_payload: Dict[str, Any] = Field(...)
+    checkpoint_reason: Optional[str] = Field(None, max_length=50, json_schema_extra={"example": "manual_save"})
 
 
 class ProjectSummaryResponse(BaseModel):
@@ -73,10 +74,15 @@ class ProjectSummaryResponse(BaseModel):
     target_language: Optional[str] = None
     active_translation_language: Optional[str] = None
     media_file_id: Optional[UUID] = None
+    media_filename: Optional[str] = None
+    media_duration_seconds: Optional[float] = None
+    pipeline_stage: Optional[str] = None
+    pipeline_status: Optional[str] = None
+    pipeline_progress_percent: Optional[int] = None
+    pipeline_error_message: Optional[str] = None
     transcript_id: Optional[UUID] = None
     latest_draft_version: int = Field(0)
     last_rendered_video_gcs_path: Optional[str] = None
-    last_rendered_video_url: Optional[str] = None
     last_opened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -103,7 +109,6 @@ class ProjectDetailResponse(BaseModel):
     current_lipsync_job_id: Optional[UUID] = None
     current_export_job_id: Optional[UUID] = None
     last_rendered_video_gcs_path: Optional[str] = None
-    last_rendered_video_url: Optional[str] = None
     latest_draft_version: int = Field(0)
     archived_at: Optional[datetime] = None
     last_opened_at: Optional[datetime] = None
@@ -131,6 +136,21 @@ class ProjectDraftPutResponse(BaseModel):
     base_project_updated_at: Optional[datetime] = None
     last_saved_by_user_id: UUID
     updated_at: datetime
+
+
+class ProjectVersionSummaryResponse(BaseModel):
+    version: int
+    draft_schema_version: str
+    created_by_user_id: UUID
+    created_at: datetime
+
+
+class ProjectVersionListResponse(BaseModel):
+    items: List[ProjectVersionSummaryResponse] = Field(default_factory=list)
+
+
+class ProjectVersionResponse(ProjectVersionSummaryResponse):
+    draft_payload: Dict[str, Any]
 
 
 class ProjectArchiveResponse(BaseModel):

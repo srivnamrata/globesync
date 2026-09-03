@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { AuthBootstrapResponse } from '../services/authService';
 import type { Project } from '../store/projectStore';
+import { Button, StatePanel, StatusBadge } from './ui';
 
 export type HomeShellLanguageOption = {
   value: string;
@@ -33,15 +34,49 @@ type WorkspaceHomeProps = {
   onProjectNameChange: (value: string) => void;
   onSourceLangChange: (value: string) => void;
   onTargetLangChange: (value: string) => void;
+  onSwapLanguages: () => void;
   onCreateProject: (event: React.FormEvent<HTMLFormElement>) => void;
   onSignOut: () => void;
+  onRename: (projectId: string, name: string) => Promise<void>;
+  onArchive: (projectId: string) => Promise<void>;
+  onDuplicate: (projectId: string) => Promise<void>;
 };
 
-const productHighlights = [
+/* Legacy encoded landing-page content retained only for source-history compatibility.
   { icon: '🌍', heading: 'Reach 20+ languages', body: 'Translate and dub your videos into over 20 languages — without hiring studios or managing multiple vendors.' },
   { icon: '✂️', heading: 'Edit every word', body: 'Review and fix each transcript line and translation before it goes to voice. Full control, no black boxes.' },
   { icon: '🚀', heading: 'Upload, translate, export', body: 'From raw video to dubbed output in a few clicks. Track every stage and download when it\'s ready.' },
-];
+]; */
+
+const productHighlights = [
+  { icon: 'languages', heading: 'Reach 20+ languages', body: 'Translate and dub your videos into over 20 languages without studios or multiple vendors.' },
+  { icon: 'edit', heading: 'Edit every word', body: 'Review and fix each transcript line and translation before it goes to voice. Full control, no black boxes.' },
+  { icon: 'export', heading: 'Upload, translate, export', body: 'Move from raw video to dubbed output in a few steps, then download when it is ready.' },
+] as const;
+
+function FeatureIcon({ name }: { name: (typeof productHighlights)[number]['icon'] }) {
+  const shared = {
+    width: 24,
+    height: 24,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+
+  if (name === 'languages') {
+    return <svg {...shared}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.2 2.5 3.3 5.5 3.3 9S14.2 18.5 12 21c-2.2-2.5-3.3-5.5-3.3-9S9.8 5.5 12 3Z" /></svg>;
+  }
+
+  if (name === 'edit') {
+    return <svg {...shared}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>;
+  }
+
+  return <svg {...shared}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>;
+}
 
 function formatProjectStatus(status: Project['status']): string {
   switch (status) {
@@ -55,23 +90,25 @@ function formatProjectStatus(status: Project['status']): string {
       return 'Archived';
     case 'draft':
     default:
-      return 'Draft';
+      return 'Planning';
   }
 }
 
-function getProjectStatusClasses(status: Project['status']): string {
+type StatusTone = 'neutral' | 'processing' | 'success' | 'error';
+
+function getProjectStatusTone(status: Project['status']): StatusTone {
   switch (status) {
     case 'completed':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+      return 'success';
     case 'failed':
-      return 'border-rose-500/30 bg-rose-500/10 text-rose-200';
+      return 'error';
     case 'processing':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      return 'processing';
     case 'archived':
-      return 'border-slate-600/60 bg-slate-800/80 text-slate-300';
+      return 'neutral';
     case 'draft':
     default:
-      return 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200';
+      return 'neutral';
   }
 }
 
@@ -84,15 +121,36 @@ function formatProjectDate(value: string): string {
 }
 
 function StatusBanner({ tone, message }: { tone: 'warning' | 'info'; message: string }) {
-  const toneClasses = tone === 'warning'
-    ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
-    : 'border-sky-500/30 bg-sky-500/10 text-sky-100';
-
   return (
-    <div className={`rounded-2xl border px-4 py-3 text-sm ${toneClasses}`}>
+    <StatePanel tone={tone} title={tone === 'warning' ? 'Action needed' : 'Workspace update'}>
       {message}
-    </div>
+    </StatePanel>
   );
+}
+
+function formatDuration(seconds?: number): string | null {
+  if (!seconds || seconds <= 0) {
+    return null;
+  }
+
+  const wholeSeconds = Math.round(seconds);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const remainingSeconds = wholeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function formatPipelineStage(stage?: string): string {
+  if (!stage) {
+    return 'Preparing project';
+  }
+
+  return stage.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 const languagePillRow = ['Hindi', 'Spanish', 'French', 'Arabic', 'Japanese', 'Portuguese', 'German', 'Korean', 'Italian', 'Turkish', 'Dutch', 'Russian'];
@@ -155,7 +213,7 @@ export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
           <div className="mt-16 grid w-full gap-4 sm:grid-cols-3">
             {productHighlights.map((item) => (
               <div key={item.heading} className="rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:shadow-md">
-                <div className="mb-3 text-2xl">{item.icon}</div>
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><FeatureIcon name={item.icon} /></div>
                 <h3 className="text-base font-bold text-slate-900">{item.heading}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{item.body}</p>
               </div>
@@ -217,9 +275,19 @@ export function WorkspaceLoadingState({ authContext, onSignOut, title, descripti
 }
 
 type SortKey = 'updatedAt' | 'createdAt' | 'name';
+type StatusFilter = 'all' | 'draft' | 'processing' | 'completed' | 'failed';
 
-function ProjectActionsMenu({ projectId, projectName }: { projectId: string; projectName: string }) {
+type ProjectActionsMenuProps = {
+  projectId: string;
+  projectName: string;
+  onRename: (projectId: string, name: string) => Promise<void>;
+  onArchive: (projectId: string) => Promise<void>;
+  onDuplicate: (projectId: string) => Promise<void>;
+};
+
+function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDuplicate }: ProjectActionsMenuProps) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -231,31 +299,75 @@ function ProjectActionsMenu({ projectId, projectName }: { projectId: string; pro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
+  const handleRename = async () => {
+    const newName = window.prompt(`Rename "${projectName}":`, projectName);
+    if (!newName || newName.trim() === projectName) return;
+    setOpen(false);
+    setBusy('rename');
+    try {
+      await onRename(projectId, newName.trim());
+    } catch {
+      window.alert('Could not rename project. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    setOpen(false);
+    setBusy('duplicate');
+    try {
+      await onDuplicate(projectId);
+    } catch {
+      window.alert('Could not duplicate project. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!window.confirm(`Archive "${projectName}"? It will be hidden from your workspace.`)) return;
+    setOpen(false);
+    setBusy('archive');
+    try {
+      await onArchive(projectId);
+    } catch {
+      window.alert('Could not archive project. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/10 hover:text-slate-300"
+        disabled={!!busy}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/10 hover:text-slate-300 disabled:opacity-40"
         aria-label="Project actions"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="8" cy="3" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13" r="1.5" />
-        </svg>
+        {busy ? (
+          <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="8" cy="3" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13" r="1.5" />
+          </svg>
+        )}
       </button>
       {open && (
         <div className="absolute right-0 top-9 z-50 min-w-[160px] rounded-2xl border border-white/10 bg-slate-900 py-1 shadow-2xl shadow-black/40">
           <button
             type="button"
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
-            onClick={() => { setOpen(false); alert(`Rename "${projectName}" — wire to rename handler`); }}
+            onClick={() => void handleRename()}
           >
             Rename
           </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
-            onClick={() => { setOpen(false); alert(`Duplicate "${projectName}" — wire to duplicate handler`); }}
+            onClick={() => void handleDuplicate()}
           >
             Duplicate
           </button>
@@ -263,7 +375,7 @@ function ProjectActionsMenu({ projectId, projectName }: { projectId: string; pro
           <button
             type="button"
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
-            onClick={() => { setOpen(false); alert(`Archive "${projectName}" — wire to archive handler`); }}
+            onClick={() => void handleArchive()}
           >
             Archive
           </button>
@@ -286,14 +398,20 @@ export function WorkspaceHome({
   onProjectNameChange,
   onSourceLangChange,
   onTargetLangChange,
+  onSwapLanguages,
   onCreateProject,
   onSignOut,
+  onRename,
+  onArchive,
+  onDuplicate,
 }: WorkspaceHomeProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const visibleProjects = projects
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => statusFilter === 'all' || p.status === statusFilter)
     .sort((a, b) => {
       if (sortKey === 'name') return a.name.localeCompare(b.name);
       return new Date(b[sortKey]).getTime() - new Date(a[sortKey]).getTime();
@@ -398,33 +516,44 @@ export function WorkspaceHome({
                     <input
                       type="text"
                       placeholder="Project name"
-                      className="w-full rounded-xl border border-white/20 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-indigo-400"
+                      className="gs-field"
                       value={newProjectName}
                       onChange={(e) => onProjectNameChange(e.target.value)}
                     />
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <select
-                        className="w-full rounded-xl border border-white/20 bg-slate-950 px-2 py-2 text-xs text-slate-300 outline-none transition focus:border-indigo-400"
+                        className="gs-field px-2 py-2 text-xs text-slate-300"
                         value={sourceLang}
                         onChange={(e) => onSourceLangChange(e.target.value)}
                       >
                         {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                       </select>
+                      <button
+                        type="button"
+                        onClick={onSwapLanguages}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-sm text-slate-400 transition hover:border-indigo-400 hover:text-indigo-200"
+                        aria-label="Swap source and target languages"
+                        title="Swap languages"
+                      >
+                        &#8646;
+                      </button>
                       <select
-                        className="w-full rounded-xl border border-white/20 bg-slate-950 px-2 py-2 text-xs text-slate-300 outline-none transition focus:border-indigo-400"
+                        className="gs-field px-2 py-2 text-xs text-slate-300"
                         value={targetLang}
                         onChange={(e) => onTargetLangChange(e.target.value)}
                       >
                         {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                       </select>
                     </div>
-                    <button
+                    <Button
                       type="submit"
                       disabled={isCreatingProject || !newProjectName.trim()}
-                      className="w-full rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-200 disabled:opacity-50"
+                      variant="primary"
+                      loading={isCreatingProject}
+                      className="w-full"
                     >
                       {isCreatingProject ? 'Creating...' : 'Start Upload'}
-                    </button>
+                    </Button>
                   </form>
                 </div>
                 
@@ -449,34 +578,68 @@ export function WorkspaceHome({
                     <p className="text-sm text-slate-400">Start another translation workflow</p>
                   </div>
                 </div>
-                <form onSubmit={onCreateProject} className="grid gap-4 sm:grid-cols-[1fr_auto_auto_auto] items-end">
+                <form onSubmit={onCreateProject} className="grid gap-4 sm:grid-cols-[1fr_auto_auto_auto_auto] items-end">
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Project name</label>
-                      <input type="text" placeholder="e.g. Product Launch Hindi Dub" className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-400" value={newProjectName} onChange={(e) => onProjectNameChange(e.target.value)} />
+                      <input type="text" placeholder="e.g. Product Launch Hindi Dub" className="gs-field px-4 py-2.5" value={newProjectName} onChange={(e) => onProjectNameChange(e.target.value)} />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Source</label>
-                      <select className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-300 outline-none focus:border-indigo-400" value={sourceLang} onChange={(e) => onSourceLangChange(e.target.value)}>
+                      <select className="gs-field px-4 py-2.5 text-slate-300" value={sourceLang} onChange={(e) => onSourceLangChange(e.target.value)}>
                         {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                       </select>
                     </div>
+                    <button
+                      type="button"
+                      onClick={onSwapLanguages}
+                      className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-sm text-slate-400 transition hover:border-indigo-400 hover:text-indigo-200"
+                      aria-label="Swap source and target languages"
+                      title="Swap languages"
+                    >
+                      &#8646;
+                    </button>
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Target</label>
-                      <select className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-2.5 text-sm text-slate-300 outline-none focus:border-indigo-400" value={targetLang} onChange={(e) => onTargetLangChange(e.target.value)}>
+                      <select className="gs-field px-4 py-2.5 text-slate-300" value={targetLang} onChange={(e) => onTargetLangChange(e.target.value)}>
                         {languageOptions.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                       </select>
                     </div>
-                    <button type="submit" disabled={isCreatingProject || !newProjectName.trim()} className="rounded-xl bg-indigo-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+                    <Button type="submit" disabled={isCreatingProject || !newProjectName.trim()} loading={isCreatingProject} className="px-6 py-2.5">
                       {isCreatingProject ? 'Creating...' : '+ New Project'}
-                    </button>
+                    </Button>
                 </form>
              </section>
           )}
 
           {hasProjects && (
             <section>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {(['all', 'draft', 'processing', 'completed', 'failed'] as StatusFilter[]).map((f) => {
+                  const labels: Record<StatusFilter, string> = { all: 'All', draft: 'Planning', processing: 'Processing', completed: 'Complete', failed: 'Needs attention' };
+                  const active = statusFilter === f;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setStatusFilter(f)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                        active
+                          ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200'
+                          : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      {labels[f]}
+                      {f !== 'all' && (
+                        <span className="ml-1.5 opacity-60">{projects.filter((p) => p.status === f).length}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="mb-6 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white">All Projects</h2>
+                <h2 className="text-xl font-semibold text-white">
+                  {statusFilter === 'all' ? 'All Projects' : ({ draft: 'Planning', processing: 'Processing', completed: 'Complete', failed: 'Needs attention' } as Record<StatusFilter, string>)[statusFilter]}
+                </h2>
                 <div className="flex gap-2">
                   <div className="relative">
                     <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 15 15" fill="none"><path d="M10 6.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM9.5 10.207l3.146 3.147a.5.5 0 0 0 .708-.708L10.207 9.5A4.5 4.5 0 1 0 9.5 10.207Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/></svg>
@@ -494,13 +657,18 @@ export function WorkspaceHome({
                 <div className="py-12 text-center text-sm text-slate-500">No projects match your search.</div>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                  {visibleProjects.map((project) => (
+                  {visibleProjects.map((project) => {
+                    const isProcessing = project.status === 'processing';
+                    const isFailed = project.status === 'failed';
+                    const progress = Math.max(0, Math.min(100, project.pipelineProgressPercent ?? 0));
+
+                    return (
                     <article key={project.id} className="group relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/60 transition hover:border-white/20 hover:bg-slate-800/80">
                       {/* HeyGen style Thumbnail Area */}
                       <div className="relative aspect-video w-full bg-slate-950/80">
-                        {/* Mock Image / Placeholder */}
-                        <div className="absolute inset-0 flex items-center justify-center text-slate-700">
-                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-600">
+                          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                          {!project.mediaId ? <span className="text-xs font-medium">No media yet</span> : null}
                         </div>
                         
                         {/* Play button overlay on hover */}
@@ -513,7 +681,13 @@ export function WorkspaceHome({
                         {/* Top Right Actions */}
                         <div className="absolute right-2 top-2 z-10 flex gap-1">
                            <div className="rounded-full bg-black/60 p-1 text-white backdrop-blur-md">
-                              <ProjectActionsMenu projectId={project.id} projectName={project.name} />
+                              <ProjectActionsMenu
+                                projectId={project.id}
+                                projectName={project.name}
+                                onRename={onRename}
+                                onArchive={onArchive}
+                                onDuplicate={onDuplicate}
+                              />
                            </div>
                         </div>
 
@@ -521,19 +695,21 @@ export function WorkspaceHome({
                         <div className="absolute bottom-2 left-2 flex gap-2">
                            <span className="flex items-center gap-1.5 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
-                              Translation
+                              {project.mediaId ? 'Translation' : 'Setup'}
                            </span>
-                           <span className={`rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md ${getProjectStatusClasses(project.status)}`}>
+                           <StatusBadge tone={getProjectStatusTone(project.status)} className="rounded-lg bg-black/55 px-2 py-1 text-[10px] uppercase tracking-wider backdrop-blur-md">
                              {formatProjectStatus(project.status)}
-                           </span>
+                           </StatusBadge>
                         </div>
                         
                         {/* Bottom Right Duration Badge */}
                         <div className="absolute bottom-2 right-2 flex gap-2">
-                           <span className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                              1m 30s
-                           </span>
+                           {formatDuration(project.mediaDurationSeconds) ? (
+                             <span className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                {formatDuration(project.mediaDurationSeconds)}
+                             </span>
+                           ) : null}
                         </div>
                       </div>
 
@@ -542,12 +718,40 @@ export function WorkspaceHome({
                         <Link href={`/editor/${project.id}`} className="block">
                           <h3 className="truncate text-base font-semibold text-white group-hover:text-indigo-300 transition">{project.name}</h3>
                         </Link>
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="hidden">
                           {formatProjectDate(project.createdAt)} • {project.sourceLanguage.toUpperCase()} → {project.targetLanguage.toUpperCase()}
                         </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Updated {formatProjectDate(project.updatedAt)} | {project.sourceLanguage.toUpperCase()} to {project.targetLanguage.toUpperCase()}
+                        </p>
+                        {isProcessing ? (
+                          <div className="mt-4 rounded-control border border-amber-400/20 bg-amber-400/5 p-3">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="font-semibold text-amber-100">{formatPipelineStage(project.pipelineStage)}</span>
+                              <span className="shrink-0 text-amber-200">{project.pipelineProgressPercent !== undefined ? `${progress}%` : 'In progress'}</span>
+                            </div>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-amber-950/70" role="progressbar" aria-label={`${formatPipelineStage(project.pipelineStage)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={project.pipelineProgressPercent !== undefined ? progress : undefined}>
+                              <div className="h-full rounded-full bg-amber-400 transition-[width] duration-interface ease-interface" style={{ width: `${project.pipelineProgressPercent !== undefined ? progress : 20}%` }} />
+                            </div>
+                          </div>
+                        ) : null}
+                        {isFailed ? (
+                          <div className="mt-4 flex items-start justify-between gap-3 rounded-control border border-rose-400/20 bg-rose-400/5 p-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-rose-100">Needs attention</p>
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-rose-200/80" title={project.pipelineErrorMessage}>
+                                {project.pipelineErrorMessage || 'Open the project to review the failed stage and recover safely.'}
+                              </p>
+                            </div>
+                            <Link href={`/editor/${project.id}`} className="shrink-0 text-xs font-semibold text-rose-100 underline decoration-rose-300/50 underline-offset-4 transition hover:text-white">
+                              Review
+                            </Link>
+                          </div>
+                        ) : null}
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>

@@ -20,7 +20,7 @@ class VoiceProfile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
 
     speaker_name = Column(String(255), nullable=False)
     gender = Column(String(20), nullable=True)

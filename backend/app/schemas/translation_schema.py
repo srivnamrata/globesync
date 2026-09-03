@@ -90,6 +90,7 @@ class TranslationItemResponse(BaseModel):
     confidence_score: float
     is_cached: bool
     is_user_edited: bool
+    generated_audio_status: Optional[str] = None
     created_at: datetime
 
 

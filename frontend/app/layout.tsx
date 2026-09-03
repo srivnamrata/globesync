@@ -2,8 +2,11 @@ import React from 'react';
 import './globals.css';
 
 export const metadata = {
-  title: 'Video Translation Studio',
-  description: 'Enterprise Audio & Video Translation Platform',
+  title: {
+    default: 'GlobeSync | Video Translation Studio',
+    template: '%s | GlobeSync',
+  },
+  description: 'Translate, review, dub, and export video for global audiences.',
 };
 
 export default function RootLayout({

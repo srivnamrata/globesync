@@ -11,7 +11,7 @@ from app.core.auth import get_request_context
 from app.core.database import get_db
 from app.routers.projects import router
 from app.schemas.projects import DraftConflictErrorDetail
-from app.services.project_service import ProjectDraftConflictError, ProjectNotFoundError
+from app.services.project_service import ProjectDraftConflictError, ProjectNotFoundError, ProjectService
 
 
 WORKSPACE_ID = "4e7e4b2e-0cf5-4cf5-983f-d4dded7fb5e5"
@@ -57,6 +57,9 @@ def mock_project_service():
         mock_service.get_project_draft = AsyncMock()
         mock_service.put_project_draft = AsyncMock()
         mock_service.archive_project = AsyncMock()
+        mock_service.duplicate_project = AsyncMock()
+        mock_service.list_project_versions = AsyncMock()
+        mock_service.get_project_version = AsyncMock()
         yield mock_service
 
 
@@ -150,8 +153,28 @@ async def test_list_projects_returns_workspace_scoped_items(mock_project_service
     payload = response.json()
     assert payload["items"][0]["id"] == PROJECT_ID
     assert payload["items"][0]["owner_user_id"] == ACTOR_USER_ID
+    assert "original_media_url" not in payload["items"][0]
+    assert "last_rendered_video_url" not in payload["items"][0]
     assert mock_project_service.list_projects.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.list_projects.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
+
+
+def test_project_cursor_round_trip():
+    project = SimpleNamespace(
+        id=uuid.UUID(PROJECT_ID),
+        updated_at=datetime(2026, 8, 29, 9, 42, 10, tzinfo=timezone.utc),
+    )
+
+    cursor = ProjectService._encode_project_cursor(project)
+    updated_at, project_id = ProjectService._decode_project_cursor(cursor)
+
+    assert updated_at == project.updated_at
+    assert project_id == project.id
+
+
+def test_invalid_project_cursor_is_rejected():
+    with pytest.raises(ValueError, match="Invalid project cursor"):
+        ProjectService._decode_project_cursor("invalid")
 
 
 @pytest.mark.asyncio
@@ -212,7 +235,10 @@ async def test_get_project_returns_project_detail(mock_project_service, project_
         response = await client.get(f"/v1/projects/{PROJECT_ID}")
 
     assert response.status_code == 200
-    assert response.json()["id"] == PROJECT_ID
+    payload = response.json()
+    assert payload["id"] == PROJECT_ID
+    assert "original_media_url" not in payload
+    assert "last_rendered_video_url" not in payload
     assert mock_project_service.get_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.get_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
 
@@ -305,6 +331,78 @@ async def test_archive_project_marks_project_archived(mock_project_service):
     assert payload["archived_at"] == ARCHIVED_AT
     assert mock_project_service.archive_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.archive_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_project_creates_workspace_scoped_shell(mock_project_service, project_detail_response):
+    mock_project_service.duplicate_project.return_value = {
+        **project_detail_response,
+        "id": str(uuid.uuid4()),
+        "name": "Hindi Product Launch copy",
+        "status": "draft",
+        "media_file_id": None,
+        "transcript_id": None,
+    }
+
+    transport = ASGITransport(app=api_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/v1/projects/{PROJECT_ID}/duplicate")
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "Hindi Product Launch copy"
+    assert response.json()["media_file_id"] is None
+    assert mock_project_service.duplicate_project.await_args.kwargs["project_id"] == uuid.UUID(PROJECT_ID)
+    assert mock_project_service.duplicate_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
+
+
+@pytest.mark.asyncio
+async def test_list_project_versions_is_workspace_scoped(mock_project_service):
+    mock_project_service.list_project_versions.return_value = {
+        "items": [
+            {
+                "version": 5,
+                "draft_schema_version": "heygenx/v1",
+                "created_by_user_id": ACTOR_USER_ID,
+                "created_at": TIMESTAMP,
+            },
+            {
+                "version": 3,
+                "draft_schema_version": "heygenx/v1",
+                "created_by_user_id": ACTOR_USER_ID,
+                "created_at": TIMESTAMP,
+            },
+        ],
+    }
+
+    transport = ASGITransport(app=api_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/v1/projects/{PROJECT_ID}/versions")
+
+    assert response.status_code == 200
+    assert [item["version"] for item in response.json()["items"]] == [5, 3]
+    assert "draft_payload" not in response.json()["items"][0]
+    assert mock_project_service.list_project_versions.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
+    assert mock_project_service.list_project_versions.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_get_project_version_returns_full_snapshot(mock_project_service):
+    mock_project_service.get_project_version.return_value = {
+        "version": 3,
+        "draft_schema_version": "heygenx/v1",
+        "draft_payload": {"projectMetadata": {"id": PROJECT_ID}},
+        "created_by_user_id": ACTOR_USER_ID,
+        "created_at": TIMESTAMP,
+    }
+
+    transport = ASGITransport(app=api_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/v1/projects/{PROJECT_ID}/versions/3")
+
+    assert response.status_code == 200
+    assert response.json()["draft_payload"]["projectMetadata"]["id"] == PROJECT_ID
+    assert mock_project_service.get_project_version.await_args.kwargs["project_id"] == uuid.UUID(PROJECT_ID)
+    assert mock_project_service.get_project_version.await_args.kwargs["version_number"] == 3
 
 
 @pytest.mark.asyncio

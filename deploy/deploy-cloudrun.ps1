@@ -83,7 +83,9 @@ gcloud run jobs create $JobName `
   --args="upgrade,head" `
   --max-retries=0 `
   --task-timeout=600
+if ($LASTEXITCODE -ne 0) { throw "Migration job creation failed with exit $LASTEXITCODE" }
 gcloud run jobs execute $JobName --region=$Region --wait
+if ($LASTEXITCODE -ne 0) { throw "Alembic migration job failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Deploying $ApiService"
 gcloud run deploy $ApiService `

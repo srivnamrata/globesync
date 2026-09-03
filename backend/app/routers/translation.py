@@ -239,7 +239,7 @@ async def translate_single_segment(
     trans_stmt = select(Translation).where(
         Translation.transcript_segment_id == req.segment_id,
         Translation.target_language == req.target_language,
-    )
+    ).options(selectinload(Translation.generated_audio))
     t_res = await db.execute(trans_stmt)
     trans = t_res.scalar_one_or_none()
 
@@ -268,6 +268,11 @@ async def translate_single_segment(
         )
         db.add(trans)
     else:
+        # A new translation invalidates every audio rendition derived from the
+        # previous text. The next segment synthesis replaces the same storage
+        # object, so removing these rows does not orphan additional objects.
+        for generated_audio in trans.generated_audio:
+            await db.delete(generated_audio)
         trans.request_id = request_id
         trans.idempotency_key = idempotency_key
         trans.source_action = "translate_single_segment"
@@ -331,7 +336,7 @@ async def get_project_translations(
     t_stmt = select(Translation).where(
         Translation.transcript_segment_id.in_(segment_ids),
         Translation.target_language == target_language,
-    )
+    ).options(selectinload(Translation.generated_audio))
     t_res = await db.execute(t_stmt)
     translations = t_res.scalars().all()
 
@@ -530,6 +535,7 @@ def _format_translation_item(trans: Translation, seg: TranscriptSegment) -> Tran
         confidence_score=float(trans.confidence_score or 0.95),
         is_cached=trans.is_cached,
         is_user_edited=trans.is_user_edited,
+        generated_audio_status=(trans.generated_audio[0].status if trans.generated_audio else None),
         created_at=trans.created_at,
     )
 

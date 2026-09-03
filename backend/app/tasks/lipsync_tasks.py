@@ -316,7 +316,11 @@ def run_lipsync_project_pipeline(
 
         # Step 6: Upload Final Export Video to Cloud Storage
         publish_lipsync_event(job_id_str, "in_progress", 96, "Uploading final master video to cloud storage...")
-        export_storage_key = f"exports/{str(job.project_id or transcript_id)}/{target_language}_translated_master.mp4"
+        # A job-owned immutable key prevents a later dub mode from replacing an earlier output.
+        export_storage_key = (
+            f"exports/{str(job.project_id or transcript_id)}/{target_language}/"
+            f"{job.id}_{job.render_mode}_translated_master.mp4"
+        )
         asyncio.run(
             storage_service.upload_file(
                 file_path=final_video_local,

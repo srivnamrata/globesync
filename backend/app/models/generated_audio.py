@@ -26,8 +26,8 @@ class GeneratedAudio(Base):
         nullable=False,
         index=True,
     )
-    project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
     request_id = Column(String(255), nullable=True, index=True)
     task_id = Column(String(255), nullable=True, index=True)
     idempotency_key = Column(String(255), nullable=True, index=True)

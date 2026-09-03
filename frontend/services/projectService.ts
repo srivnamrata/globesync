@@ -11,7 +11,21 @@ export interface UploadedMedia {
   media_type: string;
   filesize_bytes: number;
   duration_seconds: number;
+  media_url?: string | null;
   status: string;
+}
+
+export interface MediaDetails extends UploadedMedia {
+  storage_path: string;
+  thumbnail_url?: string | null;
+  created_at: string;
+}
+
+export interface MediaAudioDetails {
+  media_id: string;
+  audio_url: string;
+  format: string;
+  duration_seconds: number;
 }
 
 export interface TranscriptStatus {
@@ -60,6 +74,7 @@ export interface TranslationItemResponse {
   confidence_score: number;
   is_cached: boolean;
   is_user_edited: boolean;
+  generated_audio_status?: string | null;
   created_at: string;
 }
 
@@ -82,10 +97,15 @@ interface ProjectApiShape {
   target_language: string | null;
   active_translation_language: string | null;
   media_file_id: string | null;
+  media_filename?: string | null;
+  media_duration_seconds?: number | null;
+  pipeline_stage?: string | null;
+  pipeline_status?: string | null;
+  pipeline_progress_percent?: number | null;
+  pipeline_error_message?: string | null;
   transcript_id: string | null;
   latest_draft_version: number;
   last_rendered_video_gcs_path: string | null;
-  last_rendered_video_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +175,46 @@ interface ProjectListApiResponse {
   next_cursor: string | null;
 }
 
+export interface ProjectVersionResponse {
+  version: number;
+  draft_schema_version: string;
+  draft_payload: HeygenXFile;
+  created_by_user_id: string;
+  created_at: string;
+}
+
+export interface ProjectVersionSummary {
+  version: number;
+  draft_schema_version: string;
+  created_by_user_id: string;
+  created_at: string;
+}
+
+export interface ProjectExportHistoryItem {
+  id: string;
+  project_id?: string | null;
+  target_language: string;
+  format: string;
+  resolution: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress_percent: number;
+  current_stage: string;
+  output_video_url?: string | null;
+  filesize_bytes?: number | null;
+  created_at: string;
+}
+
+export interface ProjectRenderHistoryItem {
+  job_id: string;
+  target_language: string;
+  render_mode: 'dub_only' | 'dub_and_lipsync';
+  status: string;
+  progress_percent: number;
+  output_video_url?: string | null;
+  quality_score: number;
+  created_at: string;
+}
+
 type ProjectApiScope = {
   workspaceId: string;
   actorUserId: string;
@@ -167,11 +227,8 @@ function normalizeOptionalUuid(value?: string): string | undefined {
   return value && UUID_PATTERN.test(value) ? value : undefined;
 }
 
-function buildScopedEndpoint(endpoint: string, scope: ProjectApiScope, params: Record<string, string | number | boolean | undefined> = {}): string {
-  const searchParams = new URLSearchParams({
-    workspace_id: scope.workspaceId,
-    actor_user_id: scope.actorUserId,
-  });
+function buildScopedEndpoint(endpoint: string, _scope: ProjectApiScope, params: Record<string, string | number | boolean | undefined> = {}): string {
+  const searchParams = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
@@ -193,9 +250,14 @@ function mapProjectApiShape(project: ProjectApiShape | ProjectDetailApiShape): P
     updatedAt: project.updated_at,
     transcriptId: project.transcript_id || undefined,
     mediaId: project.media_file_id || undefined,
+    mediaFilename: project.media_filename || undefined,
+    mediaDurationSeconds: project.media_duration_seconds ?? undefined,
+    pipelineStage: project.pipeline_stage || undefined,
+    pipelineStatus: project.pipeline_status || undefined,
+    pipelineProgressPercent: project.pipeline_progress_percent ?? undefined,
+    pipelineErrorMessage: project.pipeline_error_message || undefined,
     currentLipsyncJobId: 'current_lipsync_job_id' in project ? project.current_lipsync_job_id || undefined : undefined,
     lastRenderedVideoPath: project.last_rendered_video_gcs_path || undefined,
-    lastRenderedVideoUrl: project.last_rendered_video_url || undefined,
   };
 }
 
@@ -224,7 +286,7 @@ function mapDraftPayloadToLocalDraft(projectId: string, payload: Partial<HeygenX
       updatedAt: payload.projectMetadata?.updatedAt || fallbackProject?.updatedAt || new Date().toISOString(),
     },
     mediaReferences: {
-      videoFilename: payload.mediaReferences?.videoFilename || fallbackProject?.originalVideoUrl || 'source_video.mp4',
+      videoFilename: payload.mediaReferences?.videoFilename || fallbackProject?.mediaFilename || 'source_video.mp4',
       durationSeconds: payload.mediaReferences?.durationSeconds || 0,
       originalTranscriptSegments: payload.mediaReferences?.originalTranscriptSegments || [],
       transcriptId: payload.mediaReferences?.transcriptId || fallbackProject?.transcriptId,
@@ -245,6 +307,7 @@ function mapTranslationItem(item: TranslationItemResponse): TranslatedSegment {
     durationRatio: item.duration_ratio,
     speedAdjustmentFactor: Math.max(0.8, Math.min(1.25, item.duration_ratio || 1)),
     qualityScore: item.confidence_score,
+    generatedAudioStatus: item.generated_audio_status ?? undefined,
     status: 'completed',
   };
 }
@@ -364,6 +427,42 @@ export class ProjectService {
     return mapProjectApiShape(response);
   }
 
+  async getMedia(mediaId: string): Promise<MediaDetails> {
+    await this.ensureApiRequestAuth();
+    return apiClient.get<MediaDetails>(`/media/${mediaId}`);
+  }
+
+  async getMediaAudio(mediaId: string): Promise<MediaAudioDetails> {
+    await this.ensureApiRequestAuth();
+    return apiClient.get<MediaAudioDetails>(`/media/${mediaId}/audio`);
+  }
+
+  async getProjectVersions(projectId: string): Promise<ProjectVersionSummary[]> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.get<{ items: ProjectVersionSummary[] }>(
+      buildScopedEndpoint(`/projects/${projectId}/versions`, scope),
+    );
+    return response.items;
+  }
+
+  async getProjectVersion(projectId: string, version: number): Promise<ProjectVersionResponse> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    return apiClient.get<ProjectVersionResponse>(
+      buildScopedEndpoint(`/projects/${projectId}/versions/${version}`, scope),
+    );
+  }
+
+  async getProjectExportHistory(projectId: string): Promise<ProjectExportHistoryItem[]> {
+    await this.ensureApiRequestAuth();
+    const normalizedProjectId = normalizeOptionalUuid(projectId);
+    if (!normalizedProjectId) {
+      return [];
+    }
+    return apiClient.get<ProjectExportHistoryItem[]>(`/export/history?project_id=${encodeURIComponent(normalizedProjectId)}`);
+  }
+
   async updateProject(projectId: string, payload: ProjectUpdateRequest): Promise<Project> {
     await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
@@ -386,6 +485,30 @@ export class ProjectService {
     return mapProjectApiShape(response);
   }
 
+  async renameProject(projectId: string, name: string): Promise<Project> {
+    return this.updateProject(projectId, { name });
+  }
+
+  async archiveProject(projectId: string): Promise<Project> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.post<ProjectDetailApiShape>(
+      buildScopedEndpoint(`/projects/${projectId}/archive`, scope),
+      {},
+    );
+    return mapProjectApiShape(response);
+  }
+
+  async duplicateProject(projectId: string): Promise<Project> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    const response = await apiClient.post<ProjectDetailApiShape>(
+      buildScopedEndpoint(`/projects/${projectId}/duplicate`, scope),
+      {},
+    );
+    return mapProjectApiShape(response);
+  }
+
   async getProjectDraft(projectId: string): Promise<{ draft: HeygenXFile; version: number; baseProjectUpdatedAt: string | null }> {
     await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
@@ -403,7 +526,7 @@ export class ProjectService {
   async saveProjectDraft(
     projectId: string,
     draft: HeygenXFile,
-    options: { version: number; baseProjectUpdatedAt?: string | null },
+    options: { version: number; baseProjectUpdatedAt?: string | null; checkpointReason?: string },
   ): Promise<ProjectDraftPutApiResponse> {
     await this.ensureApiRequestAuth();
     const scope = this.requireProjectApiScope();
@@ -414,6 +537,7 @@ export class ProjectService {
         draft_schema_version: draft.version,
         base_project_updated_at: options.baseProjectUpdatedAt || null,
         draft_payload: draft,
+        ...(options.checkpointReason ? { checkpoint_reason: options.checkpointReason } : {}),
       },
     );
   }
@@ -508,6 +632,11 @@ export class ProjectService {
   async getExportStatus(jobId: string): Promise<any> {
     await this.ensureApiRequestAuth();
     return apiClient.get<any>(`/lipsync/job/${jobId}`);
+  }
+
+  async getProjectRenderHistory(projectId: string): Promise<ProjectRenderHistoryItem[]> {
+    await this.ensureApiRequestAuth();
+    return apiClient.get<ProjectRenderHistoryItem[]>(`/lipsync/history?project_id=${encodeURIComponent(projectId)}`);
   }
 
   async retranslateSegment(params: {

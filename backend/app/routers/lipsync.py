@@ -112,8 +112,9 @@ async def render_lipsync_project(
         )
 
     request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    render_mode = "dub_and_lipsync" if req.enable_lipsync else "dub_only"
     idempotency_key = (
-        f"lipsync:{effective_project_id or req.media_file_id}:{req.transcript_id}:{req.target_language}:{req.model_preference}"
+        f"lipsync:{effective_project_id or req.media_file_id}:{req.transcript_id}:{req.target_language}:{req.model_preference}:{render_mode}"
     )
 
     # Create LipSyncJob entity in database
@@ -126,6 +127,7 @@ async def render_lipsync_project(
         transcript_id=req.transcript_id,
         target_language=req.target_language,
         model_name=req.model_preference,
+        render_mode=render_mode,
         status="queued",
         progress_percent=0,
     )
@@ -242,6 +244,7 @@ async def get_lipsync_job(
         media_file_id=job.media_file_id,
         target_language=job.target_language,
         model_name=job.model_name,
+        render_mode=job.render_mode,
         status=job.status,
         progress_percent=job.progress_percent,
         total_segments=job.total_segments,
@@ -253,6 +256,63 @@ async def get_lipsync_job(
         execution_time_seconds=float(job.execution_time_seconds) if job.execution_time_seconds else None,
         created_at=job.created_at,
     )
+
+
+@router.get(
+    "/history",
+    response_model=List[LipSyncJobResponse],
+    summary="Get Project Dub and Lip-Sync Render History",
+)
+async def get_lipsync_history(
+    project_id: uuid.UUID = Query(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the most recent project render jobs with short-lived, authorized download URLs."""
+    await get_scoped_project(
+        project_id=project_id,
+        db=db,
+        context=context,
+        not_found_detail="Project not found.",
+    )
+    stmt = (
+        select(LipSyncJob)
+        .where(
+            LipSyncJob.project_id == project_id,
+            LipSyncJob.workspace_id == context.workspace_id,
+        )
+        .order_by(LipSyncJob.created_at.desc())
+        .limit(20)
+    )
+    jobs = (await db.execute(stmt)).scalars().all()
+    results = []
+    for job in jobs:
+        output_url = None
+        if job.output_video_gcs_path:
+            output_url = storage_service.generate_presigned_download_url(
+                job.output_video_gcs_path, expires_in_seconds=7200
+            )
+        results.append(
+            LipSyncJobResponse(
+                job_id=job.id,
+                project_id=job.project_id,
+                media_file_id=job.media_file_id,
+                target_language=job.target_language,
+                model_name=job.model_name,
+                render_mode=job.render_mode,
+                status=job.status,
+                progress_percent=job.progress_percent,
+                total_segments=job.total_segments,
+                completed_segments=job.completed_segments,
+                output_video_url=output_url,
+                quality_score=float(job.quality_score),
+                av_sync_error_ms=float(job.av_sync_error_ms),
+                segments_metadata=[],
+                execution_time_seconds=float(job.execution_time_seconds) if job.execution_time_seconds else None,
+                created_at=job.created_at,
+            )
+        )
+    return results
 
 
 @router.get(

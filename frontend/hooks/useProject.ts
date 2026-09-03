@@ -38,7 +38,7 @@ export function useProjectAutoSave(syncDraft?: () => Promise<void>) {
             updatedAt: new Date().toISOString(),
           },
           mediaReferences: {
-            videoFilename: currentProject.originalVideoUrl || 'source_video.mp4',
+            videoFilename: currentProject.mediaFilename || 'source_video.mp4',
             durationSeconds: segments.reduce((acc, s) => Math.max(acc, s.endTimeSeconds), 0),
             originalTranscriptSegments: segments,
             transcriptId: currentProject.transcriptId,
@@ -61,4 +61,3 @@ export function useProjectAutoSave(syncDraft?: () => Promise<void>) {
     };
   }, [currentProject, segments, syncDraft, translations]);
 }
-  

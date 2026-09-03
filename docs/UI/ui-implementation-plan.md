@@ -759,3 +759,366 @@ Support shared work and enterprise usage patterns.
 * Only enable language swap when downstream generated artifacts will not be invalidated, or provide explicit confirmation and reset behavior
 * Keep IndexedDB as optional resilience cache, not the canonical system of record
 * Preserve backend-first project and workspace scoping as the foundation for future collaboration
+
+## UI quality and world-class execution plan
+
+### Purpose
+
+The existing phases define the product capabilities GlobeSync needs. This execution plan adds the quality bar needed to make those capabilities feel like one dependable, premium media-translation workspace. It does not create a parallel roadmap: each item below is completed in the existing phase where it belongs.
+
+### Product experience standard
+
+GlobeSync should feel like a focused translation studio, not a generic dashboard or an opaque AI generator. Every core screen must make three things immediately clear:
+
+1. What media and language pair the user is working on
+2. What stage the project is in and whether the user needs to act
+3. What the safest, highest-value next action is
+
+### Design foundations (complete before broad visual polish)
+
+#### Design token deliverable
+
+Create a small, reusable UI foundation before adding further one-off styles. Centralize the following in Tailwind theme extensions, CSS custom properties, or a shared component layer:
+
+* Brand: one primary accent, plus defined hover, pressed, focus, and subtle-surface variants
+* Semantic status colors: neutral, info, processing, success, warning, and error; never rely on color as the only status signal
+* Surfaces: page, raised panel, input, selected, and disabled states for both light public pages and dark workspace pages
+* Spacing: a deliberate 4px or 8px scale; avoid arbitrary visual spacing in recurring controls
+* Shape: consistent radius family for controls, cards, dialogs, and feature surfaces
+* Type: display, page title, section title, body, metadata, and compact-label styles, including line-height and weight
+* Elevation: restrained shadows and borders that establish hierarchy without creating a "card on card" effect
+* Motion: standard durations/easings for hover, state transitions, toast appearance, and progress changes; respect `prefers-reduced-motion`
+* Focus: a high-contrast keyboard focus ring used consistently on every interactive control
+
+#### Shared component deliverable
+
+Build or standardize shared primitives before reproducing patterns across screens:
+
+* Button: primary, secondary, quiet, destructive, icon-only, loading, and disabled states
+* Status badge: status icon, concise label, optional progress, and accessible text equivalent
+* Empty, loading, error, and success states with action slot and recovery copy
+* Form field with label, help text, validation, and required/error states
+* Menu and confirmation dialog with keyboard dismissal, focus management, and non-destructive defaults
+* Project card, stage-progress indicator, segment-risk badge, and output-summary card
+* SVG icon set for product controls; do not use emoji as operational UI icons
+
+#### Non-negotiable quality gate
+
+Before visual QA, normalize all user-visible text to UTF-8 and remove mojibake (for example, a misdecoded em dash [U+2014], bullet [U+2022], or emoji). Use plain text or the shared SVG icon set where encoding is fragile.
+
+### Screen blueprints
+
+#### Public landing page (Phase A / Phase F)
+
+* Lead with one customer outcome and one primary Google sign-in or sign-up action
+* Use a real product screenshot, short workflow visualization, or polished product-derived visual instead of decorative placeholders
+* Keep proof points concrete: supported language count, editable review, export formats, and privacy or reliability claims only when verified
+* Limit feature cards to three clear benefits and use consistent SVG icons rather than emoji
+* Include responsive navigation, legible mobile typography, and a clear signed-in route away from the marketing page
+
+#### Workspace home (Phase B)
+
+* Use a stable app shell: navigation and workspace identity at left, workspace content at center, account actions available without competing with the primary action
+* Make "Create project" the single dominant action; use a focused form, modal, or drawer after usability testing rather than a crowded inline workflow
+* Every project card must use canonical project data: an intentional non-artifact thumbnail or poster representation, real duration, source-to-target language pair, latest activity, lifecycle state, and contextual next action
+* Keep project-list responses metadata-only. Do not include expiring signed media, thumbnail, or output URLs; use a dedicated authorized artifact endpoint when thumbnail playback or retrieval is designed
+* Show processing projects with stage and progress, completed projects with output availability, and failed projects with the last successful stage plus a recovery action
+* Keep search, filters, sort, and bulk scanning functional at 20+ projects and usable on tablet-width screens
+
+#### Translation editor (Phase C / Phase D)
+
+Use a persistent three-zone workstation layout on desktop:
+
+| Zone | Purpose | Required content |
+| --- | --- | --- |
+| Left | Project context and navigation | project name, source-to-target pair, stage progress, segment list or review filters |
+| Center | Time-based media review | player, playback controls, timecode, interactive waveform/timeline, selected-range loop |
+| Right | Precise segment editing | source and target text, speaker/timing metadata, quality signals, recovery actions, save state |
+
+* On narrower screens, stack zones in the order: media review, selected segment edit, segment navigation; preserve a sticky playback control and selected-segment context
+* Show an always-visible save state near the project title: `Saving`, `Saved just now`, `Changes stored locally`, or `Conflict requires review`
+* Make the selected segment unmistakable across transcript, translation, video, waveform, and timeline without relying only on color
+* Keep advanced controls behind a segment action menu or expandable inspector; the default editing surface should prioritize reading, editing, and playback
+* Support keyboard navigation and shortcut discovery without conflicting with typing in text fields
+* Apply directionality per source and target language segment so mixed-script and RTL editing stays readable
+
+#### Quality review and pre-export gate (Phase D / Phase E)
+
+Add a dedicated "Ready to export" checkpoint before a render is started. It should summarize, link to, and allow filtering by:
+
+* Segments requiring review: low confidence, translation edits not saved, timing overflow or underflow, missing voice, lip-sync failure
+* Completion counts: approved segments / total, voiced segments / total, and rendered outputs available
+* Export details: target language, output format, estimated duration, and file size when known
+* A clear policy: block export only for genuinely invalid prerequisites; warn, explain impact, and allow an informed override for quality risks
+* One primary action: `Export video`, with secondary actions to review the outstanding items or save a draft
+
+#### Processing, recovery, and output (Phase E)
+
+* Use a common stage model everywhere: Upload, Transcribe, Translate, Voice, Lip-sync, Export
+* Display stage state, percentage or meaningful indeterminate progress, elapsed time where useful, and last successful checkpoint
+* Never replace user-created translations or output links with empty loading content; hydrate remote data before swapping visible state
+* Error panels must state what happened, what is safe to retry, and what will be preserved; offer support context such as project and job identifiers only as secondary copy
+* Completed exports should show an output summary with preview, download, open, version/language, duration, file size, created time, and status history
+
+### Accessibility and responsive requirements
+
+Apply these to every phase, not as a later retrofit:
+
+* Meet WCAG 2.2 AA contrast for text, controls, focus states, and non-text UI indicators
+* Make every mouse action usable from keyboard; retain visible focus and provide accessible names for icon-only buttons
+* Use semantic headings, landmarks, form labels, live regions for asynchronous progress, and accessible dialog/menu focus handling
+* Do not convey processing, risk, selection, or errors through color alone; include icons, text, or patterns
+* Support `prefers-reduced-motion`; do not use motion as the only indication of a state change
+* Test at 320px, 768px, 1024px, 1440px, and a typical 200% browser zoom level
+* Test long project names, language names, and 2-3x expanded translations without clipping controls or hiding primary actions
+
+### Delivery sequence and ownership
+
+#### Foundation checkpoint -- before further Phase B-C feature work
+
+1. Audit and normalize text encoding and icon usage
+2. Define token values and shared component contracts
+3. Apply shared button, field, status, loading, error, and focus patterns to the current home and editor surfaces
+4. Capture baseline screenshots at desktop, tablet, and mobile widths
+
+#### Workflow checkpoint -- Phases B through E
+
+1. Replace project-card placeholders with canonical media data and contextual state
+2. Implement the editor three-zone layout and cross-surface selected-segment synchronization
+3. Add stage progress and recoverable failure states using the shared stage model
+4. Add segment risk queue, segment-level repair, and visible save/conflict states
+5. Implement the pre-export readiness gate and output-summary experience
+
+#### Maturity checkpoint -- Phases F through H
+
+1. Run consistency, accessibility, responsive, and global-language QA
+2. Refine spacing, typography, interaction feedback, empty states, and motion from evidence gathered in workflow testing
+3. Add collaboration and workspace context without diluting the single-user editing flow
+
+### Definition of done for each UI change
+
+A UI change is not complete until it has:
+
+* a loading, empty, success, and actionable failure state where applicable
+* keyboard, focus, responsive, and 200% zoom verification
+* visible user-facing copy that is clear, accurate, and encoding-safe
+* real backend data or a clearly marked intentional placeholder -- never fabricated media metadata
+* a single clear primary action and no destructive default action
+* a lightweight visual QA comparison against the shared component and token standards
+
+### Evidence and success metrics
+
+Track these before and after the workflow checkpoints:
+
+* Median time from sign-in to first upload
+* Median time from project open to locating a segment that needs attention
+* Percentage of failed jobs retried successfully from the UI
+* Percentage of exports started with unresolved warnings, grouped by warning type
+* Edit-to-export completion rate and abandoned-project rate
+* Save/conflict recovery success rate without loss of visible translation text
+* Keyboard-only completion of create-project, edit-segment, and export-review tasks
+* Visual QA defects by screen, breakpoint, and severity
+
+### Foundation checkpoint status
+
+#### Implemented
+
+* Added GlobeSync visual tokens for brand color, surface hierarchy, semantic colors, panel elevation, control and panel radii, and interface transitions in `frontend/tailwind.config.js` and `frontend/app/globals.css`
+* Added global visible keyboard focus treatment and reduced-motion handling
+* Added reusable `Button`, `StatusBadge`, and `StatePanel` primitives under `frontend/components/ui`
+* Applied the shared Button primitive to primary project-creation actions and the shared StatusBadge primitive to project lifecycle status in `frontend/components/homeShell.tsx`
+* Updated application metadata so browser and assistive-technology route announcements identify GlobeSync clearly
+
+#### Validation
+
+* `npm.cmd run build` completed successfully from `frontend` after the foundation and integration changes
+* TypeScript compilation and static route generation completed successfully
+
+#### Next foundation slice
+
+1. Apply the shared field, state-panel, and secondary-button patterns to home and editor feedback surfaces
+2. Replace operational emoji with the shared SVG icon approach in high-traffic UI
+3. Capture desktop, tablet, and mobile baseline screenshots before the workspace and editor layout changes
+
+#### Foundation slice 2 status
+
+##### Implemented
+
+* Replaced public landing-page feature emoji with compact inline SVG illustrations and encoding-safe copy
+* Applied the shared field pattern to both first-project and returning-user project-creation forms
+* Applied the shared `StatePanel` pattern to workspace feedback and editor project-update messages
+* Kept user-facing primary actions and status states on the shared primitives introduced in the first foundation checkpoint
+
+##### Validation and follow-up
+
+* `npm.cmd run build` completed successfully after the slice, including TypeScript validation and static route generation
+* Browser-based responsive screenshots remain pending because no browser surface was available in this execution session
+* Next implementation slice: capture the three responsive baselines when a browser is available, then replace additional operational iconography and begin the workspace-home canonical-media-data work
+
+### Workspace-home canonical media data status
+
+#### Implemented
+
+* Extended the workspace-scoped project-list response with optional media filename and duration fields using the media relationship already loaded by the project-list query
+* Extended frontend project state and API mapping to retain canonical media metadata
+* Replaced the fixed project-card duration with canonical formatted duration and retained an intentional non-artifact media placeholder
+* Added an explicit `No media yet` state instead of presenting fabricated media details for new projects
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the frontend integration
+* Backend pytest validation is pending because this execution environment does not include a Python launcher or `pytest`
+
+#### Next workspace-home slice
+
+1. Add stage-level project progress and last-successful-stage presentation when backend job-status data is available
+2. Add contextual card recovery actions for failed and incomplete projects
+3. Replace the remaining hidden legacy encoding artifacts during the dedicated text-encoding cleanup pass
+
+### Workspace-home project state status
+
+#### Implemented
+
+* Added an authoritative active pipeline summary to the project-list response: stage, status, progress percentage, and error message
+* Reused the existing current export and lip-sync job relationships; project-list loading now eagerly loads those relationships instead of issuing per-card job requests
+* Project cards now show an accessible stage label and progress bar only while a project is processing
+* Failed cards now expose the backend error when available and provide a contextual link to review and recover in the editor
+* Export status is prioritized over lip-sync status when both pointers exist because it represents the later active stage
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the frontend implementation
+* Backend automated tests remain pending in an environment with Python and pytest available
+
+#### Next workspace-home slice
+
+1. Add project-level job history only after a stable backend history endpoint or response contract exists
+2. Add stage-specific retry controls only for operations with safe, supported retry endpoints
+3. Perform the dedicated source-text encoding cleanup before further copy polish
+
+### Project export-history status
+
+#### Implemented
+
+* Added a project-scoped export-history method to the frontend service, using the existing backend `/export/history?project_id=` endpoint and authenticated request flow
+* Reworked `ExportHistory` to use the shared panel and status primitives, clear loading, empty, and recoverable error states, and actual project-scoped output data
+* Removed inaccurate fixed download-link-expiry copy and replaced encoding-sensitive separators with safe, consistent text separators
+* Added an editor-header `Exports` control that opens project export history on demand without interrupting media review or version history
+
+#### Consistency safeguards
+
+* The history panel is secondary and lazy-loaded, preserving the current editor's primary review and editing flow
+* No retry action was added: existing render dispatch endpoints require valid project inputs and do not expose a dedicated safe retry contract
+* Status colors and controls use the shared component primitives introduced in the foundation checkpoint
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the export-history integration
+
+#### Next safe slice
+
+1. Add a pre-export readiness summary that identifies missing prerequisites and non-blocking quality risks before dispatch
+2. Keep export dispatch behavior unchanged until the readiness summary is visible and validated
+
+### Pre-render readiness status
+
+#### Implemented
+
+* Added a secondary, on-demand Export Readiness panel in the editor rather than adding another persistent competing surface
+* The readiness review uses canonical editor state only: source media, completed transcript and segment count, translations, unsaved edits, timing-fit risk, low-confidence translations, generated-audio state, and draft conflicts
+* Separates rendering blockers from non-blocking quality recommendations; it does not silently prevent users from using established render controls
+* Made readiness, version history, and export history mutually exclusive overlays to preserve a calm, focused editing workspace
+
+#### Consistency safeguards
+
+* The panel uses existing shared surfaces, status badges, semantic color meanings, headings, and accessible progress-independent text
+* Existing dub and lip-sync dispatch behavior was deliberately not changed
+* The readiness summary does not claim an export file size, output format, or job progress that the current editor state does not authoritatively provide
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the readiness integration
+
+#### Next safe slice
+
+1. Consolidate the editor header's repeated button styles onto the shared Button primitive without changing actions or shortcuts
+2. Replace remaining user-visible encoding-sensitive text and operational glyphs as part of the scoped editor cleanup
+
+### Editor-header consistency status
+
+#### Implemented
+
+* Migrated editor-header navigation, language-swap, history, export-history, readiness, undo, redo, save, dub-only, and lip-sync controls to the shared Button primitive
+* Preserved the established hierarchy: quiet navigation, secondary utility actions, visible amber unsaved-work state, secondary dub-only action, and primary Dub + Lip-Sync action
+* Preserved all existing handlers, disabled conditions, titles, keyboard shortcut messaging, and mutually exclusive secondary-panel behavior
+
+#### Consistency safeguards
+
+* No editor layout, dispatch flow, or state-management behavior was changed during this styling consolidation
+* Existing Unicode text was not mechanically rewritten because source searches found no encoding-corruption patterns; terminal display alone is not treated as evidence of source corruption
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the header migration
+
+#### Next safe slice
+
+1. Consolidate visible conflict and loading controls onto shared primitives while preserving their recovery behavior
+2. Audit the editor at responsive breakpoints when a browser surface becomes available before altering its main workstation layout
+
+### Contract-safe UI consistency status
+
+#### Implemented
+
+* Consolidated conflict-recovery and secondary-panel close controls onto the shared Button primitive without changing their underlying state transitions
+* Restored the canonical project-list artifact boundary: project summaries retain media identity and duration only; no signed thumbnail URL is generated, returned, or retained in frontend project state
+* Updated the workspace-card plan to require an intentional non-artifact representation until a dedicated authorized thumbnail endpoint is designed
+
+#### Safety verification
+
+* No persistence logic, draft versioning, workspace scope, project lifecycle transition, or signed artifact endpoint behavior changed
+* Conflict recovery still preserves local edits and requires an explicit user choice before reloading the server draft
+* `npm.cmd run build` completed successfully after the consistency and contract-boundary corrections
+
+#### Next safe slice
+
+1. Do not add thumbnail retrieval or project-list artifact URLs without a dedicated workspace-authorized endpoint and contract test
+2. Use browser-based responsive QA before changing the primary editor layout
+3. Continue with non-destructive accessibility improvements to existing controls and state messaging
+
+### Runtime artifact URL ownership status
+
+#### Implemented
+
+* Removed original-media, rendered-video, and dubbed-audio URL fields from canonical frontend project state
+* Updated editor hydration, project patching, language-swap safety checks, and autosave fallback logic to use canonical media IDs and filenames only
+* Added runtime-only source-media URL state populated through the dedicated authorized media endpoint; rendered video remains runtime-only and comes from dedicated lip-sync job status
+* Sanitized legacy URL-shaped draft filenames before every editor draft cache write so signed URLs cannot be re-persisted to IndexedDB or backend draft payloads
+* Added runtime URL refresh on source/rendered playback failures without issuing project patches or changing project lifecycle state
+
+#### Validation
+
+* Source search confirms no `originalVideoUrl`, `lastRenderedVideoUrl`, or `dubbedAudioUrl` fields remain in the frontend source
+* Remaining `media_url` and `output_video_url` usage is limited to dedicated artifact endpoint responses and component runtime playback/download state
+* `npm.cmd run build` completed successfully after the ownership refactor
+
+### Phase D quality and recovery verification
+
+#### Implemented
+
+* Segment retranslation now invalidates generated-audio rows derived from the previous translation so readiness indicators do not report stale audio as usable
+* Segment audio regeneration now replaces prior generated-audio rows instead of accumulating ambiguous records for the same translation
+* The editor updates audio-readiness state immediately after retranslation and successful regeneration
+* Retranslation and audio-regeneration failures now surface user-facing recovery messages instead of only writing to the browser console
+
+#### Validation
+
+* `npm.cmd run build` completed successfully with the Phase D review and recovery surfaces
+* Static integrity review confirmed that generated-audio status uses the backend `ready`, `processing`, and `failed` lifecycle
+* Backend automated validation remains pending because Python and pytest are unavailable in this execution environment
+
+#### Next Phase D validation slice
+
+1. Run the translation and media-audio API test suites in a Python-enabled environment
+2. Verify retranslation changes the segment to `No audio` until regeneration succeeds
+3. Verify repeated regeneration leaves exactly one current generated-audio record and clears the risk indicator

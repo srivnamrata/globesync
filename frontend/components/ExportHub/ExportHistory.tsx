@@ -1,82 +1,113 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { apiClient } from '../../services/apiClient';
+import { projectService, type ProjectExportHistoryItem, type ProjectRenderHistoryItem } from '../../services/projectService';
+import { StatePanel, StatusBadge } from '../ui';
 
-interface ExportHistoryItem {
-  id: string;
-  format: string;
-  resolution: string;
-  target_language: string;
-  status: string;
-  output_video_url?: string;
-  filesize_bytes?: number;
-  created_at: string;
+function formatSize(bytes?: number | null): string {
+  if (!bytes) return 'Size unavailable';
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const ExportHistory: React.FC = () => {
-  const [history, setHistory] = useState<ExportHistoryItem[]>([]);
+function getStatusTone(status: string): 'processing' | 'success' | 'error' {
+  if (status === 'completed') return 'success';
+  if (status === 'failed') return 'error';
+  return 'processing';
+}
+
+export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) => {
+  const [history, setHistory] = useState<ProjectExportHistoryItem[]>([]);
+  const [renderHistory, setRenderHistory] = useState<ProjectRenderHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+
     async function loadHistory() {
       setLoading(true);
+      setError(null);
       try {
-        const res = await apiClient.get<ExportHistoryItem[]>('/export/history');
-        setHistory(res);
-      } catch (err) {
-        console.error('Failed to load export history logs:', err);
+        const [exportResponse, renderResponse] = await Promise.all([
+          projectService.getProjectExportHistory(projectId),
+          projectService.getProjectRenderHistory(projectId),
+        ]);
+        if (active) {
+          setHistory(exportResponse);
+          setRenderHistory(renderResponse);
+        }
+      } catch (loadError) {
+        console.error('Failed to load project export history:', loadError);
+        if (active) setError('Export history is unavailable right now. Your existing outputs are unchanged.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
-    loadHistory();
-  }, []);
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '0 B';
-    const mb = bytes / (1024 * 1024);
-    return `${mb.toFixed(1)} MB`;
-  };
+    void loadHistory();
+    return () => { active = false; };
+  }, [projectId]);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 select-none">
-      <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Past Exports History</h4>
-        <span className="text-[10px] text-slate-500">Download links expire in 7 days</span>
+    <section className="gs-panel space-y-4 p-5" aria-labelledby="export-history-heading">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
+        <h2 id="export-history-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400">Project outputs</h2>
+        <span className="text-[10px] text-slate-500">Authorized links expire after 2 hours</span>
       </div>
 
-      {loading && history.length === 0 ? (
-        <div className="text-center text-slate-600 text-xs py-8">Loading history logs...</div>
-      ) : history.length === 0 ? (
-        <div className="text-center text-slate-600 text-xs py-8">No completed exports found.</div>
+      {loading && history.length === 0 && renderHistory.length === 0 ? (
+        <div className="py-8 text-center text-xs text-slate-500" role="status">Loading export history...</div>
+      ) : error ? (
+        <StatePanel title="Could not load export history" tone="warning">{error}</StatePanel>
+      ) : history.length === 0 && renderHistory.length === 0 ? (
+        <div className="py-8 text-center text-xs text-slate-500">No exports have been created for this project yet.</div>
       ) : (
-        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+        <div className="max-h-80 space-y-5 overflow-y-auto pr-2">
+          {renderHistory.length > 0 && (
+            <section className="space-y-3" aria-label="Dub and lip-sync outputs">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dub and lip-sync builds</h3>
+              {renderHistory.map((item) => (
+                <div key={item.job_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-xs font-bold text-white">{item.render_mode === 'dub_only' ? 'Dub only' : 'Dub + Lip-Sync'}</h4>
+                      <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{item.status}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      {item.target_language.toUpperCase()} · {new Date(item.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {item.output_video_url ? (
+                    <a href={item.output_video_url} download className="gs-button-primary min-h-8 shrink-0 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-slate-500">No output</span>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
+          {history.length > 0 && <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format exports</h3>}
           {history.map((item) => (
-            <div key={item.id} className="flex justify-between items-center bg-slate-950/40 p-3 rounded-lg border border-slate-850">
-              <div>
-                <h5 className="text-xs font-bold text-white uppercase">{item.format} • {item.resolution} ({item.target_language})</h5>
-                <p className="text-[10px] text-slate-500 mt-0.5">Size: {formatSize(item.filesize_bytes)} • Date: {new Date(item.created_at).toLocaleDateString()}</p>
+            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-bold uppercase text-white">{item.format} | {item.resolution} | {item.target_language}</h3>
+                  <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{item.status}</StatusBadge>
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">{formatSize(item.filesize_bytes)} | {new Date(item.created_at).toLocaleDateString()}</p>
               </div>
 
               {item.output_video_url ? (
-                <a
-                  href={item.output_video_url}
-                  download
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-3 rounded text-[10px] transition"
-                >
-                  Download
-                </a>
+                <a href={item.output_video_url} download className="gs-button-primary min-h-8 shrink-0 rounded-lg px-3 py-1 text-[10px]">Download</a>
               ) : (
-                <span className="text-[10px] bg-red-950 text-red-400 px-2 py-0.5 rounded border border-red-900 uppercase">
-                  {item.status}
-                </span>
+                <span className="shrink-0 text-[10px] text-slate-500">No output</span>
               )}
             </div>
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 };
+
 export default ExportHistory;

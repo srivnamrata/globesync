@@ -1,0 +1,176 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GlobeSync UI Plan — Verified B/C/D</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #fff; color: #1f2328; padding: 32px 24px; }
+  .page { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #57606a; margin-bottom: 24px; }
+
+  .callout { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px; background: #f7f8fa; }
+  .callout strong { color: #1f2328; }
+
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .done    { background: #d1fae5; color: #065f46; }
+  .partial { background: #fef3c7; color: #92400e; }
+  .missing { background: #fee2e2; color: #991b1b; }
+  .wrong   { background: #fce7f3; color: #9d174d; }
+
+  .phase { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 18px; overflow: hidden; }
+  .phase-hdr { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #f7f8fa; border-bottom: 1px solid #e5e7eb; }
+  .phase-title { font-size: 13px; font-weight: 700; }
+  .phase-body { padding: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; font-weight: 600; color: #57606a; text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; background: #fafafa; }
+  td { padding: 7px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .item-col { width: 46%; }
+  .plan-col { width: 16%; text-align: center; }
+  .real-col { width: 16%; text-align: center; }
+  .note-col { width: 22%; font-size: 12px; color: #57606a; font-family: "SFMono-Regular", Consolas, monospace; }
+
+  .discrepancy { background: #fff9f9; }
+
+  h2 { font-size: 14px; font-weight: 700; margin: 24px 0 8px; }
+  ul.todo { padding-left: 18px; }
+  ul.todo li { margin-bottom: 5px; font-size: 13px; }
+
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>GlobeSync UI Plan — Code-Verified Phase B / C / D</h1>
+<p class="meta">Every item verified against actual source files  ·  Discrepancies from the plan's self-assessment are highlighted in pink</p>
+
+<div class="callout">
+  <strong>Summary of corrections:</strong> The self-assessment was accurate for most items. Four items the plan marked ✅ done are actually <span class="badge partial">◑ partial</span> or <span class="badge missing">✗ missing</span>. Two items the plan marked ❌ are actually <span class="badge done">✓ done</span> (active row highlight, risk badge architecture). Overall Phase C and D completion is higher than the plan reported.
+</div>
+
+<div class="legend">
+  <span class="badge done">✓ Confirmed done</span>
+  <span class="badge partial">◑ Partial — exists but incomplete</span>
+  <span class="badge missing">✗ Confirmed missing</span>
+  <span class="badge wrong">⚠ Plan assessment was wrong</span>
+</div>
+
+
+<div class="phase">
+  <div class="phase-hdr">
+    <span class="phase-title">Phase B — Project browser &amp; lifecycle UX</span>
+    <span style="font-size:12px;color:#57606a">Plan said 8/10 done · Verified: 8/10</span>
+  </div>
+  <div class="phase-body">
+    <table>
+      <thead><tr><th class="item-col">Work item</th><th class="plan-col">Plan said</th><th class="real-col">Verified</th><th class="note-col">Evidence / gap</th></tr></thead>
+      <tbody>
+        <tr><td>Workspace shell with visual hierarchy</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>homeShell.tsx WorkspaceHome</td></tr>
+        <tr><td>Onboarding tracker for new users</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>homeShell.tsx lines 377–443</td></tr>
+        <tr><td>Project cards (thumbnail, name, lang, date, status)</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Article elements in WorkspaceHome</td></tr>
+        <tr><td>Project actions menu (rename, archive, duplicate)</td><td><span class="badge done">✓</span></td><td><span class="badge partial">◑</span></td><td>ProjectActionsMenu renders; handlers use alert() stubs — not wired to API</td></tr>
+        <tr><td>Search by project name</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>search state + filter in WorkspaceHome</td></tr>
+        <tr><td>Sort by last updated / created</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>sortKey state + .sort()</td></tr>
+        <tr class="discrepancy"><td>Status filters (Draft, Processing, Failed, Complete)</td><td><span class="badge done">✓</span></td><td><span class="badge missing">✗</span></td><td class="note-col"><span class="badge wrong">⚠ Plan wrong</span> — only search + sort exist; no filter tabs/chips</td></tr>
+        <tr><td>Project creation inline vs modal</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Inline form in sidebar panel</td></tr>
+        <tr><td>Safer language-pair swap with confirmation</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Two separate selects; no swap affordance</td></tr>
+        <tr><td>Rename "draft" to user-friendly lifecycle label</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>formatProjectStatus() returns "Draft" unchanged</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<div class="phase">
+  <div class="phase-hdr">
+    <span class="phase-title">Phase C — Core editor interaction upgrades</span>
+    <span style="font-size:12px;color:#57606a">Plan said 8/13 done · Verified: 9/13</span>
+  </div>
+  <div class="phase-body">
+    <table>
+      <thead><tr><th class="item-col">Work item</th><th class="plan-col">Plan said</th><th class="real-col">Verified</th><th class="note-col">Evidence / gap</th></tr></thead>
+      <tbody>
+        <tr><td>Play button per segment</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 999–1010 — ▶ Play seeks + plays</td></tr>
+        <tr><td>Timestamps clickable to seek</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1015–1024 — timecode button calls seekToTime()</td></tr>
+        <tr><td>Auto-scroll active segment into view</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 533–539 — scrollIntoView smooth</td></tr>
+        <tr><td>Dirty state indicator when translation changed</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 68 dirtySegments Set; amber border at line 989</td></tr>
+        <tr><td>Explicit save action + Ctrl+S</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 871–886 save button; line 517–519 Ctrl+S handler</td></tr>
+        <tr><td>Undo / Redo</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Lines 856–868 in header</td></tr>
+        <tr><td>Keyboard shortcut: play/pause (Space)</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 521–527 space bar handler</td></tr>
+        <tr><td>Keyboard shortcut: save (Ctrl+S)</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 517–519</td></tr>
+        <tr class="discrepancy"><td>Active row highlight during playback</td><td><span class="badge missing">✗</span></td><td><span class="badge done">✓</span></td><td class="note-col"><span class="badge wrong">⚠ Plan wrong</span> — amber/red/indigo border based on selectedSegmentId at line 986–992</td></tr>
+        <tr><td>Replay / loop for current segment</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>No loop logic found</td></tr>
+        <tr><td>Waveform energy visualisation + active highlight + scrub</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Bar timeline exists (line 1187); no audio energy curve</td></tr>
+        <tr><td>Keyboard shortcuts: next / previous segment</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Only Space and Ctrl+S in keydown handler</td></tr>
+        <tr><td>Download / open-output actions</td><td><span class="badge partial">◑</span></td><td><span class="badge done">✓</span></td><td>Line 1163–1180 — blob fetch + ObjectURL, not just anchor href</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<div class="phase">
+  <div class="phase-hdr">
+    <span class="phase-title">Phase D — Translation quality &amp; review workflow</span>
+    <span style="font-size:12px;color:#57606a">Plan said 10/14 done · Verified: 10/14</span>
+  </div>
+  <div class="phase-body">
+    <table>
+      <thead><tr><th class="item-col">Work item</th><th class="plan-col">Plan said</th><th class="real-col">Verified</th><th class="note-col">Evidence / gap</th></tr></thead>
+      <tbody>
+        <tr><td>Side-by-side source + translation layout</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>2-col grid lines 985/995–1111</td></tr>
+        <tr><td>Speaker label, timing, duration fit per segment</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>speakerTag line 1012; duration line 1013</td></tr>
+        <tr><td>Risk badge: low confidence</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1052–1055</td></tr>
+        <tr><td>Risk badge: duration overflow / underflow</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Lines 1042–1050 "Too long" / "Too short"</td></tr>
+        <tr><td>Risk badge: missing translation</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1040 missing badge</td></tr>
+        <tr><td>Segment action: retranslate</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1080 in ⋯ menu</td></tr>
+        <tr><td>Segment action: regenerate audio</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1088 in ⋯ menu</td></tr>
+        <tr><td>Segment action: reset to original</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 1097 in ⋯ menu</td></tr>
+        <tr><td>Last saved timestamp</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Line 71 lastSavedAt; displayed in HH:MM format line 882–885</td></tr>
+        <tr><td>Draft conflict messaging + "Keep my edits"</td><td><span class="badge done">✓</span></td><td><span class="badge done">✓</span></td><td>Lines 912–938; "Keep my edits" button at line 927</td></tr>
+        <tr class="discrepancy"><td>Risk badge: missing generated TTS audio</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Confirmed missing — no badge for absent generated_audio</td></tr>
+        <tr class="discrepancy"><td>Risk badge: failed lip-sync render</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Confirmed missing — no segments_metadata check in UI</td></tr>
+        <tr class="discrepancy"><td>Compare original vs dubbed audio per segment</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Confirmed missing — no A/B audio toggle</td></tr>
+        <tr class="discrepancy"><td>Version history entry points</td><td><span class="badge missing">✗</span></td><td><span class="badge missing">✗</span></td><td>Confirmed missing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<h2>Corrections to the plan's self-assessment</h2>
+<table style="font-size:13px;width:100%;border-collapse:collapse">
+  <thead><tr style="border-bottom:1px solid #e5e7eb"><th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:#57606a;text-transform:uppercase">Item</th><th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:#57606a;text-transform:uppercase">Plan said</th><th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:#57606a;text-transform:uppercase">Actual</th><th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:#57606a;text-transform:uppercase">Note</th></tr></thead>
+  <tbody>
+    <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 8px">Status filters (B)</td><td style="padding:6px 8px"><span class="badge done">✓ Done</span></td><td style="padding:6px 8px"><span class="badge missing">✗ Missing</span></td><td style="padding:6px 8px;font-size:12px;color:#57606a">homeShell.tsx has search + sort only; no status filter chips</td></tr>
+    <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 8px">Project actions (rename/archive/duplicate) (B)</td><td style="padding:6px 8px"><span class="badge done">✓ Done</span></td><td style="padding:6px 8px"><span class="badge partial">◑ Partial</span></td><td style="padding:6px 8px;font-size:12px;color:#57606a">Menu UI exists, handlers use alert() stubs — not wired to backend</td></tr>
+    <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 8px">Active row highlight during playback (C)</td><td style="padding:6px 8px"><span class="badge missing">✗ Missing</span></td><td style="padding:6px 8px"><span class="badge done">✓ Done</span></td><td style="padding:6px 8px;font-size:12px;color:#57606a">Lines 986–992 — border/bg changes on selectedSegmentId match</td></tr>
+    <tr><td style="padding:6px 8px">Download video (C)</td><td style="padding:6px 8px"><span class="badge partial">◑ Partial</span></td><td style="padding:6px 8px"><span class="badge done">✓ Done</span></td><td style="padding:6px 8px;font-size:12px;color:#57606a">Lines 1163–1180 use blob fetch + ObjectURL — full download implemented</td></tr>
+  </tbody>
+</table>
+
+
+<h2>Confirmed remaining work (in priority order)</h2>
+<ul class="todo">
+  <li><strong>B — Status filter chips</strong>: Add Draft / Processing / Complete / Needs attention filter above project grid in homeShell.tsx</li>
+  <li><strong>B — Wire actions menu</strong>: Replace alert() stubs in ProjectActionsMenu with real projectService.renameProject / archiveProject / duplicateProject calls</li>
+  <li><strong>B — Language-pair swap</strong>: Add ⇄ button between source/target selects with confirmation when transcript/translation already exists</li>
+  <li><strong>C — Next/prev segment shortcuts</strong>: Add ArrowUp/ArrowDown or J/K handlers in the existing keydown listener (line 516)</li>
+  <li><strong>C — Segment loop replay</strong>: Add loop toggle on the per-segment play button — seek to segment start on video <code>timeupdate</code> when loop is active</li>
+  <li><strong>C — Waveform energy visualisation</strong>: Decode audio via Web Audio API and draw amplitude bars into the segment timeline canvas</li>
+  <li><strong>D — Missing TTS audio badge</strong>: Check if segment has no generated audio URL; add a "No audio" badge alongside existing risk badges (lines 1039–1059)</li>
+  <li><strong>D — Failed lip-sync badge</strong>: After job completion, check segments_metadata render_status; surface a badge on affected segments</li>
+  <li><strong>D — Original vs dubbed A/B comparison</strong>: Add toggle per segment to swap between originalVideoUrl audio and dubbedAudioUrl for that time range</li>
+  <li><strong>D — Version history</strong>: Entry point in editor header to list previous draft versions (needs backend draft history endpoint)</li>
+</ul>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

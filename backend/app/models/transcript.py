@@ -21,8 +21,8 @@ class Transcript(Base):
     __tablename__ = "transcripts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
     media_file_id = Column(
         UUID(as_uuid=True),
         ForeignKey("media_files.id", ondelete="CASCADE"),

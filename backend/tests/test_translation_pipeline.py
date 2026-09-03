@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.translation_schema import TranslateProjectRequest, TranslateSegmentRequest
+from app.routers.translation import _format_translation_item
 from app.utils.prompt_templates import (
     get_refinement_condensation_prompt,
     get_refinement_expansion_prompt,
@@ -235,6 +237,40 @@ def test_duration_matcher_google_provider_single_pass(google_translate_text_resp
     assert openai_mock.await_count == 0
     assert google_mock.await_count == 1
     assert save_to_cache.await_count == 1
+
+
+@pytest.mark.parametrize(
+    ("generated_audio", "expected_status"),
+    [([SimpleNamespace(status="completed")], "completed"), ([], None)],
+)
+def test_single_segment_response_handles_generated_audio_state(generated_audio, expected_status) -> None:
+    segment = SimpleNamespace(
+        id=uuid.uuid4(),
+        sequence_order=2,
+        speaker_tag="Speaker 1",
+        start_time_seconds=1.0,
+        end_time_seconds=2.5,
+    )
+    translation = SimpleNamespace(
+        id=uuid.uuid4(),
+        original_duration_ms=1500,
+        estimated_duration_ms=1480,
+        duration_ratio=0.987,
+        iterations_count=1,
+        confidence_score=0.96,
+        is_cached=False,
+        is_user_edited=False,
+        source_text="Hello",
+        translated_text="Hola",
+        generated_audio=generated_audio,
+        created_at=datetime.now(timezone.utc),
+    )
+
+    response = _format_translation_item(translation, segment)
+
+    assert response.generated_audio_status == expected_status
+    assert response.segment_id == segment.id
+    assert response.translated_text == "Hola"
 
 
 # =============================================================================

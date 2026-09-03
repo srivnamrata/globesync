@@ -9,6 +9,7 @@ export interface TranslatedSegment {
   durationRatio: number;
   speedAdjustmentFactor: number;
   qualityScore: number;
+  generatedAudioStatus?: string;
   status: 'pending' | 'completed' | 'failed';
 }
 

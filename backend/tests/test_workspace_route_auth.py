@@ -601,6 +601,7 @@ def test_lipsync_job_status_propagates_workspace_not_found(monkeypatch):
         output_video_gcs_path=None,
         target_language="es",
         model_name="liveportrait",
+        render_mode="dub_and_lipsync",
         status="queued",
         progress_percent=0,
         total_segments=0,

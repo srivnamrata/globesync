@@ -40,9 +40,11 @@ from app.schemas.media_schema import (
     InitSignedUploadRequest,
     InitSignedUploadResponse,
     MediaFileResponse,
+    MediaAudioResponse,
     UploadStatusResponse,
 )
 from app.services.media_service import media_service
+from app.services.audio_extraction_service import audio_extractor
 from app.services.storage_service import storage_service
 from app.utils.error_codes import (
     ChecksumMismatchException,
@@ -180,6 +182,7 @@ async def upload_direct_file(
             audio_codec=media_record.audio_codec,
             frame_rate=float(media_record.frame_rate) if media_record.frame_rate else None,
             storage_path=media_record.storage_path,
+            media_url=storage_service.generate_presigned_download_url(media_record.storage_path),
             thumbnail_url=thumbnail_url,
             status=media_record.status,
             created_at=media_record.created_at,
@@ -776,6 +779,52 @@ async def abort_resumable_upload(
 
 
 @router.get(
+    "/{media_id}/audio",
+    response_model=MediaAudioResponse,
+    summary="Get Browser-Compatible Media Audio",
+)
+async def get_media_audio(
+    media_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(MediaFile).where(MediaFile.id == media_id)
+    result = await db.execute(stmt)
+    media = result.scalar_one_or_none()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media file not found.")
+
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=media.workspace_id,
+        project_id=media.project_id,
+        not_found_detail="Media file not found.",
+    )
+
+    audio_key = f"waveforms/{media_id}.mp3"
+    if not storage_service.object_exists(audio_key):
+        source_path = os.path.join(settings.TEMP_UPLOAD_DIR, f"waveform_{media_id}{os.path.splitext(media.original_filename)[1]}")
+        audio_path = os.path.join(settings.PROCESSED_MEDIA_DIR, f"waveform_{media_id}.wav")
+        mp3_path = os.path.join(settings.PROCESSED_MEDIA_DIR, f"waveform_{media_id}.mp3")
+        try:
+            await storage_service.download_file(media.storage_path, source_path, bucket_name=media.storage_bucket)
+            await audio_extractor.extract_audio_for_stt(source_path, audio_path)
+            await audio_extractor.convert_to_web_audio(audio_path, mp3_path)
+            await storage_service.upload_file(mp3_path, audio_key, mime_type="audio/mpeg")
+        finally:
+            for path in (source_path, audio_path, mp3_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    return MediaAudioResponse(
+        media_id=media.id,
+        audio_url=storage_service.generate_presigned_download_url(audio_key, expires_in_seconds=7200),
+        duration_seconds=float(media.duration_seconds),
+    )
+
+
+@router.get(
     "/{media_id}",
     response_model=MediaFileResponse,
     summary="Get Media File Details & Playback URL",
@@ -819,6 +868,7 @@ def _format_media_response(media: MediaFile) -> MediaFileResponse:
         audio_codec=media.audio_codec,
         frame_rate=float(media.frame_rate) if media.frame_rate else None,
         storage_path=media.storage_path,
+        media_url=storage_service.generate_presigned_download_url(media.storage_path),
         thumbnail_url=thumbnail_url,
         status=media.status,
         created_at=media.created_at,

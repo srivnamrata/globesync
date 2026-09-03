@@ -21,8 +21,8 @@ class LipSyncJob(Base):
     __tablename__ = "lipsync_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
     request_id = Column(String(255), nullable=True, index=True)
     task_id = Column(String(255), nullable=True, index=True)
     idempotency_key = Column(String(255), nullable=True, index=True)
@@ -31,6 +31,7 @@ class LipSyncJob(Base):
 
     target_language = Column(String(10), nullable=False)
     model_name = Column(String(100), default="arc144/liveportrait", nullable=False)
+    render_mode = Column(String(32), default="dub_and_lipsync", nullable=False, index=True)  # dub_only, dub_and_lipsync
     status = Column(String(50), default="queued", index=True)  # queued, in_progress, completed, failed
     progress_percent = Column(SmallInteger, default=0, nullable=False)
 

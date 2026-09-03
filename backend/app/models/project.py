@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -71,6 +71,7 @@ class Project(Base):
     )
 
     draft = relationship("ProjectDraft", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    versions = relationship("ProjectVersion", back_populates="project", cascade="all, delete-orphan", order_by="ProjectVersion.version.desc()")
     workspace = relationship("Workspace", foreign_keys=[workspace_id])
     owner_user = relationship("User", foreign_keys=[owner_user_id])
     created_by_user = relationship("User", foreign_keys=[created_by_user_id])
@@ -124,3 +125,28 @@ class ProjectDraft(Base):
     project = relationship("Project", back_populates="draft")
     workspace = relationship("Workspace", foreign_keys=[workspace_id])
     last_saved_by_user = relationship("User", foreign_keys=[last_saved_by_user_id])
+
+
+class ProjectVersion(Base):
+    """Immutable snapshots of persisted project drafts for review and restore workflows."""
+
+    __tablename__ = "project_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    draft_schema_version = Column(String(64), nullable=False)
+    draft_payload = Column(JSONB, nullable=False)
+    payload_hash = Column(String(64), nullable=False, index=True)
+    checkpoint_reason = Column(String(50), nullable=False)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    project = relationship("Project", back_populates="versions")
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_project_versions_project_version"),
+    )
+    workspace = relationship("Workspace", foreign_keys=[workspace_id])
+    created_by_user = relationship("User", foreign_keys=[created_by_user_id])

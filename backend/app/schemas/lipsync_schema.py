@@ -40,6 +40,7 @@ class LipSyncJobResponse(BaseModel):
     media_file_id: UUID
     target_language: str
     model_name: str
+    render_mode: str
     status: str
     progress_percent: int
     total_segments: int
