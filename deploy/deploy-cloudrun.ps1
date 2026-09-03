@@ -23,8 +23,27 @@ $ApiConcurrency = if ($env:API_CONCURRENCY) { $env:API_CONCURRENCY } else { "10"
 $ApiMaxInstances = if ($env:API_MAX_INSTANCES) { $env:API_MAX_INSTANCES } else { "8" }
 $ApiMinInstances = if ($env:API_MIN_INSTANCES) { $env:API_MIN_INSTANCES } else { "0" }
 $ApiTimeout = if ($env:API_TIMEOUT) { $env:API_TIMEOUT } else { "300" }
+$ApiSecrets = "DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest"
 
 gcloud config set project $ProjectId
+
+$DeepgramSecretExists = $true
+try { gcloud secrets describe transcription-deepgram-api-key | Out-Null } catch { $DeepgramSecretExists = $false }
+if ($LASTEXITCODE -ne 0) { $DeepgramSecretExists = $false }
+if ($DeepgramSecretExists) {
+    $ApiSecrets += ",DEEPGRAM_API_KEY=transcription-deepgram-api-key:latest"
+}
+
+$ReplicateSecretExists = $true
+try { gcloud secrets describe replicate-api-token | Out-Null } catch { $ReplicateSecretExists = $false }
+if ($LASTEXITCODE -ne 0) { $ReplicateSecretExists = $false }
+if ($ReplicateSecretExists) {
+    # A genuine provider token is required for Dub + Lip-Sync. The API rejects
+    # that mode when this secret is absent instead of producing a mock output.
+    $ApiSecrets += ",REPLICATE_API_TOKEN=replicate-api-token:latest"
+} else {
+    Write-Warning "Secret 'replicate-api-token' was not found. Dub + Lip-Sync will be unavailable; Dub only remains available."
+}
 
 Write-Host "==> Enabling APIs"
 gcloud services enable `
@@ -77,7 +96,7 @@ gcloud run jobs create $JobName `
   --region=$Region `
   --service-account=$RuntimeSa `
   --set-cloudsql-instances=$CloudSqlInstance `
-  --set-secrets="DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest" `
+  --set-secrets=$ApiSecrets `
   --env-vars-file=$EnvFile `
   --command="alembic" `
   --args="upgrade,head" `
@@ -102,7 +121,7 @@ gcloud run deploy $ApiService `
   --cpu=1 `
   --memory=1Gi `
   --add-cloudsql-instances=$CloudSqlInstance `
-  --set-secrets="DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest" `
+  --set-secrets=$ApiSecrets `
   --env-vars-file=$EnvFile
 
 $ApiUrl = gcloud run services describe $ApiService --region=$Region --format="value(status.url)"

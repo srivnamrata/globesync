@@ -210,6 +210,8 @@ export interface ProjectRenderHistoryItem {
   render_mode: 'dub_only' | 'dub_and_lipsync';
   status: string;
   progress_percent: number;
+  current_stage: string;
+  last_successful_stage?: string | null;
   output_video_url?: string | null;
   quality_score: number;
   created_at: string;

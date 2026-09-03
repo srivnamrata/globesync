@@ -414,13 +414,26 @@ class StorageService:
         key: str,
         expires_in_seconds: int = 3600,
         bucket_name: Optional[str] = None,
+        download_filename: Optional[str] = None,
     ) -> str:
-        """Generates an IAM-backed V4 signed GET URL."""
+        """Generates an IAM-backed V4 signed GET URL.
+
+        Supplying ``download_filename`` signs a Content-Disposition attachment
+        response. This is required to make a browser download a GCS object
+        instead of opening the cross-origin media URL inline.
+        """
         try:
             blob = self._bucket(bucket_name).blob(key)
+            response_disposition = None
+            if download_filename:
+                # Object names are application generated, but normalise the
+                # filename defensively before putting it in an HTTP header.
+                safe_filename = os.path.basename(download_filename).replace('"', "")
+                response_disposition = f'attachment; filename="{safe_filename}"'
             return blob.generate_signed_url(
                 expiration=timedelta(seconds=expires_in_seconds),
                 method="GET",
+                response_disposition=response_disposition,
                 **self._signing_kwargs(),
             )
         except Exception as e:

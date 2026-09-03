@@ -17,6 +17,17 @@ import type { WaveformData } from '../../../utils/waveformProcessing';
 import { Button, StatePanel } from '../../../components/ui';
 import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
+import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
+
+type ActiveBuildJob = {
+  job_id: string;
+  render_mode?: 'dub_only' | 'dub_and_lipsync';
+  status: string;
+  progress_percent: number;
+  current_stage: string;
+  last_successful_stage?: string | null;
+  error_message?: string | null;
+};
 
 const mergeDraftWithProject = (draft: HeygenXFile, project?: Project | null): HeygenXFile => ({
   ...draft,
@@ -84,6 +95,7 @@ export default function TranslationEditor() {
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing' | 'translating'>('idle');
   const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
   const [buildMode, setBuildMode] = useState<'dub_only' | 'dub_and_lipsync' | null>(null);
+  const [activeBuildJob, setActiveBuildJob] = useState<ActiveBuildJob | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
@@ -840,6 +852,7 @@ export default function TranslationEditor() {
 
     for (let attempt = 0; attempt < 180; attempt += 1) {
       latestStatus = await projectService.getExportStatus(jobId);
+      setActiveBuildJob(latestStatus as ActiveBuildJob);
 
       if (latestStatus?.status === 'failed') {
         throw new Error(latestStatus?.error_message || `${buildLabel} failed. Check the backend logs for details.`);
@@ -875,7 +888,6 @@ export default function TranslationEditor() {
     try {
       setBuildMode(withLipSync ? 'dub_and_lipsync' : 'dub_only');
       setBuildState('syncing');
-      setRenderedVideoUrl(null);
       setLipSyncStatuses({});
       setUploadMessage('Saving translated segment edits…');
       const persistedTranslations = await syncTranslationsBeforeBuild();
@@ -897,6 +909,13 @@ export default function TranslationEditor() {
         projectForBuild.targetLanguage,
         projectForBuild.id,
       );
+      setActiveBuildJob({
+        job_id: job.job_id,
+        render_mode: withLipSync ? 'dub_and_lipsync' : 'dub_only',
+        status: 'queued',
+        progress_percent: 0,
+        current_stage: 'queued',
+      });
 
       setUploadMessage(withLipSync ? 'Building dubbed audio and syncing lip motion…' : 'Building dubbed audio…');
       const completedJob = await pollForLipSyncCompletion(job.job_id, withLipSync);
@@ -1307,7 +1326,7 @@ export default function TranslationEditor() {
         <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-amber-100">
-              A newer draft was saved in another session. Autosave is paused to protect that work.
+              A newer draft was saved in another session. Autosave is paused to protect that work. Loading the server draft replaces this editor’s local edits only after the newer saved draft is fully loaded; already persisted translations remain safe.
             </p>
             <div className="flex shrink-0 gap-2">
               <Button
@@ -1332,6 +1351,23 @@ export default function TranslationEditor() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeBuildJob && (
+        <div className="border-b border-slate-800 bg-slate-950/40 px-6 py-3">
+          <PipelineStatus
+            mode={activeBuildJob.render_mode ?? buildMode ?? 'dub_only'}
+            status={activeBuildJob.status}
+            progressPercent={activeBuildJob.progress_percent}
+            currentStage={activeBuildJob.current_stage}
+            lastSuccessfulStage={activeBuildJob.last_successful_stage}
+            errorMessage={activeBuildJob.error_message}
+            hasMedia={Boolean(currentProject.mediaId)}
+            hasTranscript={Boolean(currentProject.transcriptId)}
+            translationCount={Object.keys(translations).length}
+            segmentCount={segments.length}
+          />
         </div>
       )}
 

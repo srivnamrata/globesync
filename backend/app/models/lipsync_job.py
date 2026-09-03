@@ -34,6 +34,8 @@ class LipSyncJob(Base):
     render_mode = Column(String(32), default="dub_and_lipsync", nullable=False, index=True)  # dub_only, dub_and_lipsync
     status = Column(String(50), default="queued", index=True)  # queued, in_progress, completed, failed
     progress_percent = Column(SmallInteger, default=0, nullable=False)
+    current_stage = Column(String(50), default="queued", nullable=False)
+    last_successful_stage = Column(String(50), nullable=True)
 
     total_segments = Column(Integer, default=0, nullable=False)
     completed_segments = Column(Integer, default=0, nullable=False)

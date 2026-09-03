@@ -296,7 +296,9 @@ async def get_export_history(
         output_url = None
         if job.output_video_gcs_path:
             output_url = storage_service.generate_presigned_download_url(
-                job.output_video_gcs_path, expires_in_seconds=7200
+                job.output_video_gcs_path,
+                expires_in_seconds=7200,
+                download_filename=f"globesync_export_{job.target_language}_{job.id}.{job.format.lower()}",
             )
         results.append(
             ExportJobResponse(

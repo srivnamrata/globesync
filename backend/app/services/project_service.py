@@ -432,7 +432,7 @@ class ProjectService:
             pipeline_progress_percent = int(export_job.progress_percent)
             pipeline_error_message = export_job.error_message
         elif lipsync_job is not None:
-            pipeline_stage = "Lip-sync"
+            pipeline_stage = lipsync_job.current_stage.replace("_", " ").title()
             pipeline_status = lipsync_job.status
             pipeline_progress_percent = int(lipsync_job.progress_percent)
             pipeline_error_message = lipsync_job.error_message

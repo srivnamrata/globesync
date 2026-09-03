@@ -23,6 +23,16 @@ class ReplicateLipSync:
         if self.api_token and "test" not in self.api_token and "placeholder" not in self.api_token:
             os.environ["REPLICATE_API_TOKEN"] = self.api_token
 
+    @property
+    def is_configured(self) -> bool:
+        """Whether this process has credentials for real neural lip-sync.
+
+        The local mock renderer is useful for isolated development, but must
+        never be used to satisfy a user-requested ``Dub + Lip-Sync`` render.
+        """
+        token = (self.api_token or "").strip().lower()
+        return bool(token) and "test" not in token and "placeholder" not in token
+
     async def render_segment_lipsync(
         self,
         video_slice_path: str,
@@ -38,8 +48,15 @@ class ReplicateLipSync:
         """
         os.makedirs(os.path.dirname(output_rendered_path), exist_ok=True)
 
-        if not self.api_token or "test" in self.api_token or "placeholder" in self.api_token:
-            return await self._generate_mock_synced_video(video_slice_path, audio_segment_path, output_rendered_path)
+        if not self.is_configured:
+            raise MediaAppException(
+                status_code=503,
+                error_code=ErrorCode.LIPSYNC_RENDER_FAILED,
+                message=(
+                    "Dub + Lip-Sync requires a valid REPLICATE_API_TOKEN. "
+                    "Configure the Replicate secret, or use Dub only."
+                ),
+            )
 
         # 1. Upload assets to temporary S3 storage to obtain public/presigned URLs for Replicate
         temp_id = uuid.uuid4().hex

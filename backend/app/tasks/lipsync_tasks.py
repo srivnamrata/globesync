@@ -53,6 +53,27 @@ def publish_lipsync_event(job_id: str, status: str, progress_percent: int, messa
         logger.warning(f"Failed to publish Redis lip-sync event: {e}")
 
 
+def persist_lipsync_checkpoint(
+    db: Session,
+    job: LipSyncJob,
+    *,
+    stage: str,
+    progress_percent: int,
+    successful_stage: Optional[str] = None,
+) -> None:
+    """Persist the same recovery checkpoint communicated to the UI.
+
+    Redis events are useful for live feedback but are intentionally ephemeral;
+    these fields make the current stage and safe recovery point available after
+    a browser refresh or a worker restart.
+    """
+    job.current_stage = stage
+    job.progress_percent = max(0, min(100, progress_percent))
+    if successful_stage is not None:
+        job.last_successful_stage = successful_stage
+    db.commit()
+
+
 def run_lipsync_project_pipeline(
     job_id_str: str,
     media_file_id_str: str,
@@ -102,6 +123,7 @@ def run_lipsync_project_pipeline(
         project = db.query(Project).filter(Project.id == job.project_id).first() if job.project_id else None
 
         job.status = "in_progress"
+        persist_lipsync_checkpoint(db, job, stage="preparing", progress_percent=5)
         job.request_id = job.request_id or request_id
         job.task_id = job.task_id or task_id
         job.idempotency_key = job.idempotency_key or idempotency_key
@@ -111,6 +133,7 @@ def run_lipsync_project_pipeline(
         db.commit()
 
         project_id_str = str(job.project_id or transcript.project_id) if (job.project_id or transcript.project_id) else None
+        persist_lipsync_checkpoint(db, job, stage="voice", progress_percent=8)
         publish_lipsync_event(job_id_str, "in_progress", 8, "Synthesizing dubbed audio from translated segments...")
         run_project_tts_pipeline(
             transcript_id_str=transcript_id_str,
@@ -120,8 +143,10 @@ def run_lipsync_project_pipeline(
             task_id=job.task_id,
             idempotency_key=(f"{job.idempotency_key}:tts" if job.idempotency_key else None),
         )
+        persist_lipsync_checkpoint(db, job, stage="voice", progress_percent=10, successful_stage="voice")
 
         # 1. Download source video
+        persist_lipsync_checkpoint(db, job, stage="lip_sync", progress_percent=10)
         publish_lipsync_event(job_id_str, "in_progress", 10, "Downloading high-resolution source video...")
         asyncio.run(
             storage_service.download_file(
@@ -165,6 +190,7 @@ def run_lipsync_project_pipeline(
             eta = gpu_scheduler.estimate_eta_seconds(len(segments), idx, elapsed)
             
             pct = 15 + int((idx / max(1, len(segments))) * 65)
+            persist_lipsync_checkpoint(db, job, stage="lip_sync", progress_percent=pct)
             publish_lipsync_event(
                 job_id_str,
                 "in_progress",
@@ -278,6 +304,8 @@ def run_lipsync_project_pipeline(
             job.completed_segments = idx + 1
             db.commit()
 
+        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=88, successful_stage="lip_sync")
+
         # Step 4: Assemble Master Dubbed Audio for full muxing
         master_dubbed_key = f"master_dubbed/{str(job.project_id or transcript_id)}/{target_language}_dubbed.wav"
         asyncio.run(storage_service.download_file(master_dubbed_key, local_master_audio))
@@ -315,6 +343,7 @@ def run_lipsync_project_pipeline(
         )
 
         # Step 6: Upload Final Export Video to Cloud Storage
+        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=96, successful_stage="lip_sync")
         publish_lipsync_event(job_id_str, "in_progress", 96, "Uploading final master video to cloud storage...")
         # A job-owned immutable key prevents a later dub mode from replacing an earlier output.
         export_storage_key = (
@@ -334,6 +363,8 @@ def run_lipsync_project_pipeline(
         execution_dur = round(time.time() - start_time, 2)
 
         job.status = "completed"
+        job.current_stage = "export"
+        job.last_successful_stage = "export"
         job.progress_percent = 100
         job.output_video_gcs_path = export_storage_key
         job.output_filesize_bytes = final_filesize

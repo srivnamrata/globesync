@@ -39,6 +39,7 @@ from app.schemas.lipsync_schema import (
     ReplicateWebhookPayload,
 )
 from app.services.cloud_tasks_service import cloud_tasks_service
+from app.services.replicate_service import replicate_lipsync
 from app.services.storage_service import storage_service
 from app.services.pipeline_availability import require_background_pipelines
 from app.tasks.lipsync_tasks import render_lipsync_project_task
@@ -59,6 +60,17 @@ async def render_lipsync_project(
     db: AsyncSession = Depends(get_db),
 ):
     """Dispatches asynchronous dubbing + neural lip-sync pipeline to perform TTS, facial synthesis, A/V sync, and video remuxing."""
+    if req.enable_lipsync and not replicate_lipsync.is_configured:
+        # Do this before creating a durable job so completed job history never
+        # contains a mock audio mux labelled as a neural lip-sync render.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Dub + Lip-Sync is not configured for this deployment. "
+                "Add a valid Replicate API token, or use Dub only."
+            ),
+        )
+
     stmt = select(MediaFile).where(MediaFile.id == req.media_file_id)
     res = await db.execute(stmt)
     media = res.scalar_one_or_none()
@@ -130,6 +142,7 @@ async def render_lipsync_project(
         render_mode=render_mode,
         status="queued",
         progress_percent=0,
+        current_stage="queued",
     )
     db.add(job)
     await db.commit()
@@ -247,6 +260,8 @@ async def get_lipsync_job(
         render_mode=job.render_mode,
         status=job.status,
         progress_percent=job.progress_percent,
+        current_stage=job.current_stage,
+        last_successful_stage=job.last_successful_stage,
         total_segments=job.total_segments,
         completed_segments=job.completed_segments,
         output_video_url=output_url,
@@ -290,7 +305,9 @@ async def get_lipsync_history(
         output_url = None
         if job.output_video_gcs_path:
             output_url = storage_service.generate_presigned_download_url(
-                job.output_video_gcs_path, expires_in_seconds=7200
+                job.output_video_gcs_path,
+                expires_in_seconds=7200,
+                download_filename=f"globesync_{job.render_mode}_{job.target_language}_{job.id}.mp4",
             )
         results.append(
             LipSyncJobResponse(
@@ -302,6 +319,8 @@ async def get_lipsync_history(
                 render_mode=job.render_mode,
                 status=job.status,
                 progress_percent=job.progress_percent,
+                current_stage=job.current_stage,
+                last_successful_stage=job.last_successful_stage,
                 total_segments=job.total_segments,
                 completed_segments=job.completed_segments,
                 output_video_url=output_url,

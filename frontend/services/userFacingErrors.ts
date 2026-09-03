@@ -15,6 +15,11 @@ function containsAny(message: string, fragments: string[]): boolean {
 
 export function mapUserFacingError(error: unknown, fallbackMessage: string): string {
   if (error instanceof ApiError) {
+    const message = normalizeErrorMessage(error);
+    if (containsAny(message, ['dub + lip-sync is not configured', 'valid replicate api token'])) {
+      return 'Dub + Lip-Sync is not configured for this deployment. Ask an administrator to add the Replicate credential, or use Dub only.';
+    }
+
     if (error.status === 401 || error.status === 403) {
       return 'Your session expired or access could not be verified. Sign in again to continue.';
     }

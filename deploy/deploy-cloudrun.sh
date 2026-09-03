@@ -44,6 +44,13 @@ API_SECRETS="DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=tran
 if gcloud secrets describe transcription-deepgram-api-key >/dev/null 2>&1; then
   API_SECRETS="${API_SECRETS},DEEPGRAM_API_KEY=transcription-deepgram-api-key:latest"
 fi
+if gcloud secrets describe replicate-api-token >/dev/null 2>&1; then
+  # This is intentionally an API runtime secret: Dub + Lip-Sync must use a
+  # real provider credential rather than the development-only mock renderer.
+  API_SECRETS="${API_SECRETS},REPLICATE_API_TOKEN=replicate-api-token:latest"
+else
+  echo "WARNING: Secret 'replicate-api-token' was not found. Dub + Lip-Sync will be unavailable; Dub only remains available." >&2
+fi
 echo "==> Enabling APIs"
 gcloud services enable \
   run.googleapis.com \

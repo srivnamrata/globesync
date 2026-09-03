@@ -39,12 +39,12 @@ class FaceDetector:
         eye alignments (head tilt), and mouth region.
         """
         if not os.path.exists(image_path) or self.face_cascade is None:
-            return self._mock_face_result()
+            return self._unavailable_face_result()
 
         try:
             img = cv2.imread(image_path)
             if img is None:
-                return self._mock_face_result()
+                return self._unavailable_face_result()
 
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             height, width = gray.shape
@@ -105,17 +105,22 @@ class FaceDetector:
             )
 
         except Exception:
-            return self._mock_face_result()
+            return self._unavailable_face_result()
 
     @staticmethod
-    def _mock_face_result() -> FaceDetectionResult:
+    def _unavailable_face_result() -> FaceDetectionResult:
+        """Fail closed when a frame cannot be inspected.
+
+        Pretending that a face was found can create an export labelled as
+        lip-synchronised when no facial synthesis was possible.
+        """
         return FaceDetectionResult(
-            face_detected=True,
-            confidence=0.96,
-            bbox={"x": 320, "y": 140, "width": 450, "height": 550},
-            landmarks={"mouth": {"x": 420, "y": 520, "width": 250, "height": 140}},
+            face_detected=False,
+            confidence=0.0,
+            bbox=None,
+            landmarks=None,
             head_rotation_deg=0.0,
-            is_suitable_for_lipsync=True,
+            is_suitable_for_lipsync=False,
         )
 
 

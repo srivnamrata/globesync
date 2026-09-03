@@ -16,13 +16,13 @@ from app.utils.replicate_utils import replicate_utils
 # =============================================================================
 # 1. FACE DETECTION & QUALITY METRICS TESTS
 # =============================================================================
-def test_face_detector_fallback():
-    result = face_detector._mock_face_result()
-    assert result.face_detected is True
-    assert result.confidence >= 0.90
-    assert result.bbox is not None
-    assert "x" in result.bbox
-    assert "mouth" in result.landmarks
+def test_face_detector_unavailable_frame_fails_closed():
+    result = face_detector._unavailable_face_result()
+    assert result.face_detected is False
+    assert result.confidence == 0.0
+    assert result.bbox is None
+    assert result.landmarks is None
+    assert result.is_suitable_for_lipsync is False
 
 
 def test_quality_metrics_sync_evaluation():

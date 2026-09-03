@@ -37,8 +37,8 @@ GlobeSync should compete on control, reliability, and operational clarity rather
 ## Current execution status
 
 * Overall status: In progress
-* Current focus: Phase D — Translation quality and review workflow
-* Current priority: P2 quality and recovery (risk indicators, segment retranslate, regenerate audio)
+* Current focus: Phase E — Processing visibility and failure recovery
+* Current priority: P2 job-stage progress, recovery guidance, and output discovery
 * Execution rule: Complete work in phase order unless a blocker requires a prerequisite fix
 * Documentation rule: Update this file after each meaningful implementation, validation, or scope decision so progress stays traceable
 
@@ -1122,3 +1122,32 @@ Track these before and after the workflow checkpoints:
 1. Run the translation and media-audio API test suites in a Python-enabled environment
 2. Verify retranslation changes the segment to `No audio` until regeneration succeeds
 3. Verify repeated regeneration leaves exactly one current generated-audio record and clears the risk indicator
+
+### Phase E processing visibility and recovery — slice 1
+
+#### Implemented
+
+* Added persistent `current_stage` and `last_successful_stage` checkpoints to lip-sync jobs, with an additive Alembic migration (`20260903_14`) so job progress remains available after refreshes and worker restarts.
+* The render pipeline now persists `preparing`, `voice`, `lip_sync`, and `export` checkpoints alongside its existing progress events; a failed job retains its last safe completed checkpoint.
+* Added an editor build-status panel with the common Upload, Transcribe, Translate, Voice, Lip-sync, and Export stage model. It uses actual project prerequisites and the authoritative render-job status rather than fabricated progress.
+* Added stage-specific recovery copy that states what to investigate and explicitly confirms that saved translations and existing outputs are preserved.
+* Kept the previously generated preview visible while a new build starts; initiating a render no longer clears an existing output link before its replacement succeeds.
+* Clarified the stale-draft banner: loading the server draft intentionally replaces only local editor edits after hydration and does not erase already persisted translations.
+
+#### Safety and contract safeguards
+
+* The job-stage fields are additive and defaulted; they do not alter job ownership, project/workspace foreign keys, artifact keys, signed URLs, or dispatch payloads.
+* No retry action was exposed because the backend does not yet provide a stage-scoped, idempotent retry contract. Recovery guidance directs users to start a new build only after resolving the relevant prerequisite.
+* The UI derives its state from the existing authorized job-status endpoint and holds no signed artifact URL in persisted project or draft state.
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the Phase E slice, including TypeScript validation and static route generation.
+* `git diff --check` completed without whitespace errors.
+* Backend automated migration and pipeline tests remain pending in a Python-enabled environment.
+
+#### Next Phase E slice
+
+1. Extend the common stage model to upload, transcription, and translation jobs once each exposes an equally stable persisted stage/checkpoint contract.
+2. Add a completed-output summary with authoritative duration, file size, created time, and selected-history-item preview once those fields are present in the render-history response.
+3. Add stage-specific retry controls only with an explicit idempotent backend retry endpoint and contract tests.

@@ -43,6 +43,8 @@ class LipSyncJobResponse(BaseModel):
     render_mode: str
     status: str
     progress_percent: int
+    current_stage: str
+    last_successful_stage: Optional[str] = None
     total_segments: int
     completed_segments: int
     output_video_url: Optional[str] = None
