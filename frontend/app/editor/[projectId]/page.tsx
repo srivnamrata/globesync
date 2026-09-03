@@ -252,6 +252,12 @@ export default function TranslationEditor() {
         const snapshot: Record<string, string> = {};
         resolvedTranslations.forEach((t) => { snapshot[t.transcriptSegmentId] = t.translatedText; });
         setOriginalTranslations(snapshot);
+      } else {
+        // No translations found from API or draft (e.g. fresh upload with new segment IDs).
+        // Wipe the translation store so stale translations from a previous
+        // transcript don't linger against the new segments.
+        setTranslations([]);
+        setOriginalTranslations({});
       }
     } catch (err) {
       console.error('Failed to load project draft in editor:', err);
@@ -907,15 +913,27 @@ export default function TranslationEditor() {
         <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-amber-100">
-              A newer backend draft was saved in another session. Backend autosave is paused so this tab does not overwrite newer work. Reload the latest project state to resume shared saves. Your unsynced browser edits remain cached locally until you reload.
+              A newer draft was saved in another session. Autosave is paused to protect that work.
             </p>
-            <button
-              onClick={() => void loadProjectData()}
-              disabled={isReloadingProject}
-              className="shrink-0 rounded-lg border border-amber-500/60 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isReloadingProject ? 'Reloading…' : 'Reload latest draft'}
-            </button>
+            <div className="flex shrink-0 gap-2">
+              <button
+                onClick={() => {
+                  // "Keep my edits": Accept the remote version number so autosave resumes
+                  // from this point forward, without discarding local edits.
+                  setHasRemoteDraftConflict(false);
+                }}
+                className="rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+              >
+                Keep my edits
+              </button>
+              <button
+                onClick={() => void loadProjectData()}
+                disabled={isReloadingProject}
+                className="shrink-0 rounded-lg border border-amber-500/60 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isReloadingProject ? 'Reloading…' : 'Load server draft'}
+              </button>
+            </div>
           </div>
         </div>
       )}
