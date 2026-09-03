@@ -1151,3 +1151,122 @@ Track these before and after the workflow checkpoints:
 1. Extend the common stage model to upload, transcription, and translation jobs once each exposes an equally stable persisted stage/checkpoint contract.
 2. Add a completed-output summary with authoritative duration, file size, created time, and selected-history-item preview once those fields are present in the render-history response.
 3. Add stage-specific retry controls only with an explicit idempotent backend retry endpoint and contract tests.
+
+### Phase E completed-output reuse — slice 2
+
+#### Implemented
+
+* Extended render and format-export job responses with separate, short-lived `output_video_url` (inline preview) and `download_video_url` (signed attachment) fields, plus lip-sync output file size.
+* Preserved the existing `output_video_url` field for preview compatibility; the new download URL is additive and is generated only for the authorized request.
+* Updated the project output-history panel so each completed entry has its own Open and Download actions, including render mode, language, size, and creation time.
+
+#### Safety and contract safeguards
+
+* No artifact URL is stored in a project, draft, or client cache. Both URLs are generated from the job-owned immutable object key at read time and remain subject to the existing workspace authorization check.
+* The attachment response is signed separately from preview. This fixes cross-origin browser behavior without changing object persistence, bucket access, or URL expiry policy.
+* The response additions are backward compatible; existing preview consumers continue using `output_video_url`.
+
+#### Validation
+
+* `npm.cmd run build` completed successfully after the output-history update, including TypeScript validation and static route generation.
+
+### Phase E durable upstream operation tracking - slice 3
+
+#### Implemented
+
+* Added a workspace- and project-scoped `pipeline_operations` record for transcription and batch translation.
+* Transcription and translation dispatch now persist an operation before queueing work and associate it with the active project operation pointer.
+* Translation carries the operation ID through Cloud Tasks and Celery execution, persisting loading, translation, save, completion, and failure checkpoints.
+* Preserved compatibility for direct translation task invocations that do not provide an operation ID.
+
+#### Validation
+
+* `pytest -q tests/test_translation_task_persistence.py tests/test_translation_pipeline.py` passed: 15 tests.
+* Static diagnostics report no errors in the touched backend modules.
+
+### Phase E persisted operation hydration - slice 4
+
+#### Implemented
+
+* Added an authorized `GET /v1/projects/{project_id}/pipeline-operation` endpoint backed by the active project operation pointer.
+* Added typed frontend service access for persisted operation status.
+* The editor now restores queued or in-progress transcription and translation state after project reload, including the durable message and failed-operation error text.
+
+#### Validation
+
+* `pytest -q tests/test_projects_api.py` passed: 15 tests.
+* `npm.cmd run build` completed successfully.
+
+### Phase E safe retry contract - slice 5
+
+#### Implemented
+
+* Added an authorized translation retry endpoint for failed batch operations.
+* Retries create a new durable operation and idempotency key, preserving the failed operation as history.
+* Non-failed operations and unsupported operation types are rejected with a conflict response.
+* Added a typed frontend service method for the retry contract.
+
+#### Safety boundary
+
+* Transcription retry remains unavailable until its original language, speaker, and preprocessing options are persisted. The endpoint does not guess those inputs.
+
+#### Validation
+
+* `pytest -q tests/test_translation_retry_api.py` passed: 4 tests.
+* `pytest -q tests/test_projects_api.py tests/test_translation_pipeline.py tests/test_translation_task_persistence.py` passed: 30 tests.
+
+### Phase E editor translation retry control - slice 6
+
+#### Implemented
+
+* Added a retry action to the editor only for persisted failed translation operations.
+* The control disables while dispatching, adopts the newly returned operation ID, and restores queued translation state without modifying saved translations, drafts, render jobs, or artifact URLs.
+* Render-job status remains the dominant build status surface when a render is active.
+
+#### Validation
+
+* `pytest -q tests/test_translation_retry_api.py tests/test_projects_api.py` passed: 19 tests.
+* `npm.cmd run build` completed successfully.
+* `git diff --check` completed without whitespace errors.
+
+### Phase E transcription retry inputs - slice 7
+
+#### Implemented
+
+* Persisted the original transcription language, speaker limit, noise-reduction, loudness-normalization, and VAD options on each new pipeline operation.
+* Added an authorized transcription retry endpoint that accepts only failed transcription operations with complete persisted inputs.
+* Retries create a fresh operation and idempotency key, preserve the failed operation as history, and reuse only the stored media/transcript lineage and options.
+* Added a typed frontend service method without exposing a UI action until the editor has a dedicated transcription failure workflow.
+
+#### Safety boundary
+
+* Operations created before these fields existed are rejected for retry rather than retried with guessed settings.
+* No render jobs, persisted drafts, translation rows, signed URLs, or artifact keys are modified by transcription retry dispatch.
+
+#### Validation
+
+* `pytest -q tests/test_transcription_retry_api.py tests/test_transcription_pipeline.py tests/test_projects_api.py` passed: 20 tests.
+* Compilation succeeded for the touched backend modules and migration.
+
+### Phase E editor transcription retry control - slice 8
+
+#### Implemented
+
+* Added a distinct editor recovery action for persisted failed transcription operations.
+* The action is shown only when no render job is active, disables during dispatch, and adopts the newly queued operation returned by the authorized retry endpoint.
+* Existing project data, translations, drafts, render jobs, signed URLs, and output artifacts remain untouched.
+
+#### Validation
+
+* `pytest -q tests/test_transcription_retry_api.py tests/test_translation_retry_api.py` passed: 6 tests.
+* `npm.cmd run build` completed successfully.
+* `git diff --check` completed without whitespace errors.
+
+#### Remaining Phase E work
+
+1. Perform browser QA for upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
+
+#### Local QA note
+
+* Local frontend and backend liveness checks passed, including a mobile-width entry-screen render without horizontal overflow.
+* Authenticated editor, failed-job, retry, and export-history browser scenarios remain pending because this environment has no authenticated session or representative project fixture.

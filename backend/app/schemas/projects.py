@@ -116,6 +116,30 @@ class ProjectDetailResponse(BaseModel):
     updated_at: datetime
 
 
+class PipelineOperationResponse(BaseModel):
+    id: UUID
+    project_id: Optional[UUID] = None
+    workspace_id: Optional[UUID] = None
+    transcript_id: Optional[UUID] = None
+    operation_type: str
+    target_language: Optional[str] = None
+    status: str
+    progress_percent: int
+    current_stage: str
+    last_successful_stage: Optional[str] = None
+    message: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PipelineOperationRetryResponse(BaseModel):
+    operation_id: UUID
+    operation_type: str
+    status: str
+    message: str
+
+
 class ProjectDraftResponse(BaseModel):
     project_id: UUID
     workspace_id: UUID

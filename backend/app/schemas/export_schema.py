@@ -44,6 +44,7 @@ class ExportJobResponse(BaseModel):
     progress_percent: int
     current_stage: str
     output_video_url: Optional[str] = None
+    download_video_url: Optional[str] = None
     filesize_bytes: Optional[int] = None
     estimated_cost_usd: float
     created_at: datetime

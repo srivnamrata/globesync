@@ -16,12 +16,35 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
+from app.models.pipeline_operation import PipelineOperation
 from app.services.translation_service import translation_service
 from app.tasks.lipsync_tasks import run_lipsync_project_pipeline
 from app.tasks.transcription_tasks import run_transcription_pipeline
 
 logger = logging.getLogger("internal_tasks")
 router = APIRouter(prefix="/internal/tasks", tags=["Internal Tasks"])
+
+
+async def _checkpoint_translation_operation(
+    db: AsyncSession,
+    operation_id: str,
+    *,
+    status_value: str,
+    progress_percent: int,
+    message: str,
+    error_message: Optional[str] = None,
+) -> None:
+    operation = await db.get(PipelineOperation, operation_id)
+    if operation is None:
+        return
+    operation.status = status_value
+    operation.current_stage = "translate"
+    operation.progress_percent = progress_percent
+    operation.message = message
+    operation.error_message = error_message
+    if status_value == "completed":
+        operation.last_successful_stage = "translate"
+    await db.commit()
 
 
 class TranscribeTaskPayload(BaseModel):
@@ -31,6 +54,7 @@ class TranscribeTaskPayload(BaseModel):
     max_speakers: Optional[int] = None
     enable_noise_reduction: bool = True
     enable_loudness_norm: bool = True
+    enable_vad: bool = True
     job_id: str = Field(..., min_length=8)
     request_id: Optional[str] = None
     idempotency_key: Optional[str] = None
@@ -45,6 +69,7 @@ class TranslateProjectTaskPayload(BaseModel):
     job_id: str = Field(..., min_length=8)
     request_id: Optional[str] = None
     idempotency_key: Optional[str] = None
+    operation_id: Optional[str] = None
 
 
 class RenderLipSyncProjectTaskPayload(BaseModel):
@@ -98,6 +123,7 @@ async def run_transcribe_task(
         task_id=x_cloudtasks_taskname or payload.job_id,
         idempotency_key=payload.idempotency_key,
         source_action=payload.source_action or "transcription_pipeline_cloud_task",
+        operation_id=payload.job_id,
     )
     logger.info(
         "Cloud Tasks transcription job %s completed (%s)",
@@ -138,18 +164,45 @@ async def run_translate_project_task(
     transcript = transcript_result.scalar_one_or_none()
     workspace_id = transcript.workspace_id if transcript else None
 
-    translated = await translation_service.translate_segments_batch_async(
-        segments=segments,
-        source_language=payload.source_language,
-        target_language=payload.target_language,
-        project_id=payload.project_id,
-        workspace_id=workspace_id,
-        request_id=payload.request_id or payload.job_id,
-        task_id=x_cloudtasks_taskname or payload.job_id,
-        source_action="translate_project_cloud_task",
-        idempotency_key_prefix=payload.idempotency_key,
-        concurrency_limit=5,
+    operation_id = payload.operation_id or str(payload.job_id)
+    await _checkpoint_translation_operation(
+        db,
+        operation_id,
+        status_value="in_progress",
+        progress_percent=10,
+        message="Loading transcript segments",
     )
+
+    await _checkpoint_translation_operation(
+        db,
+        operation_id,
+        status_value="in_progress",
+        progress_percent=30,
+        message=f"Translating {len(segments)} segments",
+    )
+    try:
+        translated = await translation_service.translate_segments_batch_async(
+            segments=segments,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            project_id=payload.project_id,
+            workspace_id=workspace_id,
+            request_id=payload.request_id or payload.job_id,
+            task_id=x_cloudtasks_taskname or payload.job_id,
+            source_action="translate_project_cloud_task",
+            idempotency_key_prefix=payload.idempotency_key,
+            concurrency_limit=5,
+        )
+    except Exception as exc:
+        await _checkpoint_translation_operation(
+            db,
+            operation_id,
+            status_value="failed",
+            progress_percent=0,
+            message="Translation failed",
+            error_message=str(exc),
+        )
+        raise
 
     segment_ids = [s.id for s in segments]
     existing = await db.execute(
@@ -164,6 +217,13 @@ async def run_translate_project_task(
     for entity in translated:
         db.add(entity)
     await db.commit()
+    await _checkpoint_translation_operation(
+        db,
+        operation_id,
+        status_value="completed",
+        progress_percent=100,
+        message=f"Translated {len(translated)} segments.",
+    )
 
     logger.info(
         "Cloud Tasks translation job %s completed (%s segments → %s)",

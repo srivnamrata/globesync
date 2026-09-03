@@ -12,6 +12,7 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
+from app.services.pipeline_operation_service import checkpoint_operation
 from app.services.translation_service import translation_service
 
 logger = logging.getLogger("translation_tasks")
@@ -52,6 +53,7 @@ def translate_project_batch_task(
     workspace_id_str: Optional[str] = None,
     request_id: Optional[str] = None,
     idempotency_key: Optional[str] = None,
+    operation_id: Optional[str] = None,
 ):
     """
     Asynchronous Celery batch task:
@@ -63,7 +65,7 @@ def translate_project_batch_task(
     transcript_id = uuid.UUID(transcript_id_str)
     project_id = uuid.UUID(project_id_str) if project_id_str else None
     workspace_id = uuid.UUID(workspace_id_str) if workspace_id_str else None
-    task_id = self.request.id
+    task_id = getattr(getattr(self, "request", None), "id", None)
     request_id = request_id or task_id or transcript_id_str
     idempotency_key = idempotency_key or f"translate-project:{transcript_id_str}:{target_language}"
     start_time = time.time()
@@ -72,6 +74,7 @@ def translate_project_batch_task(
 
     db: Session = SyncSession()
     try:
+        checkpoint_operation(db, operation_id, status="in_progress", stage="translate", progress_percent=10, message="Loading transcript segments")
         segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.transcript_id == transcript_id)
@@ -88,6 +91,7 @@ def translate_project_batch_task(
             30,
             f"Translating {len(segments)} segments to {target_language} with duration matching...",
         )
+        checkpoint_operation(db, operation_id, status="in_progress", stage="translate", progress_percent=30, message=f"Translating {len(segments)} segments")
 
         # Run async batch translation
         translated_entities = asyncio.run(
@@ -106,6 +110,7 @@ def translate_project_batch_task(
         )
 
         publish_translation_event(transcript_id_str, "in_progress", 85, "Saving translated segments to database...")
+        checkpoint_operation(db, operation_id, status="in_progress", stage="translate", progress_percent=85, message="Saving translated segments")
 
         # Delete any existing translations for these segments and target_language to prevent duplicates
         segment_ids = [s.id for s in segments]
@@ -118,6 +123,7 @@ def translate_project_batch_task(
             db.add(trans)
 
         db.commit()
+        checkpoint_operation(db, operation_id, status="completed", stage="translate", progress_percent=100, message=f"Translated {len(translated_entities)} segments", successful_stage="translate")
 
         duration = round(time.time() - start_time, 2)
         publish_translation_event(
@@ -138,6 +144,7 @@ def translate_project_batch_task(
     except Exception as exc:
         db.rollback()
         logger.error(f"Error in batch translation task: {exc}", exc_info=True)
+        checkpoint_operation(db, operation_id, status="failed", stage="translate", progress_percent=0, message="Translation failed", error_message=str(exc))
         publish_translation_event(transcript_id_str, "failed", 0, f"Translation failed: {str(exc)}")
         raise self.retry(exc=exc)
 

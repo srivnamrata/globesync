@@ -197,9 +197,15 @@ async def get_export_job_status(
     )
 
     output_url = None
+    download_url = None
     if job.output_video_gcs_path:
         output_url = storage_service.generate_presigned_download_url(
             job.output_video_gcs_path, expires_in_seconds=7200
+        )
+        download_url = storage_service.generate_presigned_download_url(
+            job.output_video_gcs_path,
+            expires_in_seconds=7200,
+            download_filename=f"globesync_export_{job.target_language}_{job.id}.{job.format.lower()}",
         )
 
     return ExportJobResponse(
@@ -215,6 +221,7 @@ async def get_export_job_status(
         progress_percent=job.progress_percent,
         current_stage=job.current_stage,
         output_video_url=output_url,
+        download_video_url=download_url,
         filesize_bytes=job.filesize_bytes,
         estimated_cost_usd=float(job.estimated_cost_usd),
         created_at=job.created_at,
@@ -294,8 +301,13 @@ async def get_export_history(
     results = []
     for job in jobs:
         output_url = None
+        download_url = None
         if job.output_video_gcs_path:
             output_url = storage_service.generate_presigned_download_url(
+                job.output_video_gcs_path,
+                expires_in_seconds=7200,
+            )
+            download_url = storage_service.generate_presigned_download_url(
                 job.output_video_gcs_path,
                 expires_in_seconds=7200,
                 download_filename=f"globesync_export_{job.target_language}_{job.id}.{job.format.lower()}",
@@ -314,6 +326,7 @@ async def get_export_history(
                 progress_percent=job.progress_percent,
                 current_stage=job.current_stage,
                 output_video_url=output_url,
+                download_video_url=download_url,
                 filesize_bytes=job.filesize_bytes,
                 estimated_cost_usd=float(job.estimated_cost_usd),
                 created_at=job.created_at,

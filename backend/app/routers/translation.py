@@ -26,6 +26,8 @@ from app.core.auth import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
+from app.models.pipeline_operation import PipelineOperation
+from app.models.project import Project
 from app.models.translation import Translation
 from app.schemas.translation_schema import (
     ProjectTranslationResponse,
@@ -37,6 +39,7 @@ from app.schemas.translation_schema import (
     TranslationJobResponse,
     UpdateTranslationRequest,
 )
+from app.schemas.projects import PipelineOperationRetryResponse
 from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.duration_matcher import duration_matcher
 from app.services.pipeline_availability import require_background_pipelines
@@ -45,6 +48,110 @@ from app.utils.language_configs import get_supported_languages
 from app.utils.speech_rate import speech_rate_estimator
 
 router = APIRouter(prefix="/translation", tags=["Translation & Duration Matching"])
+
+
+@router.post(
+    "/pipeline-operation/{operation_id}/retry",
+    response_model=PipelineOperationRetryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry Failed Batch Translation",
+)
+async def retry_translation_operation(
+    request: Request,
+    operation_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
+    db: AsyncSession = Depends(get_db),
+):
+    operation = await db.scalar(
+        select(PipelineOperation).where(
+            PipelineOperation.id == operation_id,
+            PipelineOperation.workspace_id == context.workspace_id,
+        )
+    )
+    if operation is None or operation.project_id is None:
+        raise HTTPException(status_code=404, detail="Pipeline operation not found.")
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=operation.workspace_id,
+        project_id=operation.project_id,
+        require_write=True,
+        not_found_detail="Pipeline operation not found.",
+    )
+    if operation.status != "failed":
+        raise HTTPException(status_code=409, detail="Only failed pipeline operations can be retried.")
+    if operation.operation_type != "translation" or operation.transcript_id is None or not operation.target_language:
+        raise HTTPException(status_code=409, detail="This pipeline operation does not support retry yet.")
+
+    transcript = await db.get(Transcript, operation.transcript_id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+    source_language = transcript.detected_language or "en"
+
+    retry_idempotency_key = f"{operation.idempotency_key or operation.id}:retry:{uuid.uuid4().hex}"
+    retry_operation = PipelineOperation(
+        project_id=operation.project_id,
+        workspace_id=context.workspace_id,
+        transcript_id=operation.transcript_id,
+        operation_type="translation",
+        target_language=operation.target_language,
+        status="queued",
+        progress_percent=0,
+        current_stage="queued",
+        message="Translation retry queued",
+        request_id=(request.headers.get("X-Request-ID") if request else None) or uuid.uuid4().hex,
+        idempotency_key=retry_idempotency_key,
+    )
+    db.add(retry_operation)
+    await db.flush()
+    project = await db.get(Project, operation.project_id)
+    if project:
+        project.current_pipeline_operation_id = retry_operation.id
+    await db.commit()
+    await db.refresh(retry_operation)
+    retry_job_id = str(retry_operation.id)
+
+    if cloud_tasks_service.enabled:
+        cloud_tasks_service.enqueue_http_task(
+            relative_handler_path="/v1/internal/tasks/translate-project",
+            payload={
+                "transcript_id": str(operation.transcript_id),
+                "source_language": source_language,
+                "target_language": operation.target_language,
+                "project_id": str(operation.project_id),
+                "job_id": retry_job_id,
+                "operation_id": retry_job_id,
+                "request_id": retry_operation.request_id,
+                "idempotency_key": retry_idempotency_key,
+            },
+            task_name_suffix=f"translate-retry-{retry_job_id[:24]}",
+        )
+    else:
+        require_background_pipelines()
+        from app.tasks.translation_tasks import translate_project_batch_task
+
+        task = translate_project_batch_task.apply_async(
+            kwargs={
+                "transcript_id_str": str(operation.transcript_id),
+                "source_language": source_language,
+                "target_language": operation.target_language,
+                "project_id_str": str(operation.project_id),
+                "workspace_id_str": str(context.workspace_id),
+                "request_id": retry_operation.request_id,
+                "idempotency_key": retry_idempotency_key,
+                "operation_id": retry_job_id,
+            },
+            queue="translation",
+        )
+        retry_operation.task_id = task.id
+        await db.commit()
+
+    return PipelineOperationRetryResponse(
+        operation_id=retry_operation.id,
+        operation_type=retry_operation.operation_type,
+        status="queued",
+        message="Failed batch translation retry queued.",
+    )
 
 
 @router.get(
@@ -98,7 +205,28 @@ async def translate_project(
     project_id = transcript.project_id
     request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     idempotency_key = f"translate-project:{req.transcript_id}:{req.target_language}"
-    job_id = uuid.uuid4().hex
+    operation = PipelineOperation(
+        project_id=project_id,
+        workspace_id=context.workspace_id,
+        transcript_id=transcript.id,
+        operation_type="translation",
+        target_language=req.target_language,
+        status="queued",
+        progress_percent=0,
+        current_stage="queued",
+        message="Translation queued",
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+    )
+    db.add(operation)
+    await db.flush()
+    if project_id:
+        project = await db.get(Project, project_id)
+        if project:
+            project.current_pipeline_operation_id = operation.id
+    await db.commit()
+    await db.refresh(operation)
+    job_id = str(operation.id)
 
     # Preferred production path: Cloud Tasks → private internal API handler.
     if cloud_tasks_service.enabled:
@@ -110,6 +238,7 @@ async def translate_project(
                 "target_language": req.target_language,
                 "project_id": str(project_id) if project_id else None,
                 "job_id": job_id,
+                "operation_id": job_id,
                 "request_id": request_id,
                 "idempotency_key": idempotency_key,
             },
@@ -158,6 +287,11 @@ async def translate_project(
             await db.delete(row)
         for entity in translated:
             db.add(entity)
+        operation.status = "completed"
+        operation.current_stage = "translate"
+        operation.last_successful_stage = "translate"
+        operation.progress_percent = 100
+        operation.message = f"Translated {len(translated)} segments."
         await db.commit()
 
         return TranslationJobResponse(
@@ -180,6 +314,7 @@ async def translate_project(
             "workspace_id_str": str(context.workspace_id),
             "request_id": request_id,
             "idempotency_key": idempotency_key,
+            "operation_id": job_id,
         },
         queue="translation",
     )

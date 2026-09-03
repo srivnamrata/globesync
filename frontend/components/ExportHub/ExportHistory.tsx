@@ -79,11 +79,14 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
                       <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{item.status}</StatusBadge>
                     </div>
                     <p className="mt-1 text-[10px] text-slate-500">
-                      {item.target_language.toUpperCase()} · {new Date(item.created_at).toLocaleString()}
+                      {item.target_language.toUpperCase()} · {formatSize(item.output_filesize_bytes)} · {new Date(item.created_at).toLocaleString()}
                     </p>
                   </div>
                   {item.output_video_url ? (
-                    <a href={item.output_video_url} download className="gs-button-primary min-h-8 shrink-0 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                    <div className="flex shrink-0 gap-2">
+                      <a href={item.output_video_url} target="_blank" rel="noreferrer" className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
+                      <a href={item.download_video_url ?? item.output_video_url} download className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                    </div>
                   ) : (
                     <span className="shrink-0 text-[10px] text-slate-500">No output</span>
                   )}
@@ -104,7 +107,10 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
               </div>
 
               {item.output_video_url ? (
-                <a href={item.output_video_url} download className="gs-button-primary min-h-8 shrink-0 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                <div className="flex shrink-0 gap-2">
+                  <a href={item.output_video_url} target="_blank" rel="noreferrer" className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
+                  <a href={item.download_video_url ?? item.output_video_url} download className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                </div>
               ) : (
                 <span className="shrink-0 text-[10px] text-slate-500">No output</span>
               )}

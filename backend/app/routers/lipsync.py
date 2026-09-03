@@ -228,9 +228,15 @@ async def get_lipsync_job(
     )
 
     output_url = None
+    download_url = None
     if job.output_video_gcs_path:
         output_url = storage_service.generate_presigned_download_url(
             job.output_video_gcs_path, expires_in_seconds=7200
+        )
+        download_url = storage_service.generate_presigned_download_url(
+            job.output_video_gcs_path,
+            expires_in_seconds=7200,
+            download_filename=f"globesync_{job.render_mode}_{job.target_language}_{job.id}.mp4",
         )
 
     meta_items = []
@@ -265,6 +271,8 @@ async def get_lipsync_job(
         total_segments=job.total_segments,
         completed_segments=job.completed_segments,
         output_video_url=output_url,
+        download_video_url=download_url,
+        output_filesize_bytes=job.output_filesize_bytes,
         quality_score=float(job.quality_score),
         av_sync_error_ms=float(job.av_sync_error_ms),
         segments_metadata=meta_items,
@@ -303,8 +311,13 @@ async def get_lipsync_history(
     results = []
     for job in jobs:
         output_url = None
+        download_url = None
         if job.output_video_gcs_path:
             output_url = storage_service.generate_presigned_download_url(
+                job.output_video_gcs_path,
+                expires_in_seconds=7200,
+            )
+            download_url = storage_service.generate_presigned_download_url(
                 job.output_video_gcs_path,
                 expires_in_seconds=7200,
                 download_filename=f"globesync_{job.render_mode}_{job.target_language}_{job.id}.mp4",
@@ -324,6 +337,8 @@ async def get_lipsync_history(
                 total_segments=job.total_segments,
                 completed_segments=job.completed_segments,
                 output_video_url=output_url,
+                download_video_url=download_url,
+                output_filesize_bytes=job.output_filesize_bytes,
                 quality_score=float(job.quality_score),
                 av_sync_error_ms=float(job.av_sync_error_ms),
                 segments_metadata=[],

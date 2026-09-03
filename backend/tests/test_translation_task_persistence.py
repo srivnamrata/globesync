@@ -117,6 +117,7 @@ def build_task(session, translate_side_effect, published_events, time_values):
         "TranscriptSegment": FakeTranscriptSegmentModel,
         "Translation": FakeTranslationModel,
         "translation_service": SimpleNamespace(translate_segments_batch_async=translate_mock),
+        "checkpoint_operation": lambda *args, **kwargs: None,
         "publish_translation_event": lambda transcript_id, status, progress_percent, message: published_events.append(
             {
                 "transcript_id": transcript_id,

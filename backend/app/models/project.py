@@ -53,6 +53,7 @@ class Project(Base):
     transcript_id = Column(UUID(as_uuid=True), ForeignKey("transcripts.id", ondelete="SET NULL"), nullable=True)
     current_lipsync_job_id = Column(UUID(as_uuid=True), ForeignKey("lipsync_jobs.id", ondelete="SET NULL"), nullable=True)
     current_export_job_id = Column(UUID(as_uuid=True), ForeignKey("export_jobs.id", ondelete="SET NULL"), nullable=True)
+    current_pipeline_operation_id = Column(UUID(as_uuid=True), ForeignKey("pipeline_operations.id", ondelete="SET NULL"), nullable=True)
 
     last_rendered_video_gcs_path = Column(Text, nullable=True)
     last_opened_at = Column(DateTime(timezone=True), nullable=True)
@@ -79,6 +80,7 @@ class Project(Base):
     transcript = relationship("Transcript", foreign_keys=[transcript_id])
     current_lipsync_job = relationship("LipSyncJob", foreign_keys=[current_lipsync_job_id])
     current_export_job = relationship("ExportJob", foreign_keys=[current_export_job_id])
+    current_pipeline_operation = relationship("PipelineOperation", foreign_keys=[current_pipeline_operation_id])
 
 
 class ProjectDraft(Base):

@@ -48,6 +48,8 @@ class LipSyncJobResponse(BaseModel):
     total_segments: int
     completed_segments: int
     output_video_url: Optional[str] = None
+    download_video_url: Optional[str] = None
+    output_filesize_bytes: Optional[int] = None
     quality_score: float
     av_sync_error_ms: float
     segments_metadata: List[FrameMetadataResponse] = Field(default_factory=list)

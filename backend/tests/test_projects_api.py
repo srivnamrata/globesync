@@ -53,6 +53,7 @@ def mock_project_service():
         mock_service.list_projects = AsyncMock()
         mock_service.create_project = AsyncMock()
         mock_service.get_project = AsyncMock()
+        mock_service.get_pipeline_operation = AsyncMock()
         mock_service.update_project = AsyncMock()
         mock_service.get_project_draft = AsyncMock()
         mock_service.put_project_draft = AsyncMock()
@@ -198,6 +199,36 @@ async def test_create_project_creates_actor_scoped_shell(mock_project_service, p
     assert payload["created_by_user_id"] == ACTOR_USER_ID
     assert mock_project_service.create_project.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
     assert mock_project_service.create_project.await_args.kwargs["actor_user_id"] == uuid.UUID(ACTOR_USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_get_pipeline_operation_uses_workspace_scoped_project_access(mock_project_service):
+    operation_id = str(uuid.uuid4())
+    mock_project_service.get_pipeline_operation.return_value = {
+        "id": operation_id,
+        "project_id": PROJECT_ID,
+        "workspace_id": WORKSPACE_ID,
+        "transcript_id": TRANSCRIPT_ID,
+        "operation_type": "translation",
+        "target_language": "hi",
+        "status": "in_progress",
+        "progress_percent": 30,
+        "current_stage": "translate",
+        "last_successful_stage": None,
+        "message": "Translating segments",
+        "error_message": None,
+        "created_at": TIMESTAMP,
+        "updated_at": TIMESTAMP,
+    }
+
+    transport = ASGITransport(app=api_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/v1/projects/{PROJECT_ID}/pipeline-operation")
+
+    assert response.status_code == 200
+    assert response.json()["operation_type"] == "translation"
+    assert mock_project_service.get_pipeline_operation.await_args.kwargs["workspace_id"] == uuid.UUID(WORKSPACE_ID)
+    assert mock_project_service.get_pipeline_operation.await_args.kwargs["project_id"] == uuid.UUID(PROJECT_ID)
 
 
 @pytest.mark.asyncio

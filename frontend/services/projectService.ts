@@ -200,6 +200,7 @@ export interface ProjectExportHistoryItem {
   progress_percent: number;
   current_stage: string;
   output_video_url?: string | null;
+  download_video_url?: string | null;
   filesize_bytes?: number | null;
   created_at: string;
 }
@@ -213,8 +214,34 @@ export interface ProjectRenderHistoryItem {
   current_stage: string;
   last_successful_stage?: string | null;
   output_video_url?: string | null;
+  download_video_url?: string | null;
+  output_filesize_bytes?: number | null;
   quality_score: number;
   created_at: string;
+}
+
+export interface PipelineOperationStatus {
+  id: string;
+  project_id: string | null;
+  workspace_id: string | null;
+  transcript_id: string | null;
+  operation_type: 'transcription' | 'translation' | string;
+  target_language: string | null;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed' | string;
+  progress_percent: number;
+  current_stage: string;
+  last_successful_stage: string | null;
+  message: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineOperationRetryResponse {
+  operation_id: string;
+  operation_type: string;
+  status: string;
+  message: string;
 }
 
 type ProjectApiScope = {
@@ -427,6 +454,32 @@ export class ProjectService {
       buildScopedEndpoint(`/projects/${projectId}`, scope),
     );
     return mapProjectApiShape(response);
+  }
+
+  async getPipelineOperation(projectId: string): Promise<PipelineOperationStatus> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    return apiClient.get<PipelineOperationStatus>(
+      buildScopedEndpoint(`/projects/${projectId}/pipeline-operation`, scope),
+    );
+  }
+
+  async retryPipelineOperation(operationId: string): Promise<PipelineOperationRetryResponse> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    return apiClient.post<PipelineOperationRetryResponse>(
+      buildScopedEndpoint(`/translation/pipeline-operation/${operationId}/retry`, scope),
+      {},
+    );
+  }
+
+  async retryTranscriptionOperation(operationId: string): Promise<PipelineOperationRetryResponse> {
+    await this.ensureApiRequestAuth();
+    const scope = this.requireProjectApiScope();
+    return apiClient.post<PipelineOperationRetryResponse>(
+      buildScopedEndpoint(`/transcription/pipeline-operation/${operationId}/retry`, scope),
+      {},
+    );
   }
 
   async getMedia(mediaId: string): Promise<MediaDetails> {

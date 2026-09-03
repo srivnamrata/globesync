@@ -10,11 +10,11 @@ import { useProjectAutoSave } from '../../../hooks/useProject';
 import { useTimeline } from '../../../hooks/useTimeline';
 import { useHistory } from '../../../hooks/useHistory';
 import { ApiError } from '../../../services/apiClient';
-import { getProjectDraftConflictDetail, projectService, type ProjectVersionSummary } from '../../../services/projectService';
+import { getProjectDraftConflictDetail, projectService, type PipelineOperationStatus, type ProjectVersionSummary } from '../../../services/projectService';
 import { mapUserFacingError } from '../../../services/userFacingErrors';
 import WaveformCanvas from '../../../components/WaveformRenderer/WaveformCanvas';
 import type { WaveformData } from '../../../utils/waveformProcessing';
-import { Button, StatePanel } from '../../../components/ui';
+import { Button, StatePanel, StatusBadge } from '../../../components/ui';
 import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
@@ -96,6 +96,8 @@ export default function TranslationEditor() {
   const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
   const [buildMode, setBuildMode] = useState<'dub_only' | 'dub_and_lipsync' | null>(null);
   const [activeBuildJob, setActiveBuildJob] = useState<ActiveBuildJob | null>(null);
+  const [pipelineOperation, setPipelineOperation] = useState<PipelineOperationStatus | null>(null);
+  const [isRetryingPipelineOperation, setIsRetryingPipelineOperation] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
@@ -209,12 +211,15 @@ export default function TranslationEditor() {
     try {
       let draft: HeygenXFile | null = null;
       let backendProject: Project | null = null;
+      let pipelineOperation: PipelineOperationStatus | null = null;
       let nextBaseProjectUpdatedAt: string | null = null;
 
       if (projectService.hasProjectApiScope()) {
         try {
           await projectService.bootstrapAuthContext();
           backendProject = await projectService.getProject(projectId);
+          pipelineOperation = await projectService.getPipelineOperation(projectId).catch(() => null);
+          setPipelineOperation(pipelineOperation);
           if (backendProject.mediaId) {
             const media = await projectService.getMedia(backendProject.mediaId);
             backendProject = {
@@ -275,7 +280,18 @@ export default function TranslationEditor() {
       // Clear conflict state and stale upload message together before
       // updating segments/translations so the banner disappears atomically.
       setHasRemoteDraftConflict(false);
-      setUploadMessage(null);
+      setUploadMessage(
+        pipelineOperation && pipelineOperation.status !== 'completed'
+          ? pipelineOperation.error_message || pipelineOperation.message
+          : null,
+      );
+      if (pipelineOperation?.operation_type === 'transcription' && pipelineOperation.status === 'in_progress') {
+        setUploadState('transcribing');
+      } else if (pipelineOperation?.operation_type === 'translation' && pipelineOperation.status === 'in_progress') {
+        setUploadState('translating');
+      } else if (!pipelineOperation || pipelineOperation.status === 'completed' || pipelineOperation.status === 'failed') {
+        setUploadState('idle');
+      }
       setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
 
       const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
@@ -336,6 +352,63 @@ export default function TranslationEditor() {
   useEffect(() => {
     void loadProjectData();
   }, [loadProjectData]);
+
+  const retryFailedTranslation = async () => {
+    if (!pipelineOperation || pipelineOperation.operation_type !== 'translation' || pipelineOperation.status !== 'failed') {
+      return;
+    }
+
+    setIsRetryingPipelineOperation(true);
+    try {
+      const retry = await projectService.retryPipelineOperation(pipelineOperation.id);
+      const queuedOperation: PipelineOperationStatus = {
+        ...pipelineOperation,
+        id: retry.operation_id,
+        status: retry.status,
+        progress_percent: 0,
+        current_stage: 'queued',
+        last_successful_stage: null,
+        message: retry.message,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      };
+      setPipelineOperation(queuedOperation);
+      setUploadState('translating');
+      setUploadMessage(retry.message);
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Translation retry could not be queued.');
+    } finally {
+      setIsRetryingPipelineOperation(false);
+    }
+  };
+
+  const retryFailedTranscription = async () => {
+    if (!pipelineOperation || pipelineOperation.operation_type !== 'transcription' || pipelineOperation.status !== 'failed') {
+      return;
+    }
+
+    setIsRetryingPipelineOperation(true);
+    try {
+      const retry = await projectService.retryTranscriptionOperation(pipelineOperation.id);
+      setPipelineOperation({
+        ...pipelineOperation,
+        id: retry.operation_id,
+        status: retry.status,
+        progress_percent: 0,
+        current_stage: 'queued',
+        last_successful_stage: null,
+        message: retry.message,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      });
+      setUploadState('transcribing');
+      setUploadMessage(retry.message);
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'Transcription retry could not be queued.');
+    } finally {
+      setIsRetryingPipelineOperation(false);
+    }
+  };
 
   useEffect(() => {
     const videoElement = videoRef.current;
@@ -1122,16 +1195,16 @@ export default function TranslationEditor() {
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-slate-950 text-white">
       {/* Editor Header Bar */}
-      <header className="h-14 border-b border-slate-800 bg-slate-900/50 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <header className="gs-editor-header flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <Button variant="quiet" size="sm" onClick={() => router.push('/')} className="px-1 text-slate-400">
             &larr; Projects
           </Button>
-          <span className="text-slate-600">/</span>
-          <h1 className="text-md font-bold text-white">{currentProject.name}</h1>
-          <span className="bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded font-mono uppercase">
+          <span className="hidden text-slate-700 sm:inline" aria-hidden="true">/</span>
+          <h1 className="max-w-[13rem] truncate text-base font-bold tracking-tight text-white sm:max-w-xs">{currentProject.name}</h1>
+          <StatusBadge tone="neutral" className="font-mono uppercase">
             {currentProject.sourceLanguage} &rarr; {currentProject.targetLanguage}
-          </span>
+          </StatusBadge>
           <Button
             onClick={() => void handleSwapProjectLanguages()}
             variant="secondary"
@@ -1145,7 +1218,7 @@ export default function TranslationEditor() {
         </div>
 
         {/* History & Mux Export Triggers */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             onClick={() => void handleOpenVersionHistory()}
             variant="secondary"
@@ -1368,6 +1441,50 @@ export default function TranslationEditor() {
             translationCount={Object.keys(translations).length}
             segmentCount={segments.length}
           />
+        </div>
+      )}
+
+      {!activeBuildJob && pipelineOperation?.operation_type === 'translation' && pipelineOperation.status === 'failed' && (
+        <div className="border-b border-slate-800 bg-slate-950/40 px-6 py-3" aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-rose-400/30 bg-rose-400/10 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-rose-100">Translation needs attention</p>
+              <p className="mt-1 text-xs text-rose-100/80">
+                {pipelineOperation.error_message || 'The batch translation did not complete.'} Saved translations remain unchanged.
+              </p>
+            </div>
+            <Button
+              onClick={() => void retryFailedTranslation()}
+              disabled={isRetryingPipelineOperation}
+              variant="secondary"
+              size="sm"
+              className="shrink-0 border-rose-300/40 bg-rose-300/10 text-rose-50 hover:bg-rose-300/20"
+            >
+              {isRetryingPipelineOperation ? 'Retrying…' : 'Retry translation'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!activeBuildJob && pipelineOperation?.operation_type === 'transcription' && pipelineOperation.status === 'failed' && (
+        <div className="border-b border-slate-800 bg-slate-950/40 px-6 py-3" aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-rose-400/30 bg-rose-400/10 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-rose-100">Transcription needs attention</p>
+              <p className="mt-1 text-xs text-rose-100/80">
+                {pipelineOperation.error_message || 'The transcription did not complete.'} Saved project data remains unchanged.
+              </p>
+            </div>
+            <Button
+              onClick={() => void retryFailedTranscription()}
+              disabled={isRetryingPipelineOperation}
+              variant="secondary"
+              size="sm"
+              className="shrink-0 border-rose-300/40 bg-rose-300/10 text-rose-50 hover:bg-rose-300/20"
+            >
+              {isRetryingPipelineOperation ? 'Retrying…' : 'Retry transcription'}
+            </Button>
+          </div>
         </div>
       )}
 

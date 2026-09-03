@@ -18,6 +18,7 @@ from app.schemas.projects import (
     ProjectDraftPutRequest,
     ProjectDraftPutResponse,
     ProjectDraftResponse,
+    PipelineOperationResponse,
     ProjectListQueryParams,
     ProjectListResponse,
     ProjectUpdateRequest,
@@ -138,6 +139,27 @@ async def get_project_draft(
 ):
     try:
         return await project_service.get_project_draft(
+            db=db,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            actor_user_id=context.user_id,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{project_id}/pipeline-operation",
+    response_model=PipelineOperationResponse,
+    summary="Get Active Pipeline Operation",
+)
+async def get_pipeline_operation(
+    project_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(get_request_context),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await project_service.get_pipeline_operation(
             db=db,
             workspace_id=context.workspace_id,
             project_id=project_id,

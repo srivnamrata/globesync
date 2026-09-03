@@ -13,6 +13,7 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.transcript import Transcript, TranscriptSegment
+from app.services.pipeline_operation_service import checkpoint_operation
 from app.services.audio_extraction_service import audio_extractor
 from app.services.audio_preprocessing_service import audio_preprocessor
 from app.services.deepgram_service import deepgram_stt
@@ -56,6 +57,7 @@ def run_transcription_pipeline(
     task_id: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     source_action: str = "transcription_pipeline",
+    operation_id: Optional[str] = None,
 ):
     """
     Core asynchronous transcription pipeline implementation shared by Celery
@@ -83,6 +85,7 @@ def run_transcription_pipeline(
 
         transcript.status = "in_progress"
         db.commit()
+        checkpoint_operation(db, operation_id, status="in_progress", stage="transcribe", progress_percent=10, message="Downloading source media")
 
         # Step 1: Download media file
         asyncio.run(storage_service.download_file(media_file.storage_path, local_temp_video))
@@ -90,6 +93,7 @@ def run_transcription_pipeline(
         # Step 2: Extract audio
         publish_progress_event(media_id_str, transcript_id_str, "in_progress", 30, "Extracting audio stream with FFmpeg...")
         asyncio.run(audio_extractor.extract_audio_for_stt(local_temp_video, extracted_wav))
+        checkpoint_operation(db, operation_id, status="in_progress", stage="transcribe", progress_percent=30, message="Extracting audio")
 
         # Step 3: Preprocess audio (Noise reduction + Loudness normalization)
         publish_progress_event(media_id_str, transcript_id_str, "in_progress", 50, "Applying noise reduction and loudness normalization (-20 LUFS)...")
@@ -101,6 +105,7 @@ def run_transcription_pipeline(
                 apply_loudness_norm=enable_loudness_norm,
             )
         )
+        checkpoint_operation(db, operation_id, status="in_progress", stage="transcribe", progress_percent=50, message="Preparing audio")
 
         # Step 4: Chunking for long files if duration > 20 mins
         duration = float(media_file.duration_seconds)
@@ -119,6 +124,7 @@ def run_transcription_pipeline(
         if primary_provider == "deepgram":
             provider_label = "Deepgram Nova-2"
         publish_progress_event(media_id_str, transcript_id_str, "in_progress", 70, f"Executing {provider_label} transcription with fallback protection...")
+        checkpoint_operation(db, operation_id, status="in_progress", stage="transcribe", progress_percent=70, message="Transcribing speech")
 
         for chunk_path, time_offset, chunk_dur in chunks:
             active_provider = primary_provider
@@ -241,6 +247,7 @@ def run_transcription_pipeline(
         transcript.status = "completed"
         transcript.processing_duration_seconds = round(time.time() - start_time, 2)
         db.commit()
+        checkpoint_operation(db, operation_id, status="completed", stage="transcribe", progress_percent=100, message="Transcription completed", successful_stage="transcribe")
 
         publish_progress_event(media_id_str, transcript_id_str, "completed", 100, "Transcription and diarization completed successfully.")
         return {"status": "completed", "transcript_id": transcript_id_str, "segments": len(all_segments)}
@@ -252,6 +259,7 @@ def run_transcription_pipeline(
             transcript.status = "failed"
             transcript.error_message = str(exc)
             db.commit()
+        checkpoint_operation(db, operation_id, status="failed", stage="transcribe", progress_percent=0, message="Transcription failed", error_message=str(exc))
 
         publish_progress_event(media_id_str, transcript_id_str, "failed", 0, f"Transcription failed: {str(exc)}")
         raise
@@ -284,6 +292,7 @@ def preprocess_and_transcribe_pipeline_task(
     request_id: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     source_action: str = "transcription_pipeline_celery",
+    operation_id: Optional[str] = None,
 ):
     """Celery wrapper around the shared transcription pipeline implementation."""
     try:
@@ -298,6 +307,7 @@ def preprocess_and_transcribe_pipeline_task(
             task_id=self.request.id,
             idempotency_key=idempotency_key,
             source_action=source_action,
+            operation_id=operation_id,
         )
     except Exception as exc:
         raise self.retry(exc=exc)

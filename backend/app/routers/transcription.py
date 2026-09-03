@@ -27,6 +27,8 @@ from app.core.auth import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.media import MediaFile
+from app.models.pipeline_operation import PipelineOperation
+from app.models.project import Project
 from app.models.transcript import Transcript, TranscriptSegment
 from app.schemas.transcription_schema import (
     SegmentResponse,
@@ -35,12 +37,123 @@ from app.schemas.transcription_schema import (
     TranscriptResponse,
     WordDetail,
 )
+from app.schemas.projects import PipelineOperationRetryResponse
 from app.tasks.transcription_tasks import preprocess_and_transcribe_pipeline_task
 from app.services.cloud_tasks_service import cloud_tasks_service
 from app.services.pipeline_availability import require_background_pipelines
 from app.utils.transcript_parser import transcript_parser
 
 router = APIRouter(prefix="/transcription", tags=["Speech-to-Text & Diarization"])
+
+
+@router.post(
+    "/pipeline-operation/{operation_id}/retry",
+    response_model=PipelineOperationRetryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry Failed Transcription",
+)
+async def retry_transcription_operation(
+    request: Request,
+    operation_id: uuid.UUID = Path(...),
+    context: AuthenticatedRequestContext = Depends(require_workspace_write_context),
+    db: AsyncSession = Depends(get_db),
+):
+    operation = await db.scalar(
+        select(PipelineOperation).where(
+            PipelineOperation.id == operation_id,
+            PipelineOperation.workspace_id == context.workspace_id,
+        )
+    )
+    if operation is None or operation.project_id is None or operation.media_file_id is None or operation.transcript_id is None:
+        raise HTTPException(status_code=404, detail="Pipeline operation not found.")
+    await ensure_workspace_resource_access(
+        db=db,
+        context=context,
+        workspace_id=operation.workspace_id,
+        project_id=operation.project_id,
+        require_write=True,
+        not_found_detail="Pipeline operation not found.",
+    )
+    if operation.status != "failed":
+        raise HTTPException(status_code=409, detail="Only failed pipeline operations can be retried.")
+    if operation.operation_type != "transcription":
+        raise HTTPException(status_code=409, detail="This pipeline operation does not support retry yet.")
+    if operation.enable_noise_reduction is None or operation.enable_loudness_norm is None or operation.enable_vad is None:
+        raise HTTPException(status_code=409, detail="This transcription operation predates persisted retry options.")
+
+    retry_idempotency_key = f"{operation.idempotency_key or operation.id}:retry:{uuid.uuid4().hex}"
+    retry_operation = PipelineOperation(
+        project_id=operation.project_id,
+        workspace_id=context.workspace_id,
+        media_file_id=operation.media_file_id,
+        transcript_id=operation.transcript_id,
+        operation_type="transcription",
+        transcription_language=operation.transcription_language,
+        max_speakers=operation.max_speakers,
+        enable_noise_reduction=operation.enable_noise_reduction,
+        enable_loudness_norm=operation.enable_loudness_norm,
+        enable_vad=operation.enable_vad,
+        status="queued",
+        progress_percent=0,
+        current_stage="queued",
+        message="Transcription retry queued",
+        request_id=request.headers.get("X-Request-ID") or uuid.uuid4().hex,
+        idempotency_key=retry_idempotency_key,
+    )
+    db.add(retry_operation)
+    await db.flush()
+    project = await db.get(Project, operation.project_id)
+    if project:
+        project.current_pipeline_operation_id = retry_operation.id
+    await db.commit()
+    await db.refresh(retry_operation)
+    retry_job_id = str(retry_operation.id)
+
+    if cloud_tasks_service.enabled:
+        cloud_tasks_service.enqueue_http_task(
+            relative_handler_path="/v1/internal/tasks/transcribe",
+            payload={
+                "media_id": str(operation.media_file_id),
+                "transcript_id": str(operation.transcript_id),
+                "language": operation.transcription_language,
+                "max_speakers": operation.max_speakers,
+                "enable_noise_reduction": operation.enable_noise_reduction,
+                "enable_loudness_norm": operation.enable_loudness_norm,
+                "enable_vad": operation.enable_vad,
+                "job_id": retry_job_id,
+                "operation_id": retry_job_id,
+                "request_id": retry_operation.request_id,
+                "idempotency_key": retry_idempotency_key,
+                "source_action": "transcription_pipeline_cloud_task_retry",
+            },
+            task_name_suffix=f"transcribe-retry-{retry_job_id[:24]}",
+        )
+    else:
+        require_background_pipelines()
+        task = preprocess_and_transcribe_pipeline_task.apply_async(
+            kwargs={
+                "media_id_str": str(operation.media_file_id),
+                "transcript_id_str": str(operation.transcript_id),
+                "language": operation.transcription_language,
+                "max_speakers": operation.max_speakers,
+                "enable_noise_reduction": operation.enable_noise_reduction,
+                "enable_loudness_norm": operation.enable_loudness_norm,
+                "request_id": retry_operation.request_id,
+                "idempotency_key": retry_idempotency_key,
+                "source_action": "transcription_pipeline_celery_retry",
+                "operation_id": retry_job_id,
+            },
+            queue="stt_diarize",
+        )
+        retry_operation.task_id = task.id
+        await db.commit()
+
+    return PipelineOperationRetryResponse(
+        operation_id=retry_operation.id,
+        operation_type=retry_operation.operation_type,
+        status="queued",
+        message="Failed transcription retry queued.",
+    )
 
 
 @router.post(
@@ -93,9 +206,35 @@ async def start_transcription(
         transcript.error_message = None
         await db.commit()
 
-    job_id = uuid.uuid4().hex
-    request_id = request.headers.get("X-Request-ID") or job_id
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
     idempotency_key = f"transcribe:{req.media_id}:{transcript.id}"
+    operation = PipelineOperation(
+        project_id=media.project_id,
+        workspace_id=context.workspace_id,
+        media_file_id=media.id,
+        transcript_id=transcript.id,
+        operation_type="transcription",
+        status="queued",
+        progress_percent=0,
+        current_stage="queued",
+        message="Transcription queued",
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+        transcription_language=req.language,
+        max_speakers=req.max_speakers,
+        enable_noise_reduction=req.enable_noise_reduction,
+        enable_loudness_norm=req.enable_loudness_norm,
+        enable_vad=req.enable_vad,
+    )
+    db.add(operation)
+    await db.flush()
+    if media.project_id:
+        project = await db.get(Project, media.project_id)
+        if project:
+            project.current_pipeline_operation_id = operation.id
+    await db.commit()
+    await db.refresh(operation)
+    job_id = str(operation.id)
 
     if cloud_tasks_service.enabled:
         cloud_tasks_service.enqueue_http_task(
@@ -107,6 +246,7 @@ async def start_transcription(
                 "max_speakers": req.max_speakers,
                 "enable_noise_reduction": req.enable_noise_reduction,
                 "enable_loudness_norm": req.enable_loudness_norm,
+                "enable_vad": req.enable_vad,
                 "job_id": job_id,
                 "request_id": request_id,
                 "idempotency_key": idempotency_key,
@@ -136,6 +276,7 @@ async def start_transcription(
             "request_id": request_id,
             "idempotency_key": idempotency_key,
             "source_action": "transcription_pipeline_celery",
+            "operation_id": job_id,
         },
         queue="stt_diarize",
     )

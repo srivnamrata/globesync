@@ -11,6 +11,7 @@ from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.pipeline_operation import PipelineOperation
 from app.models.project import Project, ProjectDraft, ProjectVersion
 from app.schemas.projects import (
     DraftConflictErrorDetail,
@@ -20,6 +21,7 @@ from app.schemas.projects import (
     ProjectDraftPutRequest,
     ProjectDraftPutResponse,
     ProjectDraftResponse,
+    PipelineOperationResponse,
     ProjectListQueryParams,
     ProjectListResponse,
     ProjectSummaryResponse,
@@ -187,6 +189,40 @@ class ProjectService:
         if not draft:
             raise ProjectNotFoundError("Project draft not found.")
         return self._build_project_draft_response(project, draft)
+
+    async def get_pipeline_operation(
+        self,
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> PipelineOperationResponse:
+        project = await self._get_scoped_project(db, workspace_id, project_id, actor_user_id)
+        operation = await db.scalar(
+            select(PipelineOperation).where(
+                PipelineOperation.id == project.current_pipeline_operation_id,
+                PipelineOperation.project_id == project.id,
+                PipelineOperation.workspace_id == workspace_id,
+            )
+        )
+        if operation is None:
+            raise ProjectNotFoundError("Pipeline operation not found.")
+        return PipelineOperationResponse(
+            id=operation.id,
+            project_id=operation.project_id,
+            workspace_id=operation.workspace_id,
+            transcript_id=operation.transcript_id,
+            operation_type=operation.operation_type,
+            target_language=operation.target_language,
+            status=operation.status,
+            progress_percent=operation.progress_percent,
+            current_stage=operation.current_stage,
+            last_successful_stage=operation.last_successful_stage,
+            message=operation.message,
+            error_message=operation.error_message,
+            created_at=operation.created_at,
+            updated_at=operation.updated_at,
+        )
 
     async def put_project_draft(
         self,
