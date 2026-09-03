@@ -384,7 +384,16 @@ class TranscriptParser:
 
             for word in diarized_words:
                 pause = (word.start - current_words[-1].end) if current_words else 0.0
-                if current_words and (word.speaker != current_speaker or pause > 1.5):
+                current_duration = (current_words[-1].end - current_words[0].start) if current_words else 0.0
+                # Split on speaker change, silence gap > 0.8s, or if the current
+                # segment has exceeded 8 seconds (prevents one giant segment for
+                # single-speaker short clips where diarization returns one block).
+                should_split = current_words and (
+                    word.speaker != current_speaker
+                    or pause > 0.8
+                    or current_duration > 8.0
+                )
+                if should_split:
                     seg_start = current_words[0].start
                     seg_end = current_words[-1].end
                     segments.append(
