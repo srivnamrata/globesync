@@ -142,9 +142,14 @@ $WebUrl = gcloud run services describe $WebService --region=$Region --format="va
 Write-Host "Web URL: $WebUrl"
 
 Write-Host "==> Updating API CORS allow-list"
+$ProjectNumber = (gcloud projects describe $ProjectId --format="value(projectNumber)").Trim()
+$CanonicalWebUrl = "https://$WebService-$ProjectNumber.$Region.run.app"
+# Cloud Run may expose both a legacy hashed host and the regional run.app host.
+# Keep both explicit; do not broaden CORS with a wildcard origin.
+$AllowedOriginsJson = "[`"http://localhost:3000`",`"https://app.translationplatform.io`",`"$WebUrl`",`"$CanonicalWebUrl`"]"
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="ALLOWED_ORIGINS=[`"$WebUrl`"]"
+  --update-env-vars="^##^ALLOWED_ORIGINS=$AllowedOriginsJson"
 
 Write-Host "==> Smoke checks"
 Invoke-RestMethod "$ApiUrl/health" | ConvertTo-Json -Compress

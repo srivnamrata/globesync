@@ -175,9 +175,14 @@ WEB_URL="$(gcloud run services describe "$WEB_SERVICE" --region="$REGION" --form
 echo "Web URL: $WEB_URL"
 
 echo "==> Updating API CORS allow-list"
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+CANONICAL_WEB_URL="https://${WEB_SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+# Cloud Run may expose both a legacy hashed host and the regional run.app host.
+# Keep both explicit; do not broaden CORS with a wildcard origin.
+ALLOWED_ORIGINS_JSON="[\"http://localhost:3000\",\"https://app.translationplatform.io\",\"${WEB_URL}\",\"${CANONICAL_WEB_URL}\"]"
 gcloud run services update "$API_SERVICE" \
   --region="$REGION" \
-  --update-env-vars="^##^ALLOWED_ORIGINS=[\"http://localhost:3000\",\"https://app.translationplatform.io\",\"${WEB_URL}\"]"
+  --update-env-vars="^##^ALLOWED_ORIGINS=${ALLOWED_ORIGINS_JSON}"
 
 echo "==> Smoke checks"
 curl -fsS "${API_URL}/health"
