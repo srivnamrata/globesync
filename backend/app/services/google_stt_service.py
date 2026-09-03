@@ -89,6 +89,7 @@ class GoogleCloudSTT:
         language: Optional[str] = None,
         max_speakers: Optional[int] = None,
         diarize: bool = True,
+        duration_seconds: Optional[float] = None,
     ) -> Dict[str, Any]:
         if not os.path.exists(audio_file_path):
             raise MediaAppException(
@@ -108,6 +109,36 @@ class GoogleCloudSTT:
         temp_storage_key = f"_ops/stt/{uuid.uuid4().hex}/{os.path.basename(audio_file_path)}"
         resolved_language_code = self._resolve_language_code(language)
         speaker_count = max(1, int(max_speakers or settings.GOOGLE_STT_MAX_SPEAKERS))
+
+        # Auto-select model: short clips (<60s) → latest_short for better accuracy.
+        # Explicit duration_seconds takes priority; fall back to file-size heuristic.
+        audio_duration = duration_seconds
+        if audio_duration is None:
+            try:
+                size_bytes = os.path.getsize(audio_file_path)
+                # 16kHz mono 16-bit = 32000 bytes/sec
+                audio_duration = size_bytes / 32000.0
+            except Exception:
+                audio_duration = None
+
+        configured_model = settings.GOOGLE_STT_MODEL
+        if audio_duration is not None and audio_duration < 60.0:
+            stt_model = "latest_short"
+        elif configured_model in ("latest_short", "latest_long"):
+            stt_model = configured_model
+        else:
+            stt_model = configured_model
+
+        # Google enhanced models are only available for English, Spanish, French,
+        # Portuguese, and Japanese. Disable for other languages to avoid silent fallback.
+        _ENHANCED_SUPPORTED = {"en", "es", "fr", "pt", "ja"}
+        base_lang = (language or "en").split("-")[0].lower()
+        use_enhanced = settings.GOOGLE_STT_USE_ENHANCED and base_lang in _ENHANCED_SUPPORTED
+
+        logger.info(
+            "Google STT: language=%s model=%s enhanced=%s duration=%.1fs",
+            resolved_language_code, stt_model, use_enhanced, audio_duration or -1,
+        )
 
         try:
             uploaded_uri = await storage_service.upload_file(
@@ -130,11 +161,11 @@ class GoogleCloudSTT:
                     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=settings.GOOGLE_STT_SAMPLE_RATE_HZ,
                     language_code=resolved_language_code,
-                    model=settings.GOOGLE_STT_MODEL,
+                    model=stt_model,
                     enable_automatic_punctuation=settings.GOOGLE_STT_ENABLE_AUTOMATIC_PUNCTUATION,
                     enable_word_time_offsets=True,
                     enable_word_confidence=True,
-                    use_enhanced=settings.GOOGLE_STT_USE_ENHANCED,
+                    use_enhanced=use_enhanced,
                     diarization_config=diarization_config,
                     audio_channel_count=1,
                 )

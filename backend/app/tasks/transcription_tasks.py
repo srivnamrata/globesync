@@ -131,6 +131,7 @@ def run_transcription_pipeline(
                             audio_file_path=chunk_path,
                             language=language,
                             max_speakers=max_speakers,
+                            duration_seconds=chunk_dur,
                         )
                     )
                 elif primary_provider == "deepgram":
