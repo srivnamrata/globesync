@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { projectService, type ProjectExportHistoryItem, type ProjectRenderHistoryItem } from '../../services/projectService';
 import { StatePanel, StatusBadge } from '../ui';
+import { formatDateTime } from '../../utils/formatDateTime';
 
 function formatSize(bytes?: number | null): string {
   if (!bytes) return 'Size unavailable';
@@ -110,7 +111,7 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
                       <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{formatStatus(item.status)}</StatusBadge>
                     </div>
                     <p className="mt-1 text-[10px] text-slate-500">
-                      {item.target_language.toUpperCase()} · {formatSize(item.output_filesize_bytes)} · {formatElapsedTime(item.execution_time_seconds) ?? 'Render time unavailable'} · {new Date(item.created_at).toLocaleString()}
+                      {item.target_language.toUpperCase()} · {formatSize(item.output_filesize_bytes)} · {formatElapsedTime(item.execution_time_seconds) ?? 'Render time unavailable'} · {formatDateTime(item.created_at)}
                     </p>
                     {item.status === 'failed' && (
                       <p className="mt-2 text-[10px] text-rose-300">

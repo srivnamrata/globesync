@@ -148,11 +148,34 @@ gcloud run deploy $ApiService `
 $ApiUrl = gcloud run services describe $ApiService --region=$Region --format="value(status.url)"
 Write-Host "API URL: $ApiUrl"
 
-$ApiRuntimeVars = "CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[`"$GoogleWebClientId`"]"
+$ApiRuntimeEnvFile = Join-Path $env:TEMP "globesync-api-runtime-env.yaml"
+$ApiRuntimeEnvLines = @(Get-Content -Path $EnvFile)
+$ApiRuntimeValues = [ordered]@{
+  CLOUD_TASKS_TARGET_URL = $ApiUrl
+  INTERNAL_TASKS_AUDIENCE = $ApiUrl
+  GCS_BUCKET_NAME = $RawBucket
+  GCS_EXPORTS_BUCKET = $ExportsBucket
+  GOOGLE_OAUTH_CLIENT_IDS = "[`"$GoogleWebClientId`"]"
+}
+foreach ($name in $ApiRuntimeValues.Keys) {
+  $replacement = "${name}: '$($ApiRuntimeValues[$name])'"
+  $found = $false
+  $ApiRuntimeLines = @($ApiRuntimeLines | ForEach-Object {
+    if ($_ -match "^\s*${name}\s*:") {
+      $found = $true
+      $replacement
+    } else {
+      $_
+    }
+  })
+  if (-not $found) { $ApiRuntimeLines += $replacement }
+}
+[System.IO.File]::WriteAllLines($ApiRuntimeEnvFile, $ApiRuntimeLines, (New-Object System.Text.UTF8Encoding($false)))
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="^##^$ApiRuntimeVars"
+  --env-vars-file=$ApiRuntimeEnvFile
 if ($LASTEXITCODE -ne 0) { throw "API runtime environment update failed with exit $LASTEXITCODE" }
+Remove-Item $ApiRuntimeEnvFile -Force -ErrorAction SilentlyContinue
 
 Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
 $Cloudbuild = @"

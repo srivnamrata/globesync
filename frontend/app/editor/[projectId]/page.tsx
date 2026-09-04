@@ -18,6 +18,7 @@ import { Button, StatePanel, StatusBadge } from '../../../components/ui';
 import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 function getTextDirection(languageCode?: string): 'ltr' | 'rtl' {
   const baseLanguage = (languageCode || '').toLowerCase().split(/[-_]/)[0];
@@ -1445,7 +1446,7 @@ export default function TranslationEditor() {
                   <div className="flex items-center justify-between text-sm text-slate-200">
                     <span>Version {version.version}</span>
                     <span className="text-xs text-slate-500">
-                      {new Date(version.created_at).toLocaleString()}
+                      {formatDateTime(version.created_at)}
                     </span>
                   </div>
                 </li>
@@ -1728,7 +1729,7 @@ export default function TranslationEditor() {
                       <textarea
                         dir={getTextDirection(currentProject.sourceLanguage)}
                         aria-label={`Source transcript for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
+                        className="w-full break-words bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
                         value={seg.text}
                         onChange={(e) => handleTextChange(seg.id, e.target.value)}
                       />
@@ -1820,7 +1821,7 @@ export default function TranslationEditor() {
                       <textarea
                         dir={getTextDirection(currentProject.targetLanguage)}
                         aria-label={`Translation in ${currentProject.targetLanguage.toUpperCase()} for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                        className={`w-full bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
+                        className={`w-full break-words bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
                           dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
                         }`}
                         value={trans?.translatedText || ''}

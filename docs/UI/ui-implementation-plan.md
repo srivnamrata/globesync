@@ -1911,6 +1911,31 @@ Track these before and after the workflow checkpoints:
 * Focused diagnostics reported no errors in the editor page.
 * `npm.cmd run build` completed successfully with no errors.
 
+### UI locale-aware timestamps - slice 60
+
+#### Implemented
+
+* Added a shared locale-aware date/time formatter for history surfaces.
+* Export History and Version History now use medium localized dates with short localized times.
+* Invalid timestamp values show `Date unavailable` instead of rendering an invalid browser date.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited frontend files.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI mixed-script text wrapping - slice 61
+
+#### Implemented
+
+* Source and translated editor textareas now use resilient word wrapping for long and mixed-script content.
+* Existing textarea dimensions and editing behavior remain unchanged while reducing clipping and horizontal overflow risk.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
 #### Remaining Phase E work
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
