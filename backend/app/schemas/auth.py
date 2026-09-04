@@ -40,6 +40,26 @@ class WorkspaceMembershipResponse(BaseModel):
     updated_at: datetime
 
 
+class WorkspaceContextResponse(BaseModel):
+    workspace: WorkspaceSummaryResponse
+    membership: WorkspaceMembershipResponse
+
+
+class WorkspaceListResponse(BaseModel):
+    items: list[WorkspaceContextResponse]
+
+
+class WorkspaceMemberResponse(BaseModel):
+    user_id: UUID
+    display_name: Optional[str] = None
+    email: str
+    role: WorkspaceRole
+
+
+class WorkspaceMemberListResponse(BaseModel):
+    items: list[WorkspaceMemberResponse]
+
+
 class AuthBootstrapResponse(BaseModel):
     user: AuthenticatedUserResponse
     workspace: WorkspaceSummaryResponse

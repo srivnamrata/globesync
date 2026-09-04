@@ -37,8 +37,8 @@ GlobeSync should compete on control, reliability, and operational clarity rather
 ## Current execution status
 
 * Overall status: In progress
-* Current focus: Phase E — Processing visibility and failure recovery
-* Current priority: P2 job-stage progress, recovery guidance, and output discovery
+* Current focus: Final Phase H audit and release validation
+* Current priority: Contract-safe collaboration context, deployment verification, and documented follow-up gaps
 * Execution rule: Complete work in phase order unless a blocker requires a prerequisite fix
 * Documentation rule: Update this file after each meaningful implementation, validation, or scope decision so progress stays traceable
 
@@ -1295,7 +1295,7 @@ Track these before and after the workflow checkpoints:
 * `npm.cmd run build` completed successfully.
 * `git diff --check` completed without whitespace errors.
 
-#### Remaining Phase E work
+#### Phase E follow-up validation
 
 1. Perform browser QA for upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
 
@@ -1936,7 +1936,275 @@ Track these before and after the workflow checkpoints:
 * Focused diagnostics reported no errors in the editor page.
 * `npm.cmd run build` completed successfully with no errors.
 
-#### Remaining Phase E work
+### UI SVG playback control - slice 62
+
+#### Implemented
+
+* Replaced the editor's main play/pause text glyphs with inline SVG icons.
+* Existing accessible labels, pressed state, playback handlers, and button dimensions remain unchanged.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI semantic segment actions - slice 63
+
+#### Implemented
+
+* Per-segment action menus now dismiss with `Escape` and expose expanded state through `aria-expanded`.
+* Segment action popups are associated with their trigger and use `menu`/`menuitem` semantics.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI truthful workspace navigation - slice 64
+
+#### Implemented
+
+* Workspace Home navigation now links to the real `/` route and exposes its active-page state.
+* The not-yet-implemented Uploads destination is presented as a disabled control with context rather than a dead `#` link.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase F shared interaction polish - slice 65
+
+#### Implemented
+
+* Shared buttons now use the existing interface transition token for a restrained pressed-state scale response.
+* Added a reusable `gs-meta` typography class for consistent compact metadata text across polished workspace surfaces.
+* Reduced-motion handling remains inherited from the global accessibility rules.
+
+#### Safety and validation
+
+* No handlers, API contracts, persistence boundaries, signed artifact access, or lifecycle transitions changed.
+* Focused diagnostics reported no errors in the shared UI files.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase F metadata hierarchy application - slice 66
+
+#### Implemented
+
+* Applied the shared `gs-meta` typography token to workspace project metadata and export-history summaries.
+* Preserved compact sizing and semantic status colors while standardizing repeated metadata treatment.
+
+#### Safety and validation
+
+* No API contracts, persistence boundaries, signed artifact URLs, or lifecycle behavior changed.
+* Focused diagnostics reported no errors in the edited UI components.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase F project-card interaction polish - slice 67
+
+#### Implemented
+
+* Workspace project cards now use the shared interface duration and panel shadow tokens for a restrained hover lift.
+* Reduced-motion users receive the same hover color treatment without the transform animation.
+
+#### Safety and validation
+
+* Project navigation, actions, status data, persistence, artifact access, and lifecycle behavior remain unchanged.
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase F implementation checkpoint
+
+#### Completed in code
+
+* Shared color, surface, focus, motion, reduced-motion, button, field, status, panel, and metadata patterns are applied across the main workspace and editor surfaces.
+* Workspace and editor hierarchy now includes consistent metadata treatment, responsive layouts, truthful navigation, accessible controls, and restrained interaction feedback.
+* Empty, loading, processing, failure, recovery, output-history, and dialog states have explicit user-facing treatments.
+
+#### Remaining Phase F verification
+
+* Redeploy the current frontend build and run browser visual QA at 320px, 768px, 1024px, 1440px, and 200% zoom.
+* Confirm the deployed API CORS preflight and authenticated editor flows before advancing to Phase G.
+
+#### Safety status
+
+* Phase F changes are frontend-only and do not alter backend contracts, persistence boundaries, signed artifact access, or project lifecycle transitions.
+
+### Phase G shared language metadata - slice 1
+
+#### Implemented
+
+* Added shared language-tag normalization and direction helpers.
+* Editor source and translation fields now expose `lang` metadata alongside their RTL/LTR direction.
+* Arabic, Hebrew, and Urdu retain RTL behavior; regional tags such as `hi-IN` normalize consistently.
+
+#### Safety and validation
+
+* Language metadata is presentation-only and does not change backend language codes or persisted project values.
+* Focused diagnostics reported no errors in the new helper or editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase G shared locale dates - slice 2
+
+#### Implemented
+
+* Workspace project cards now use the shared locale-aware date formatter.
+* Date-only and date-time displays now handle invalid timestamps consistently.
+
+#### Safety and validation
+
+* Formatting changes are presentation-only and do not affect API values or persisted timestamps.
+* Focused diagnostics reported no errors in the edited utility or home shell.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase G document direction metadata - slice 3
+
+#### Implemented
+
+* The application document now declares its English UI language and default left-to-right direction explicitly.
+* Language-specific editor fields continue to override direction and language metadata for RTL and mixed-script content.
+
+#### Safety and validation
+
+* Document metadata is presentation-only and does not affect backend contracts, persistence, artifact access, or lifecycle state.
+* Focused diagnostics reported no errors in the root layout.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase G language-picker direction - slice 4
+
+#### Implemented
+
+* Workspace source and target language selectors now apply RTL/LTR direction from the selected language.
+* Both first-project onboarding and returning-user project creation forms use the shared direction helper.
+
+#### Safety and validation
+
+* Selector direction is presentation-only and does not change submitted language codes or persisted project metadata.
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase G implementation checkpoint
+
+#### Completed in code
+
+* Locale-aware dates and times are centralized and used by workspace and history surfaces.
+* Native language names are shown in language pickers when provided by the backend.
+* Document language/direction, editor field language metadata, and RTL/LTR behavior are explicit.
+* Mixed-script text wrapping and responsive layouts are covered in the core editor and workspace surfaces.
+
+#### Remaining Phase G product work
+
+* Add approved translations for static UI copy and a locale-selection/persistence strategy before claiming full UI localization.
+* Run browser QA for RTL editing, mixed-script content, long labels, and locale-sensitive timestamps at the required breakpoints.
+
+#### Phase G localization decision
+
+* A locale selector was evaluated but not added because the repository currently has no approved non-English UI copy or localization framework. A selector exposing only English would imply support that does not exist.
+* Full static-copy localization remains blocked until product-approved translations and the target locale list are supplied; the existing technical language and date handling remains active.
+
+#### Safety status
+
+* Phase G changes are presentation-only and do not alter backend contracts, persistence boundaries, signed artifact access, or lifecycle transitions.
+
+### Phase H mobile workspace identity - slice 1
+
+#### Implemented
+
+* Mobile workspace headers now show the authenticated workspace name when the desktop sidebar is hidden.
+* Long workspace names truncate safely, while the existing sign-out action remains available.
+
+#### Safety and validation
+
+* Workspace metadata display is presentation-only and does not add switching or mutate workspace state.
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase H workspace role context - slice 2
+
+#### Implemented
+
+* Workspace identity now includes the authenticated membership role in both desktop and mobile workspace surfaces.
+* Role display uses the existing auth bootstrap response and does not infer permissions from frontend state.
+
+#### Safety and validation
+
+* This is presentation-only; no role, membership, workspace, or authorization state is changed.
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+#### Remaining Phase H product work
+
+* Detailed collaborator management requires approved invite, role-edit, and permission contracts before UI implementation.
+* Activity history and handoff/review states require approved backend contracts and persistence models before UI implementation.
+
+### Phase H implementation checkpoint
+
+#### Completed in code
+
+* Workspace name and authenticated membership role are visible in desktop and mobile workspace surfaces.
+* Existing authenticated workspace context remains the source for displayed identity and role information.
+* Authorized workspace switching and read-only collaborator-count visibility are now implemented.
+
+#### Blocked product capabilities
+
+* Detailed collaborator management, activity history, and handoff/review states still require additional approved backend contracts and persistence models.
+
+#### Safety status
+
+* Phase H UI changes are presentation-only and do not alter backend contracts, persistence boundaries, signed artifact access, or lifecycle transitions.
+
+### Phase H final gap audit
+
+#### Confirmed complete
+
+* Workspace identity is visible in desktop and mobile workspace surfaces.
+* Authenticated membership role is displayed without inferring permissions in the frontend.
+* Workspace switching is backed by the authorized `/v1/auth/workspaces` contract and `X-Workspace-Id` context refresh.
+* Read-only collaborator metadata is backed by the authorized `/v1/auth/workspace-members` contract and currently surfaced as a member-count summary.
+* Dedicated route tests cover user-scoped workspace listing and active-workspace-scoped member listing.
+
+#### Intentionally deferred
+
+* Invite, remove, and role-edit collaborator management is deferred until mutation contracts and permission rules are approved.
+* Activity and change history are deferred until an `audit_logs` model, migration, ownership rules, and API are implemented.
+* Handoff and review states are deferred until project lifecycle statuses, persistence, transitions, and API contracts are approved.
+
+#### Plan reconciliation result
+
+* No additional implemented UI requirement was found outside the recorded Phase A through Phase H slices.
+* The stale workspace-switching blocker and mislabeled Phase E follow-up were corrected in this plan.
+* Phase H is complete for currently supported backend capabilities; the deferred enterprise capabilities remain explicit release follow-up work.
+
+### Phase H workspace switching - slice 3
+
+#### Implemented
+
+* Added an authorized `GET /v1/auth/workspaces` contract backed by existing workspace memberships.
+* Authenticated workspace surfaces now show a switcher when the user belongs to multiple active workspaces.
+* Switching persists only the selected workspace ID locally, refreshes authenticated context through `X-Workspace-Id`, and reloads workspace-scoped projects.
+
+#### Safety and validation
+
+* Workspace switching uses server membership authorization; the frontend does not grant or infer access.
+* No media, draft, version, signed artifact, or project lifecycle data is copied or mutated by switching.
+* `pytest backend/tests/test_auth_api.py backend/tests/test_projects_api.py -q` passed: 17 tests.
+* Frontend diagnostics and `npm.cmd run build` passed.
+
+### Phase H collaborator metadata - slice 4
+
+#### Implemented
+
+* Added an authorized read-only `GET /v1/auth/workspace-members` contract for the active workspace.
+* Workspace home now shows a compact member-count summary when more than one member has access.
+* Member metadata is refreshed after workspace switching and cleared on sign-out.
+
+#### Safety and validation
+
+* Member data is read through authenticated workspace context; no invite, role-edit, or permission-granting UI was added.
+* No project, draft, version, signed artifact, or lifecycle state is changed by this surface.
+* `pytest backend/tests/test_auth_api.py backend/tests/test_projects_api.py -q` passed: 17 tests.
+* Frontend diagnostics and `npm.cmd run build` passed.
+
+#### Phase E follow-up validation
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
 

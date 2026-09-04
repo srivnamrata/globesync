@@ -110,11 +110,11 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
                       <h4 className="text-xs font-bold text-white">{item.render_mode === 'dub_only' ? 'Dub only' : 'Dub + Lip-Sync'}</h4>
                       <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{formatStatus(item.status)}</StatusBadge>
                     </div>
-                    <p className="mt-1 text-[10px] text-slate-500">
+                    <p className="gs-meta mt-1 text-[10px]">
                       {item.target_language.toUpperCase()} · {formatSize(item.output_filesize_bytes)} · {formatElapsedTime(item.execution_time_seconds) ?? 'Render time unavailable'} · {formatDateTime(item.created_at)}
                     </p>
                     {item.status === 'failed' && (
-                      <p className="mt-2 text-[10px] text-rose-300">
+                      <p className="gs-meta mt-2 text-rose-300">
                         Last successful stage: {formatStage(item.last_successful_stage)}. Start a new build after resolving the issue.
                       </p>
                     )}
@@ -140,7 +140,7 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
                   <h3 className="text-xs font-bold uppercase text-white">{item.format} | {item.resolution} | {item.target_language}</h3>
                   <StatusBadge tone={getStatusTone(item.status)} className="px-1.5 py-0.5 text-[10px] uppercase">{formatStatus(item.status)}</StatusBadge>
                 </div>
-                <p className="mt-1 text-[10px] text-slate-500">{formatSize(item.filesize_bytes)} | {new Date(item.created_at).toLocaleDateString()}</p>
+                <p className="gs-meta mt-1 text-[10px]">{formatSize(item.filesize_bytes)} | {new Date(item.created_at).toLocaleDateString()}</p>
               </div>
 
               {item.output_video_url ? (

@@ -155,7 +155,6 @@ $ApiRuntimeValues = [ordered]@{
   INTERNAL_TASKS_AUDIENCE = $ApiUrl
   GCS_BUCKET_NAME = $RawBucket
   GCS_EXPORTS_BUCKET = $ExportsBucket
-  GOOGLE_OAUTH_CLIENT_IDS = "[`"$GoogleWebClientId`"]"
 }
 foreach ($name in $ApiRuntimeValues.Keys) {
   $replacement = "${name}: '$($ApiRuntimeValues[$name])'"

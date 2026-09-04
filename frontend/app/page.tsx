@@ -6,7 +6,7 @@ import { useProjectStore, Project } from '../store/projectStore';
 import { storageService } from '../services/storageService';
 import { apiClient } from '../services/apiClient';
 import { projectService } from '../services/projectService';
-import { authService, type AuthBootstrapResponse } from '../services/authService';
+import { authService, type AuthBootstrapResponse, type WorkspaceContext, type WorkspaceMember } from '../services/authService';
 import { PublicLanding, WorkspaceHome, WorkspaceLoadingState, type HomeShellLanguageOption } from '../components/homeShell';
 import { mapAuthError, mapLanguageLoadError, mapProjectCreateError, mapProjectLoadError } from '../services/userFacingErrors';
 
@@ -107,6 +107,8 @@ export default function ProjectBrowser() {
   const [projectsInitialized, setProjectsInitialized] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [googleSignInReady, setGoogleSignInReady] = useState(false);
+  const [availableWorkspaces, setAvailableWorkspaces] = useState<WorkspaceContext[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const signInButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -121,6 +123,8 @@ export default function ProjectBrowser() {
       setProjectsInitialized(false);
       setAuthLoading(false);
       setGoogleSignInReady(false);
+      void authService.listAvailableWorkspaces().then(setAvailableWorkspaces).catch(() => setAvailableWorkspaces([]));
+      void authService.listWorkspaceMembers().then(setWorkspaceMembers).catch(() => setWorkspaceMembers([]));
     });
 
     return () => {
@@ -142,6 +146,8 @@ export default function ProjectBrowser() {
         }
 
         setAuthContext(context);
+        setAvailableWorkspaces(await authService.listAvailableWorkspaces().catch(() => []));
+        setWorkspaceMembers(await authService.listWorkspaceMembers().catch(() => []));
         setGoogleSignInReady(!context && await authService.isGoogleSignInAvailable().catch(() => false));
       } catch (error) {
         console.error('Failed to initialize auth context:', error);
@@ -300,6 +306,8 @@ export default function ProjectBrowser() {
     setProjectsLoading(false);
     setProjectsInitialized(false);
     setGoogleSignInReady(true);
+    setAvailableWorkspaces([]);
+    setWorkspaceMembers([]);
   };
 
   const handleCreateProject = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -384,6 +392,18 @@ export default function ProjectBrowser() {
     await refreshProjects();
   };
 
+  const handleWorkspaceChange = async (workspaceId: string) => {
+    try {
+      const context = await authService.switchWorkspace(workspaceId);
+      setAuthContext(context);
+      setWorkspaceMembers(await authService.listWorkspaceMembers().catch(() => []));
+      setProjectsInitialized(false);
+      setProjectError(null);
+    } catch (error) {
+      setProjectError(mapProjectLoadError(error));
+    }
+  };
+
   const entryViewState = deriveEntryViewState(
     authLoading,
     authContext,
@@ -453,6 +473,9 @@ export default function ProjectBrowser() {
       onRename={handleRenameProject}
       onArchive={handleArchiveProject}
       onDuplicate={handleDuplicateProject}
+      availableWorkspaces={availableWorkspaces}
+      onWorkspaceChange={handleWorkspaceChange}
+      workspaceMembers={workspaceMembers}
     />
   ) : null;
 }

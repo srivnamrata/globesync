@@ -14,6 +14,10 @@ from app.schemas.auth import (
     AuthBootstrapResponse,
     AuthenticatedUserResponse,
     WorkspaceMembershipResponse,
+    WorkspaceContextResponse,
+    WorkspaceListResponse,
+    WorkspaceMemberListResponse,
+    WorkspaceMemberResponse,
     WorkspaceSummaryResponse,
 )
 
@@ -52,6 +56,62 @@ class AuthService:
 
         await db.flush()
         return self._build_bootstrap_response(user, workspace, membership)
+
+    async def list_workspace_contexts(self, db: AsyncSession, user_id: uuid.UUID) -> WorkspaceListResponse:
+        result = await db.execute(
+            select(Workspace, WorkspaceMember)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(
+                WorkspaceMember.user_id == user_id,
+                Workspace.archived_at.is_(None),
+            )
+            .order_by(Workspace.is_personal.desc(), Workspace.name.asc())
+        )
+        items = []
+        for workspace, membership in result.all():
+            items.append(
+                WorkspaceContextResponse(
+                    workspace=WorkspaceSummaryResponse(
+                        id=workspace.id,
+                        name=workspace.name,
+                        slug=workspace.slug,
+                        owner_user_id=workspace.owner_user_id,
+                        is_personal=workspace.is_personal,
+                        archived_at=workspace.archived_at,
+                        created_at=workspace.created_at,
+                        updated_at=workspace.updated_at,
+                    ),
+                    membership=WorkspaceMembershipResponse(
+                        workspace_id=membership.workspace_id,
+                        user_id=membership.user_id,
+                        role=membership.role,
+                        invited_by_user_id=membership.invited_by_user_id,
+                        joined_at=membership.joined_at,
+                        created_at=membership.created_at,
+                        updated_at=membership.updated_at,
+                    ),
+                )
+            )
+        return WorkspaceListResponse(items=items)
+
+    async def list_workspace_members(self, db: AsyncSession, workspace_id: uuid.UUID) -> WorkspaceMemberListResponse:
+        result = await db.execute(
+            select(User, WorkspaceMember)
+            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+            .where(WorkspaceMember.workspace_id == workspace_id)
+            .order_by(WorkspaceMember.role.asc(), User.display_name.asc(), User.email.asc())
+        )
+        return WorkspaceMemberListResponse(
+            items=[
+                WorkspaceMemberResponse(
+                    user_id=user.id,
+                    display_name=user.display_name,
+                    email=user.email,
+                    role=membership.role,
+                )
+                for user, membership in result.all()
+            ]
+        )
 
     async def _get_or_create_user(self, db: AsyncSession, identity: ResolvedIdentity) -> User:
         stmt: Select[tuple[User]]

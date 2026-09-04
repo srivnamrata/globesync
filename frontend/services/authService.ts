@@ -59,10 +59,20 @@ export interface AuthBootstrapResponse {
   bootstrap_completed: boolean;
 }
 
+export type WorkspaceContext = Pick<AuthBootstrapResponse, 'workspace' | 'membership'>;
+
+export type WorkspaceMember = {
+  user_id: string;
+  display_name: string | null;
+  email: string;
+  role: WorkspaceRole;
+};
+
 const AUTH_CONTEXT_STORAGE_KEY = 'globesync.auth_context';
 const AUTH_TOKEN_STORAGE_KEY = 'globesync.auth_token';
 const GOOGLE_IDENTITY_SCRIPT_ID = 'google-identity-services-client';
 const AUTH_TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
+const ACTIVE_WORKSPACE_STORAGE_KEY = 'globesync.active_workspace_id';
 
 function readWindowStorage(key: string): string | null {
   if (typeof window === 'undefined') {
@@ -71,6 +81,10 @@ function readWindowStorage(key: string): string | null {
 
   const value = window.localStorage.getItem(key);
   return value && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getStoredWorkspaceId(): string | null {
+  return readWindowStorage(ACTIVE_WORKSPACE_STORAGE_KEY);
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -190,6 +204,29 @@ export class AuthService {
     }
 
     this.configureApiClient();
+  }
+
+  async listAvailableWorkspaces(): Promise<WorkspaceContext[]> {
+    this.configureApiClient();
+    const response = await apiClient.get<{ items: WorkspaceContext[] }>('/auth/workspaces');
+    return response.items;
+  }
+
+  async listWorkspaceMembers(): Promise<WorkspaceMember[]> {
+    this.configureApiClient();
+    const response = await apiClient.get<{ items: WorkspaceMember[] }>('/auth/workspace-members');
+    return response.items;
+  }
+
+  async switchWorkspace(workspaceId: string): Promise<AuthBootstrapResponse> {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+    }
+    this.clearCachedContext();
+    this.configureApiClient();
+    const context = await this.bootstrap();
+    if (!context) throw new Error('Workspace switch returned no context.');
+    return context;
   }
 
   getCachedContext(): AuthBootstrapResponse | null {
@@ -344,6 +381,9 @@ export class AuthService {
   signOut() {
     this.setBearerToken(null);
     this.clearCachedContext();
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    }
     this.notifyAuthStateListeners(null);
     if (typeof window !== 'undefined') {
       window.google?.accounts?.id?.disableAutoSelect?.();
@@ -431,7 +471,11 @@ export class AuthService {
       apiClient.clearToken();
     }
 
-    apiClient.setDefaultHeaders(getConfiguredDebugHeaders());
+    const workspaceId = getStoredWorkspaceId();
+    apiClient.setDefaultHeaders({
+      ...getConfiguredDebugHeaders(),
+      ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
+    });
   }
 }
 

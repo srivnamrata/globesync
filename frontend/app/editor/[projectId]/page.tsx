@@ -19,11 +19,7 @@ import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
 import { formatDateTime } from '../../../utils/formatDateTime';
-
-function getTextDirection(languageCode?: string): 'ltr' | 'rtl' {
-  const baseLanguage = (languageCode || '').toLowerCase().split(/[-_]/)[0];
-  return ['ar', 'he', 'ur'].includes(baseLanguage) ? 'rtl' : 'ltr';
-}
+import { getTextDirection, normalizeLanguageTag } from '../../../utils/textDirection';
 
 type ActiveBuildJob = {
   job_id: string;
@@ -930,6 +926,15 @@ export default function TranslationEditor() {
   }, [handleManualSave, seekToTime, segments, timeline.selectedSegmentId]);
 
   useEffect(() => {
+    if (!activeActionMenu) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActiveActionMenu(null);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [activeActionMenu]);
+
+  useEffect(() => {
     if (timeline.selectedSegmentId && transcriptContainerRef.current) {
       const activeEl = transcriptContainerRef.current.querySelector(`[data-segment-id="${timeline.selectedSegmentId}"]`);
       if (activeEl) {
@@ -1727,6 +1732,7 @@ export default function TranslationEditor() {
                         </button>
                       </div>
                       <textarea
+                        lang={normalizeLanguageTag(currentProject.sourceLanguage)}
                         dir={getTextDirection(currentProject.sourceLanguage)}
                         aria-label={`Source transcript for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                         className="w-full break-words bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
@@ -1781,14 +1787,19 @@ export default function TranslationEditor() {
                             onClick={() => setActiveActionMenu(activeActionMenu === seg.id ? null : seg.id)}
                             disabled={!!busy}
                             className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded transition text-sm disabled:opacity-40"
+                            aria-label="Segment actions"
+                            aria-haspopup="menu"
+                            aria-expanded={activeActionMenu === seg.id}
+                            aria-controls={`segment-actions-${seg.id}`}
                             title="Segment actions"
                           >
                             {busy === 'retranslating' ? 'Translating…' : busy === 'synthesizing' ? 'Synthesizing…' : '⋯'}
                           </button>
                           {activeActionMenu === seg.id && (
-                            <div className="absolute right-0 top-6 z-20 w-44 rounded-xl border border-slate-700 bg-slate-900 shadow-xl py-1 text-sm">
+                            <div id={`segment-actions-${seg.id}`} className="absolute right-0 top-6 z-20 w-44 rounded-xl border border-slate-700 bg-slate-900 shadow-xl py-1 text-sm" role="menu">
                               <button
                                 type="button"
+                                role="menuitem"
                                 onClick={() => void handleRetranslateSegment(seg.id)}
                                 className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition"
                               >
@@ -1797,6 +1808,7 @@ export default function TranslationEditor() {
                               </button>
                               <button
                                 type="button"
+                                role="menuitem"
                                 onClick={() => void handleSynthesizeSegment(seg.id)}
                                 disabled={!trans?.id}
                                 className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition disabled:opacity-40"
@@ -1807,6 +1819,7 @@ export default function TranslationEditor() {
                               <div className="my-1 border-t border-slate-800" />
                               <button
                                 type="button"
+                                role="menuitem"
                                 onClick={() => handleResetTranslation(seg.id)}
                                 disabled={!originalTranslations[seg.id]}
                                 className="w-full text-left px-3 py-2 text-red-400 hover:bg-slate-800 transition disabled:opacity-40"
@@ -1819,6 +1832,7 @@ export default function TranslationEditor() {
                         </div>
                       </div>
                       <textarea
+                        lang={normalizeLanguageTag(currentProject.targetLanguage)}
                         dir={getTextDirection(currentProject.targetLanguage)}
                         aria-label={`Translation in ${currentProject.targetLanguage.toUpperCase()} for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                         className={`w-full break-words bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
@@ -2015,7 +2029,11 @@ export default function TranslationEditor() {
                 aria-pressed={timeline.isPlaying}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition"
               >
-                {timeline.isPlaying ? '⏸' : '▶'}
+                {timeline.isPlaying ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z" /></svg>
+                )}
               </button>
             </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
