@@ -91,7 +91,11 @@ if ($LASTEXITCODE -ne 0) { throw "API image build failed with exit $LASTEXITCODE
 
 Write-Host "==> Running Alembic migrations (one-off Cloud Run Job)"
 $JobName = "translation-migrate"
-gcloud run jobs delete $JobName --region=$Region --quiet 2>$null
+try {
+  gcloud run jobs delete $JobName --region=$Region --quiet *> $null
+} catch {
+  # The migration job may not exist on the first deployment.
+}
 gcloud run jobs create $JobName `
   --image=$ApiImage `
   --region=$Region `

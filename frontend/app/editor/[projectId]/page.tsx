@@ -1084,7 +1084,11 @@ export default function TranslationEditor() {
       setUploadState('uploading');
       setUploadMessage(`Uploading ${file.name}…`);
       const media = file.size > 100 * 1024 * 1024
-        ? await projectService.uploadMediaResumable(file, projectForUpload.id)
+        ? await projectService.uploadMediaResumable(
+          file,
+          projectForUpload.id,
+          (progressPercent) => setUploadMessage(`Uploading ${file.name}… ${progressPercent}%`),
+        )
         : await projectService.uploadMedia(file);
       setUploadState('transcribing');
       setUploadMessage('Upload complete. Starting transcription…');
@@ -1313,6 +1317,29 @@ export default function TranslationEditor() {
           </Button>
         </div>
       </header>
+
+      {(uploadState !== 'idle' || pipelineOperation) && (
+        <div className="border-b border-slate-800 bg-slate-950/80 px-4 py-3 sm:px-6">
+          <PipelineStatus
+            mode="upstream"
+            status={pipelineOperation?.status ?? 'in_progress'}
+            progressPercent={pipelineOperation?.progress_percent ?? 0}
+            currentStage={uploadState === 'uploading'
+              ? 'upload'
+              : uploadState === 'transcribing'
+                ? 'transcribe'
+                : uploadState === 'translating'
+                  ? 'translate'
+                  : pipelineOperation?.current_stage ?? 'queued'}
+            lastSuccessfulStage={pipelineOperation?.last_successful_stage}
+            errorMessage={pipelineOperation?.error_message}
+            hasMedia={Boolean(currentProject.mediaId)}
+            hasTranscript={Boolean(currentProject.transcriptId)}
+            translationCount={Object.keys(translations).length}
+            segmentCount={segments.length}
+          />
+        </div>
+      )}
 
       {isHistoryOpen && (
         <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">

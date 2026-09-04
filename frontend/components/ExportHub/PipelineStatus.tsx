@@ -3,7 +3,7 @@ import { StatePanel, StatusBadge } from '../ui';
 type PipelineStage = 'upload' | 'transcribe' | 'translate' | 'voice' | 'lip_sync' | 'export';
 
 type PipelineStatusProps = {
-  mode: 'dub_only' | 'dub_and_lipsync';
+  mode: 'upstream' | 'dub_only' | 'dub_and_lipsync';
   status: string;
   progressPercent: number;
   currentStage: string;
@@ -31,6 +31,10 @@ function stageLabel(stage?: string | null): string {
 
 function recoveryMessage(stage?: string | null): string {
   switch (stage) {
+    case 'transcribe':
+      return 'Check that the source media is available and the source language is correct, then retry transcription. Your project and saved drafts are preserved.';
+    case 'translate':
+      return 'Check the source transcript and target language, then retry translation. Your transcript and saved drafts are preserved.';
     case 'voice':
       return 'Check the translated segments and voice configuration, then start a new build. Your saved translations are preserved.';
     case 'lip_sync':
@@ -69,7 +73,7 @@ export function PipelineStatus({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="pipeline-status-heading" className="text-sm font-bold text-white">
-            {mode === 'dub_only' ? 'Dub build status' : 'Dub + Lip-Sync build status'}
+            {mode === 'upstream' ? 'Project processing status' : mode === 'dub_only' ? 'Dub build status' : 'Dub + Lip-Sync build status'}
           </h2>
           <p className="mt-1 text-xs text-slate-400">
             {isCompleted ? 'The build is complete.' : isFailed ? `Stopped during ${stageLabel(normalizedStage)}.` : `Currently ${stageLabel(normalizedStage)}.`}

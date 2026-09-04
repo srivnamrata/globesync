@@ -1279,6 +1279,43 @@ Track these before and after the workflow checkpoints:
 * `npm.cmd run build` completed successfully with TypeScript validation.
 * Focused diagnostics reported no errors in the edited frontend files.
 
+### Phase E upload progress feedback - slice 10
+
+#### Implemented
+
+* Large-file uploads now report the completed upload percentage in the editor while each resumable chunk finishes.
+* The progress callback is optional, so the existing upload service contract and small-file direct-upload path remain unchanged.
+
+#### Validation
+
+* `npm.cmd run build` completed successfully with no errors.
+* Focused diagnostics reported no errors in the edited frontend files.
+
+### Phase E upstream stage visibility - slice 11
+
+#### Implemented
+
+* The editor now renders the shared stage-based status panel while upload, transcription, or translation is active.
+* Persisted upstream operation progress, checkpoint, and failure details are shown through the same status surface used for render recovery.
+* Upload remains indeterminate until the resumable upload callback supplies actual progress; no synthetic percentage is presented.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited editor file.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase E upstream status language - slice 12
+
+#### Implemented
+
+* Upstream transcription and translation progress now uses the neutral `Project processing status` heading instead of the render-specific dub heading.
+* Transcription and translation failures now provide stage-specific recovery guidance while confirming that project data and saved drafts are preserved.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited frontend files.
+* `npm.cmd run build` completed successfully with no errors.
+
 #### Remaining Phase E work
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.

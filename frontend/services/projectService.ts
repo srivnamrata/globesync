@@ -409,7 +409,11 @@ export class ProjectService {
     return apiClient.post<UploadedMedia>('/media/uploads/direct', formData);
   }
 
-  async uploadMediaResumable(file: File, projectId: string): Promise<UploadedMedia> {
+  async uploadMediaResumable(
+    file: File,
+    projectId: string,
+    onProgress?: (progressPercent: number) => void,
+  ): Promise<UploadedMedia> {
     await this.ensureApiRequestAuth();
     const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
     const session = await apiClient.post<SignedResumableUploadResponse>('/media/uploads/signed-resumable', {
@@ -435,6 +439,7 @@ export class ProjectService {
       if (!response.ok && response.status !== 308) {
         throw new Error(`Large-file upload failed at ${Math.round((start / file.size) * 100)}%.`);
       }
+      onProgress?.(Math.round(((end + 1) / file.size) * 100));
     }
 
     return apiClient.post<UploadedMedia>(
