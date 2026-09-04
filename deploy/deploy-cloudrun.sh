@@ -184,6 +184,21 @@ echo "Web URL: $WEB_URL"
 echo "==> Updating API CORS allow-list"
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 CANONICAL_WEB_URL="https://${WEB_SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+GCS_CORS_FILE="$(mktemp)"
+cat > "$GCS_CORS_FILE" <<EOF
+[
+  {
+    "origin": ["http://localhost:3000", "https://app.translationplatform.io", "${WEB_URL}", "${CANONICAL_WEB_URL}"],
+    "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "maxAgeSeconds": 3600
+  }
+]
+EOF
+echo "==> Updating GCS bucket CORS"
+gcloud storage buckets update "gs://${RAW_BUCKET}" --cors-file="$GCS_CORS_FILE"
+gcloud storage buckets update "gs://${EXPORTS_BUCKET}" --cors-file="$GCS_CORS_FILE"
+rm -f "$GCS_CORS_FILE"
 # Cloud Run may expose both a legacy hashed host and the regional run.app host.
 # Keep both explicit; do not broaden CORS with a wildcard origin.
 ALLOWED_ORIGINS_JSON="[\"http://localhost:3000\",\"https://app.translationplatform.io\",\"${WEB_URL}\",\"${CANONICAL_WEB_URL}\"]"
@@ -193,8 +208,6 @@ gcloud run services update "$API_SERVICE" \
 
 echo "==> Smoke checks"
 curl -fsS "${API_URL}/health"
-echo
-curl -fsS "${API_URL}/healthz" || true
 echo
 echo "Deploy complete."
 echo "  API: $API_URL"

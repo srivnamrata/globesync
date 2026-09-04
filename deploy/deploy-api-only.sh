@@ -105,8 +105,6 @@ gcloud run services update "$API_SERVICE" \
 echo "==> Smoke checks"
 curl -fsS "${API_URL}/health"
 echo
-curl -fsS "${API_URL}/healthz" || true
-echo
 
 echo "Deploy complete."
 echo "  API: $API_URL"

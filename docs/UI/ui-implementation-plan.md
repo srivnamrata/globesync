@@ -1316,6 +1316,234 @@ Track these before and after the workflow checkpoints:
 * Focused diagnostics reported no errors in the edited frontend files.
 * `npm.cmd run build` completed successfully with no errors.
 
+### Phase E history recovery context - slice 13
+
+#### Implemented
+
+* Project output history now displays the last successful render checkpoint for failed dub or lip-sync jobs.
+* Backend status values are translated into user-facing labels such as `Completed`, `In progress`, `Queued`, and `Needs attention`.
+* Failed history entries explain that a new build can be started after the underlying issue is resolved.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase E output timing summary - slice 14
+
+#### Implemented
+
+* Lip-sync and dub history entries now show the authoritative render duration when the backend provides it.
+* Older records without timing data display `Render time unavailable` instead of implying a value.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited frontend files.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase E synchronized upload progress - slice 15
+
+#### Implemented
+
+* The shared editor processing panel now uses the actual resumable-upload percentage instead of displaying a static zero while large files upload.
+* The upload message and visual progress bar advance from the same chunk-completion callback.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the edited editor file.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI foundation keyboard focus - slice 16
+
+#### Implemented
+
+* Shared `Button` controls now expose a high-contrast focus ring for keyboard navigation without changing pointer or disabled states.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the shared button component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI foundation form focus - slice 17
+
+#### Implemented
+
+* Shared text inputs and selects now expose the same high-contrast keyboard focus ring as buttons.
+* Existing focus-border, reduced-motion, and disabled behaviors remain unchanged.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the global stylesheet.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI responsive output history - slice 18
+
+#### Implemented
+
+* Export-history rows now stack metadata and actions on narrow screens so Open and Download remain usable without horizontal compression.
+* Desktop layouts retain the existing compact row presentation from the `sm` breakpoint upward.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI recoverable filtered-empty state - slice 19
+
+#### Implemented
+
+* Workspace search and status filters now show a clear empty-state explanation when no projects match.
+* Added a keyboard-focusable `Clear search and filters` action that restores the full project list.
+* The signed-in no-project onboarding state remains separate and unchanged.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI accessible project filters - slice 20
+
+#### Implemented
+
+* Workspace status filters now expose their selected state with `aria-pressed`.
+* The filter group now has an accessible label for keyboard and assistive-technology users.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI accessible project controls - slice 21
+
+#### Implemented
+
+* Workspace project search now has an explicit accessible name: `Search projects by name`.
+* Workspace project sorting now has an explicit accessible name: `Sort projects`.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI keyboard menu dismissal - slice 22
+
+#### Implemented
+
+* Project action menus now close when the user presses `Escape`.
+* The keyboard listener is attached only while the menu is open and is removed during cleanup.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI semantic project actions - slice 23
+
+#### Implemented
+
+* Project action triggers now expose `aria-haspopup` and `aria-expanded` state.
+* Project action popups use `menu` and `menuitem` semantics for assistive technology.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no relevant errors.
+
+### UI project menu focus management - slice 24
+
+#### Implemented
+
+* Opening a project action menu now moves keyboard focus to the first available action.
+* The action trigger references its popup with `aria-controls`.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI version dialog dismissal - slice 25
+
+#### Implemented
+
+* The editor version-history dialog now closes with the `Escape` key.
+* Its keyboard listener is attached only while the dialog is open and is removed during cleanup.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI version dialog backdrop - slice 26
+
+#### Implemented
+
+* Clicking outside the version-history dialog now closes the overlay.
+* Clicks inside the dialog stop propagation so browsing version entries remains uninterrupted.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI export dialog backdrops - slice 27
+
+#### Implemented
+
+* Export history and export readiness overlays now close when the user clicks outside the panel.
+* Clicks inside either panel stop propagation, preserving links, controls, and review interactions.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI export dialog keyboard dismissal - slice 28
+
+#### Implemented
+
+* Export history and export readiness overlays now close with the `Escape` key.
+* The keyboard listener is active only while one of those overlays is open and is removed during cleanup.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase E export history retry - slice 29
+
+#### Implemented
+
+* Export-history failures now include a `Try again` action for transient request failures.
+* Retrying reuses the existing authorized history requests and preserves any history data already loaded.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### Phase E retry loading feedback - slice 30
+
+#### Implemented
+
+* Export-history retry actions now disable while requests are in flight.
+* The control changes to `Retrying...` and exposes an appropriate accessible label during reload.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI export history async state - slice 31
+
+#### Implemented
+
+* Export History now exposes its refresh state with `aria-busy` while history requests are in flight.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
 #### Remaining Phase E work
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.

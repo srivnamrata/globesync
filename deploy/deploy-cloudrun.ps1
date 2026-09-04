@@ -168,6 +168,19 @@ Write-Host "Web URL: $WebUrl"
 Write-Host "==> Updating API CORS allow-list"
 $ProjectNumber = (gcloud projects describe $ProjectId --format="value(projectNumber)").Trim()
 $CanonicalWebUrl = "https://$WebService-$ProjectNumber.$Region.run.app"
+$GcsCorsFile = Join-Path $env:TEMP "globesync-gcs-cors.json"
+@(
+  [ordered]@{
+    origin = @("http://localhost:3000", "https://app.translationplatform.io", $WebUrl, $CanonicalWebUrl)
+    method = @("GET", "HEAD", "PUT", "POST", "OPTIONS")
+    responseHeader = @("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag")
+    maxAgeSeconds = 3600
+  }
+) | ConvertTo-Json -Depth 4 | Set-Content -Path $GcsCorsFile -Encoding utf8
+Write-Host "==> Updating GCS bucket CORS"
+gcloud storage buckets update "gs://$RawBucket" --cors-file=$GcsCorsFile
+gcloud storage buckets update "gs://$ExportsBucket" --cors-file=$GcsCorsFile
+Remove-Item $GcsCorsFile -Force -ErrorAction SilentlyContinue
 # Cloud Run may expose both a legacy hashed host and the regional run.app host.
 # Keep both explicit; do not broaden CORS with a wildcard origin.
 $AllowedOriginsJson = "[`"http://localhost:3000`",`"https://app.translationplatform.io`",`"$WebUrl`",`"$CanonicalWebUrl`"]"
@@ -177,7 +190,6 @@ gcloud run services update $ApiService `
 
 Write-Host "==> Smoke checks"
 Invoke-RestMethod "$ApiUrl/health" | ConvertTo-Json -Compress
-try { Invoke-RestMethod "$ApiUrl/healthz" | ConvertTo-Json -Compress } catch { Write-Warning $_ }
 
 Write-Host "Deploy complete."
 Write-Host "  API: $ApiUrl"

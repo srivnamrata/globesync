@@ -226,6 +226,7 @@ export interface ProjectRenderHistoryItem {
   output_video_url?: string | null;
   download_video_url?: string | null;
   output_filesize_bytes?: number | null;
+  execution_time_seconds?: number | null;
   quality_score: number;
   created_at: string;
 }

@@ -203,10 +203,24 @@ if [[ "$DEPLOY_SCOPE" != "web" ]]; then
     --region="$REGION" \
     --update-env-vars="^##^ALLOWED_ORIGINS=[\"http://localhost:3000\",\"https://app.translationplatform.io\",\"${WEB_URL}\"]"
 
+  GCS_CORS_FILE="$(mktemp)"
+  cat > "$GCS_CORS_FILE" <<EOF
+[
+  {
+    "origin": ["http://localhost:3000", "https://app.translationplatform.io", "${WEB_URL}"],
+    "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "maxAgeSeconds": 3600
+  }
+]
+EOF
+  echo "==> Updating GCS bucket CORS"
+  gcloud storage buckets update "gs://${RAW_BUCKET}" --cors-file="$GCS_CORS_FILE"
+  gcloud storage buckets update "gs://${EXPORTS_BUCKET}" --cors-file="$GCS_CORS_FILE"
+  rm -f "$GCS_CORS_FILE"
+
   echo "==> Smoke checks"
   curl -fsS "${API_URL}/health"
-  echo
-  curl -fsS "${API_URL}/healthz" || true
   echo
 fi
 echo "Deploy complete."

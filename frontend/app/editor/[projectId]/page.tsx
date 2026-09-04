@@ -93,6 +93,7 @@ export default function TranslationEditor() {
   const { segments, setSegments, updateSegmentText } = useMediaStore();
   const { translations, setTranslations, updateTranslationText } = useTranslationStore();
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing' | 'translating'>('idle');
+  const [uploadProgressPercent, setUploadProgressPercent] = useState(0);
   const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
   const [buildMode, setBuildMode] = useState<'dub_only' | 'dub_and_lipsync' | null>(null);
   const [activeBuildJob, setActiveBuildJob] = useState<ActiveBuildJob | null>(null);
@@ -648,6 +649,26 @@ export default function TranslationEditor() {
     }
   }, [currentProject, isLoadingHistory, projectVersions.length]);
 
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsHistoryOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isHistoryOpen]);
+
+  useEffect(() => {
+    if (!isExportHistoryOpen && !isExportReadinessOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsExportHistoryOpen(false);
+      setIsExportReadinessOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isExportHistoryOpen, isExportReadinessOpen]);
+
   const applyProjectPatch = useCallback(async ({
     name,
     sourceLanguage,
@@ -1082,12 +1103,16 @@ export default function TranslationEditor() {
       }
 
       setUploadState('uploading');
+      setUploadProgressPercent(0);
       setUploadMessage(`Uploading ${file.name}…`);
       const media = file.size > 100 * 1024 * 1024
         ? await projectService.uploadMediaResumable(
           file,
           projectForUpload.id,
-          (progressPercent) => setUploadMessage(`Uploading ${file.name}… ${progressPercent}%`),
+          (progressPercent) => {
+            setUploadProgressPercent(progressPercent);
+            setUploadMessage(`Uploading ${file.name}… ${progressPercent}%`);
+          },
         )
         : await projectService.uploadMedia(file);
       setUploadState('transcribing');
@@ -1323,7 +1348,7 @@ export default function TranslationEditor() {
           <PipelineStatus
             mode="upstream"
             status={pipelineOperation?.status ?? 'in_progress'}
-            progressPercent={pipelineOperation?.progress_percent ?? 0}
+            progressPercent={uploadState === 'uploading' ? uploadProgressPercent : pipelineOperation?.progress_percent ?? 0}
             currentStage={uploadState === 'uploading'
               ? 'upload'
               : uploadState === 'transcribing'
@@ -1342,8 +1367,18 @@ export default function TranslationEditor() {
       )}
 
       {isHistoryOpen && (
-        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
-        <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="version-history-heading">
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setIsHistoryOpen(false)}
+        >
+        <aside
+          className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="version-history-heading"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="flex items-center justify-between">
             <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
             <Button
@@ -1379,8 +1414,19 @@ export default function TranslationEditor() {
       )}
 
       {isExportHistoryOpen && (
-        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
-          <aside id="project-export-history" className="h-full w-full max-w-md overflow-y-auto" role="dialog" aria-modal="true" aria-label="Project outputs">
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setIsExportHistoryOpen(false)}
+        >
+          <aside
+            id="project-export-history"
+            className="h-full w-full max-w-md overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Project outputs"
+            onClick={(event) => event.stopPropagation()}
+          >
           <div className="mb-2 flex justify-end">
             <Button
               onClick={() => setIsExportHistoryOpen(false)}
@@ -1396,8 +1442,19 @@ export default function TranslationEditor() {
       )}
 
       {isExportReadinessOpen && (
-        <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
-          <aside id="project-export-readiness" className="h-full w-full max-w-md overflow-y-auto" role="dialog" aria-modal="true" aria-label="Export readiness">
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setIsExportReadinessOpen(false)}
+        >
+          <aside
+            id="project-export-readiness"
+            className="h-full w-full max-w-md overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Export readiness"
+            onClick={(event) => event.stopPropagation()}
+          >
           <div className="mb-2 flex justify-end">
             <Button
               onClick={() => setIsExportReadinessOpen(false)}

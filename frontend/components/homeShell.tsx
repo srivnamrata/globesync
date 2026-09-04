@@ -295,8 +295,15 @@ function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDup
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [open]);
 
   const handleRename = async () => {
@@ -346,6 +353,9 @@ function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDup
         disabled={!!busy}
         className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/10 hover:text-slate-300 disabled:opacity-40"
         aria-label="Project actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={`project-actions-${projectId}`}
       >
         {busy ? (
           <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -356,9 +366,11 @@ function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDup
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-50 min-w-[160px] rounded-2xl border border-white/10 bg-slate-900 py-1 shadow-2xl shadow-black/40">
+        <div id={`project-actions-${projectId}`} className="absolute right-0 top-9 z-50 min-w-[160px] rounded-2xl border border-white/10 bg-slate-900 py-1 shadow-2xl shadow-black/40" role="menu">
           <button
             type="button"
+            role="menuitem"
+            autoFocus
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
             onClick={() => void handleRename()}
           >
@@ -366,6 +378,7 @@ function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDup
           </button>
           <button
             type="button"
+            role="menuitem"
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
             onClick={() => void handleDuplicate()}
           >
@@ -374,6 +387,7 @@ function ProjectActionsMenu({ projectId, projectName, onRename, onArchive, onDup
           <div className="my-1 border-t border-white/10" />
           <button
             type="button"
+            role="menuitem"
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
             onClick={() => void handleArchive()}
           >
@@ -613,7 +627,7 @@ export function WorkspaceHome({
 
           {hasProjects && (
             <section>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Filter projects by status">
                 {(['all', 'draft', 'processing', 'completed', 'failed'] as StatusFilter[]).map((f) => {
                   const labels: Record<StatusFilter, string> = { all: 'All', draft: 'Planning', processing: 'Processing', completed: 'Complete', failed: 'Needs attention' };
                   const active = statusFilter === f;
@@ -622,6 +636,7 @@ export function WorkspaceHome({
                       key={f}
                       type="button"
                       onClick={() => setStatusFilter(f)}
+                      aria-pressed={active}
                       className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                         active
                           ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200'
@@ -643,9 +658,9 @@ export function WorkspaceHome({
                 <div className="flex gap-2">
                   <div className="relative">
                     <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 15 15" fill="none"><path d="M10 6.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM9.5 10.207l3.146 3.147a.5.5 0 0 0 .708-.708L10.207 9.5A4.5 4.5 0 1 0 9.5 10.207Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/></svg>
-                    <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-48 rounded-full border border-white/10 bg-slate-900/60 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-400" />
+                    <input type="text" aria-label="Search projects by name" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-48 rounded-full border border-white/10 bg-slate-900/60 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-400" />
                   </div>
-                  <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-indigo-400">
+                  <select aria-label="Sort projects" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-indigo-400">
                     <option value="updatedAt">Last updated</option>
                     <option value="createdAt">Date created</option>
                     <option value="name">Name</option>
@@ -654,7 +669,19 @@ export function WorkspaceHome({
               </div>
 
               {visibleProjects.length === 0 ? (
-                <div className="py-12 text-center text-sm text-slate-500">No projects match your search.</div>
+                <div className="py-12 text-center">
+                  <p className="text-sm text-slate-400">No projects match the current search and filters.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setStatusFilter('all');
+                    }}
+                    className="mt-3 rounded-control border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    Clear search and filters
+                  </button>
+                </div>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
                   {visibleProjects.map((project) => {
