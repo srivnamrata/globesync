@@ -15,6 +15,16 @@ export interface UploadedMedia {
   status: string;
 }
 
+interface SignedResumableUploadResponse {
+  upload_id: string;
+  filename: string;
+  filesize_bytes: number;
+  storage_path: string;
+  gcs_resumable_url: string;
+  expires_at: string;
+  upload_mode: 'gcs_resumable';
+}
+
 export interface MediaDetails extends UploadedMedia {
   storage_path: string;
   thumbnail_url?: string | null;
@@ -397,6 +407,40 @@ export class ProjectService {
     const formData = new FormData();
     formData.append('file', file);
     return apiClient.post<UploadedMedia>('/media/uploads/direct', formData);
+  }
+
+  async uploadMediaResumable(file: File, projectId: string): Promise<UploadedMedia> {
+    await this.ensureApiRequestAuth();
+    const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const session = await apiClient.post<SignedResumableUploadResponse>('/media/uploads/signed-resumable', {
+      filename: file.name,
+      filesize_bytes: file.size,
+      mime_type: file.type || 'application/octet-stream',
+      ...(origin ? { origin } : {}),
+    });
+
+    const chunkSize = 8 * 1024 * 1024;
+    for (let start = 0; start < file.size; start += chunkSize) {
+      const end = Math.min(file.size, start + chunkSize) - 1;
+      const response = await fetch(session.gcs_resumable_url, {
+        method: 'PUT',
+        headers: {
+          'Content-Length': String(end - start + 1),
+          'Content-Range': `bytes ${start}-${end}/${file.size}`,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file.slice(start, end + 1),
+      });
+
+      if (!response.ok && response.status !== 308) {
+        throw new Error(`Large-file upload failed at ${Math.round((start / file.size) * 100)}%.`);
+      }
+    }
+
+    return apiClient.post<UploadedMedia>(
+      `/media/uploads/signed-resumable/${session.upload_id}/complete?project_id=${encodeURIComponent(projectId)}`,
+      {},
+    );
   }
 
   async startTranscription(mediaId: string, language: string): Promise<{ transcript_id: string }> {

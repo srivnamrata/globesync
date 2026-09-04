@@ -1264,14 +1264,29 @@ Track these before and after the workflow checkpoints:
 
 #### Remaining Phase E work
 
-1. Route editor uploads above 100 MB through the signed GCS resumable-upload flow instead of rejecting them in the direct-upload path.
-2. Perform browser QA for upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
+1. Perform browser QA for upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
+
+### Phase E large-file upload - slice 9
+
+#### Implemented
+
+* Editor uploads up to 100 MB continue using the existing direct-upload path.
+* Larger audio and video files now initialize the existing signed GCS resumable-upload session, upload in 8 MB browser chunks, and finalize through the authorized project-scoped completion endpoint.
+* The existing transcription and translation lifecycle continues unchanged after resumable upload completion.
+
+#### Validation
+
+* `npm.cmd run build` completed successfully with TypeScript validation.
+* Focused diagnostics reported no errors in the edited frontend files.
+
+#### Remaining Phase E work
+
+1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
 
 #### Large-file upload note
 
 * Backend support already exists through `POST /v1/media/uploads/signed-resumable` and its completion endpoint, with a maximum resumable file size of 4 GB.
-* The standard editor upload path currently supports direct uploads up to 100 MB only.
-* The frontend follow-up must initialize the signed resumable session, upload the file in browser-managed chunks, finalize the session, and then continue the existing transcription lifecycle.
+* The editor now uses the signed resumable path above 100 MB and continues the existing transcription lifecycle after finalization.
 * The change must preserve workspace authorization, checksum and media probing, upload-session expiry, and the existing `MediaFile` persistence boundary.
 
 #### Local QA note

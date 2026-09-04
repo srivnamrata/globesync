@@ -1075,11 +1075,6 @@ export default function TranslationEditor() {
       setUploadMessage('Choose an audio or video file.');
       return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-      setUploadMessage('This first UI integration supports files up to 100 MB. Larger files need the resumable-upload flow.');
-      return;
-    }
-
     try {
       const projectForUpload = await ensureCanonicalProjectForWrite();
       if (!projectForUpload) {
@@ -1088,7 +1083,9 @@ export default function TranslationEditor() {
 
       setUploadState('uploading');
       setUploadMessage(`Uploading ${file.name}…`);
-      const media = await projectService.uploadMedia(file);
+      const media = file.size > 100 * 1024 * 1024
+        ? await projectService.uploadMediaResumable(file, projectForUpload.id)
+        : await projectService.uploadMedia(file);
       setUploadState('transcribing');
       setUploadMessage('Upload complete. Starting transcription…');
       const job = await projectService.startTranscription(media.media_id, projectForUpload.sourceLanguage);
