@@ -18,6 +18,7 @@ $CloudSqlInstance = if ($env:CLOUDSQL_INSTANCE) { $env:CLOUDSQL_INSTANCE } else 
 $RawBucket = if ($env:RAW_BUCKET) { $env:RAW_BUCKET } else { "${ProjectId}-media-raw" }
 $ExportsBucket = if ($env:EXPORTS_BUCKET) { $env:EXPORTS_BUCKET } else { "${ProjectId}-media-exports" }
 $EnvFile = if ($env:ENV_FILE) { $env:ENV_FILE } else { "deploy/cloudrun.env.yaml" }
+$GoogleWebClientId = if ($env:GOOGLE_WEB_CLIENT_ID) { $env:GOOGLE_WEB_CLIENT_ID } elseif ($env:NEXT_PUBLIC_GOOGLE_CLIENT_ID) { $env:NEXT_PUBLIC_GOOGLE_CLIENT_ID } else { "164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com" }
 
 $ApiConcurrency = if ($env:API_CONCURRENCY) { $env:API_CONCURRENCY } else { "10" }
 $ApiMaxInstances = if ($env:API_MAX_INSTANCES) { $env:API_MAX_INSTANCES } else { "8" }
@@ -129,13 +130,13 @@ Write-Host "API URL: $ApiUrl"
 
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="CLOUD_TASKS_TARGET_URL=$ApiUrl,INTERNAL_TASKS_AUDIENCE=$ApiUrl,GCS_BUCKET_NAME=$RawBucket,GCS_EXPORTS_BUCKET=$ExportsBucket"
+  --update-env-vars="CLOUD_TASKS_TARGET_URL=$ApiUrl,INTERNAL_TASKS_AUDIENCE=$ApiUrl,GCS_BUCKET_NAME=$RawBucket,GCS_EXPORTS_BUCKET=$ExportsBucket,GOOGLE_OAUTH_CLIENT_IDS=[`\"$GoogleWebClientId`\"]"
 
-Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl"
+Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
 $Cloudbuild = @"
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ['build', '--build-arg', 'NEXT_PUBLIC_API_URL=$ApiUrl', '-t', '$WebImage', '-f', 'frontend/Dockerfile', '.']
+    args: ['build', '--build-arg', 'NEXT_PUBLIC_API_URL=$ApiUrl', '--build-arg', 'NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId', '-t', '$WebImage', '-f', 'frontend/Dockerfile', '.']
 images:
   - $WebImage
 "@
