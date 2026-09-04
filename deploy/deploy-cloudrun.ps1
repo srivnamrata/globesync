@@ -151,7 +151,7 @@ Write-Host "API URL: $ApiUrl"
 # Merge-only update, matching deploy-cloudrun.sh: never replaces existing env vars like ALLOWED_ORIGINS or GOOGLE_OAUTH_CLIENT_IDS.
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[`"$GoogleWebClientId`"]"
+  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[\`"$GoogleWebClientId\`"]"
 if ($LASTEXITCODE -ne 0) { throw "API runtime environment update failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
@@ -205,7 +205,7 @@ if ($LASTEXITCODE -ne 0) { throw "Exports bucket CORS update failed with exit $L
 Remove-Item $GcsCorsFile -Force -ErrorAction SilentlyContinue
 # Cloud Run may expose both a legacy hashed host and the regional run.app host.
 # Keep both explicit; do not broaden CORS with a wildcard origin.
-$AllowedOriginsJson = "[`"http://localhost:3000`",`"https://app.translationplatform.io`",`"$WebUrl`",`"$CanonicalWebUrl`"]"
+$AllowedOriginsJson = "[\`"http://localhost:3000\`",\`"https://app.translationplatform.io\`",\`"$WebUrl\`",\`"$CanonicalWebUrl\`"]"
 gcloud run services update $ApiService `
   --region=$Region `
   --update-env-vars="^##^ALLOWED_ORIGINS=$AllowedOriginsJson"
