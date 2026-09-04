@@ -120,8 +120,8 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
                   </div>
                   {item.output_video_url ? (
                     <div className="flex shrink-0 gap-2 self-start sm:self-auto">
-                      <a href={item.output_video_url} target="_blank" rel="noreferrer" className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
-                      <a href={item.download_video_url ?? item.output_video_url} download className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                      <a href={item.output_video_url} target="_blank" rel="noreferrer" aria-label={`Open ${item.render_mode === 'dub_only' ? 'dub-only' : 'dub and lip-sync'} output in a new tab`} className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
+                      <a href={item.download_video_url ?? item.output_video_url} download aria-label={`Download ${item.render_mode === 'dub_only' ? 'dub-only' : 'dub and lip-sync'} output`} className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
                     </div>
                   ) : (
                     <span className="shrink-0 text-[10px] text-slate-500">No output</span>
@@ -144,8 +144,8 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
 
               {item.output_video_url ? (
                 <div className="flex shrink-0 gap-2 self-start sm:self-auto">
-                  <a href={item.output_video_url} target="_blank" rel="noreferrer" className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
-                  <a href={item.download_video_url ?? item.output_video_url} download className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
+                    <a href={item.output_video_url} target="_blank" rel="noreferrer" aria-label={`Open ${item.format} ${item.resolution} output in a new tab`} className="gs-button-secondary min-h-8 rounded-lg px-3 py-1 text-[10px]">Open</a>
+                    <a href={item.download_video_url ?? item.output_video_url} download aria-label={`Download ${item.format} ${item.resolution} output`} className="gs-button-primary min-h-8 rounded-lg px-3 py-1 text-[10px]">Download</a>
                 </div>
               ) : (
                 <span className="shrink-0 text-[10px] text-slate-500">No output</span>

@@ -69,7 +69,7 @@ export function PipelineStatus({
   };
 
   return (
-    <section className="gs-panel space-y-4 p-4" aria-labelledby="pipeline-status-heading" aria-live="polite">
+    <section className="gs-panel space-y-4 p-4" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={status === 'queued' || status === 'in_progress' || status === 'processing'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="pipeline-status-heading" className="text-sm font-bold text-white">
@@ -100,7 +100,7 @@ export function PipelineStatus({
       </ol>
 
       {!isCompleted && !isFailed && (
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuetext={`${progress}% during ${stageLabel(normalizedStage)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
           <div className="h-full rounded-full bg-indigo-500 transition-[width] duration-interface ease-interface" style={{ width: `${Math.max(4, progress)}%` }} />
         </div>
       )}

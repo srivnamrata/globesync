@@ -42,6 +42,39 @@ GlobeSync should compete on control, reliability, and operational clarity rather
 * Execution rule: Complete work in phase order unless a blocker requires a prerequisite fix
 * Documentation rule: Update this file after each meaningful implementation, validation, or scope decision so progress stays traceable
 
+## Post-deployment verification checklist
+
+Run these checks after `translation-web` and `translation-api` deployment completes. `/health` is the deployment smoke check; `/healthz` is intentionally not required by the deployment scripts.
+
+### API and CORS
+
+* `GET /health` returns `200` with JSON status `healthy`.
+* Run `curl.exe -i -X OPTIONS "https://translation-api-<service-host>/v1/translation/languages" -H "Origin: https://translation-web-<service-host>" -H "Access-Control-Request-Method: GET"` and confirm success with `Access-Control-Allow-Origin` matching the deployed web origin.
+* The web app loads supported languages without a CORS fallback warning.
+* Raw and exports GCS buckets allow browser `GET`, `HEAD`, `PUT`, `POST`, and `OPTIONS` requests from the deployed web origin.
+
+### Public and authenticated UI
+
+* Landing page loads at desktop and 320px mobile width without horizontal overflow.
+* Google sign-in, first-time provisioning, returning session restore, sign-out, and expired-token recovery work.
+* Workspace search, sorting, status filters, project actions, and clear-filter empty state work.
+
+### Editor and processing
+
+* Project opens with source media, transcript, translations, waveform, and save-state indicators intact.
+* Upload, transcription, translation, voice, lip-sync, and export stages show correct status and progress.
+* Files over 100 MB use resumable upload and show matching percentage in the message and progress panel.
+* Failed operations show the last successful stage and an actionable recovery path.
+* Export history shows status, language, size, render time, preview, download, retry, and responsive mobile layout.
+* Version history, export history, and readiness dialogs close with Escape and backdrop click.
+
+### Evidence to capture
+
+* Record the API and web Cloud Run revision names.
+* Capture one successful CORS preflight and one successful signed GCS waveform response.
+* Capture screenshots at 320px, 768px, and desktop widths.
+* Record remaining console errors separately from third-party Google Identity iframe warnings.
+
 ## Immediate execution slice
 
 ### Slice 1 goal
@@ -1542,6 +1575,242 @@ Track these before and after the workflow checkpoints:
 #### Validation
 
 * Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI editor progress announcements - slice 32
+
+#### Implemented
+
+* Editor project-update messages now use a polite atomic live region so upload, transcription, translation, and export updates are announced as complete messages.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI contextual output actions - slice 33
+
+#### Implemented
+
+* Output-history Open and Download links now include render mode or format/resolution in their accessible names.
+* Repeated actions remain visually unchanged while becoming distinguishable to assistive technology.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the export-history component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI pipeline busy state - slice 34
+
+#### Implemented
+
+* Shared pipeline status panels now expose `aria-busy` while queued or actively processing.
+* Completed and failed states remain settled for assistive technology users.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the pipeline status component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI pipeline progress description - slice 35
+
+#### Implemented
+
+* Pipeline progress bars now expose both the current percentage and active stage through `aria-valuetext`.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the pipeline status component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI landing auth alert - slice 36
+
+#### Implemented
+
+* Public landing-page authentication failures now use `role="alert"` so they are announced immediately to assistive technology users.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI workspace loading status - slice 37
+
+#### Implemented
+
+* Workspace session restoration and project loading now announce through a polite `status` live region.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI editor upload control - slice 38
+
+#### Implemented
+
+* The editor upload control now exposes an accessible label for audio/video selection and transcription.
+* Keyboard focus inside the hidden file input is surfaced on the visible upload control with a focus ring.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI editor media controls - slice 39
+
+#### Implemented
+
+* The editor video preview now has a descriptive accessible label.
+* Timeline segment seek buttons now announce their timestamp and speaker context.
+* The custom preview control now exposes Play/Pause state through `aria-label` and `aria-pressed`.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI keyboard timeline seeking - slice 40
+
+#### Implemented
+
+* The editor timeline is now keyboard-operable as a slider when media is loaded.
+* Arrow keys seek by one second, Shift plus Arrow keys seek by five seconds, and Home/End jump to the timeline bounds.
+* Screen readers receive the current time and total duration through slider value text.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI RTL editor fields - slice 41
+
+#### Implemented
+
+* Source and translated editor textareas now apply direction independently from their respective language codes.
+* Arabic, Hebrew, and Urdu fields render right-to-left; other supported languages remain left-to-right.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI responsive segment editor - slice 42
+
+#### Implemented
+
+* Transcript segment cards now stack source and translation fields on narrow screens.
+* The two-column editing layout returns at the medium breakpoint for desktop review workflows.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI onboarding form labels - slice 43
+
+#### Implemented
+
+* First-project onboarding controls now expose explicit accessible names for project name, source language, and target language.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI keyboard segment selection - slice 44
+
+#### Implemented
+
+* Transcript segment cards are now keyboard-focusable and selectable with Enter or Space.
+* Each segment exposes an accessible label and its selected state through `aria-pressed`.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI timeline selection semantics - slice 45
+
+#### Implemented
+
+* Timeline seek buttons now expose the currently selected segment with `aria-pressed`, matching the transcript segment cards.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI shared button busy state - slice 46
+
+#### Implemented
+
+* Reusable loading buttons now expose `aria-busy` while their async action is in progress.
+* Native disabled behavior and the existing loading indicator remain unchanged.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the shared button component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI nested-control accessibility cleanup - slice 47
+
+#### Implemented
+
+* Transcript segment cards now use group semantics instead of an outer button role around nested buttons and textareas.
+* Timeline seek controls use `aria-current` for the active location because they are navigation commands, not toggle buttons.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI encoding-safe editor icons - slice 48
+
+#### Implemented
+
+* Replaced operational glyphs in editor segment actions with inline SVG icons.
+* Visible action labels remain available, and decorative icons are hidden from assistive technology.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI dialog focus containment - slice 49
+
+#### Implemented
+
+* Open editor dialogs now keep Tab and reverse-Tab focus inside the active panel.
+* Focus containment applies consistently to version history, export history, and export readiness overlays.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI dialog focus restoration - slice 50
+
+#### Implemented
+
+* Closing an editor history, export-history, or readiness dialog now restores keyboard focus to the control that opened it.
+* Focus restoration works across Escape, backdrop, and explicit close-button dismissal.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI dialog initial focus - slice 51
+
+#### Implemented
+
+* Version History, Export History, and Export Readiness dialogs now place initial keyboard focus on their close control when opened.
+* This works with the existing focus trap and restores focus to the originating trigger when the dialog closes.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
 * `npm.cmd run build` completed successfully with no errors.
 
 #### Remaining Phase E work

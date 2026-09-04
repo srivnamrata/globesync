@@ -193,7 +193,7 @@ export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
           <div className="mt-10 flex flex-col items-center gap-3">
             <div className="flex min-h-[52px] items-center rounded-xl bg-white p-2 shadow-xl shadow-indigo-500/10 ring-1 ring-slate-900/5">{signInSlot}</div>
             {authError ? (
-              <p className="max-w-sm rounded-2xl border border-rose-500/30 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{authError}</p>
+              <p role="alert" className="max-w-sm rounded-2xl border border-rose-500/30 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{authError}</p>
             ) : (
               <p className="text-xs font-medium text-slate-500">Free to start · No credit card required · Your workspace is ready in seconds</p>
             )}
@@ -262,7 +262,7 @@ export function WorkspaceLoadingState({ authContext, onSignOut, title, descripti
           )}
         </header>
 
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-1 items-center justify-center" role="status" aria-live="polite">
           <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-900/80 p-10 text-center shadow-2xl shadow-slate-950/40">
             <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-t-indigo-400" />
             <h2 className="mt-6 text-2xl font-semibold text-white">Preparing your projects</h2>
@@ -529,6 +529,7 @@ export function WorkspaceHome({
                   <form onSubmit={onCreateProject} className="space-y-3">
                     <input
                       type="text"
+                      aria-label="Project name"
                       placeholder="Project name"
                       className="gs-field"
                       value={newProjectName}
@@ -536,6 +537,7 @@ export function WorkspaceHome({
                     />
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <select
+                        aria-label="Source language"
                         className="gs-field px-2 py-2 text-xs text-slate-300"
                         value={sourceLang}
                         onChange={(e) => onSourceLangChange(e.target.value)}
@@ -552,6 +554,7 @@ export function WorkspaceHome({
                         &#8646;
                       </button>
                       <select
+                        aria-label="Target language"
                         className="gs-field px-2 py-2 text-xs text-slate-300"
                         value={targetLang}
                         onChange={(e) => onTargetLangChange(e.target.value)}

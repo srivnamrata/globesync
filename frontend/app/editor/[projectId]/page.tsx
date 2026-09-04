@@ -19,6 +19,11 @@ import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
 
+function getTextDirection(languageCode?: string): 'ltr' | 'rtl' {
+  const baseLanguage = (languageCode || '').toLowerCase().split(/[-_]/)[0];
+  return ['ar', 'he', 'ur'].includes(baseLanguage) ? 'rtl' : 'ltr';
+}
+
 type ActiveBuildJob = {
   job_id: string;
   render_mode?: 'dub_only' | 'dub_and_lipsync';
@@ -122,6 +127,7 @@ export default function TranslationEditor() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isScrubbingRef = useRef(false);
   const comparisonAudioRef = useRef<HTMLAudioElement | null>(null);
+  const dialogFocusOriginRef = useRef<HTMLElement | null>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -668,6 +674,40 @@ export default function TranslationEditor() {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isExportHistoryOpen, isExportReadinessOpen]);
+
+  useEffect(() => {
+    const isDialogOpen = isHistoryOpen || isExportHistoryOpen || isExportReadinessOpen;
+    if (isDialogOpen && !dialogFocusOriginRef.current && document.activeElement instanceof HTMLElement) {
+      dialogFocusOriginRef.current = document.activeElement;
+    }
+    if (!isDialogOpen && dialogFocusOriginRef.current) {
+      dialogFocusOriginRef.current.focus();
+      dialogFocusOriginRef.current = null;
+    }
+  }, [isHistoryOpen, isExportHistoryOpen, isExportReadinessOpen]);
+
+  useEffect(() => {
+    if (!isHistoryOpen && !isExportHistoryOpen && !isExportReadinessOpen) return;
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    if (!dialog) return;
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const handleTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.addEventListener('keydown', handleTab);
+    return () => dialog.removeEventListener('keydown', handleTab);
+  }, [isHistoryOpen, isExportHistoryOpen, isExportReadinessOpen]);
 
   const applyProjectPatch = useCallback(async ({
     name,
@@ -1387,6 +1427,7 @@ export default function TranslationEditor() {
               size="sm"
               className="min-h-7 px-2 text-slate-400"
               aria-label="Close version history"
+              autoFocus
             >
               Close
             </Button>
@@ -1432,6 +1473,7 @@ export default function TranslationEditor() {
               onClick={() => setIsExportHistoryOpen(false)}
               variant="secondary"
               size="sm"
+              autoFocus
             >
               Close exports
             </Button>
@@ -1460,6 +1502,7 @@ export default function TranslationEditor() {
               onClick={() => setIsExportReadinessOpen(false)}
               variant="secondary"
               size="sm"
+              autoFocus
             >
               Close readiness
             </Button>
@@ -1576,7 +1619,7 @@ export default function TranslationEditor() {
           <div className="p-4 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
             <div className="flex items-center gap-3">
-              <label className={`cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition ${uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject ? 'pointer-events-none opacity-50' : ''}`}>
+              <label className={`cursor-pointer rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700 focus-within:ring-2 focus-within:ring-indigo-300 focus-within:ring-offset-2 focus-within:ring-offset-slate-950 ${uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject ? 'pointer-events-none opacity-50' : ''}`}>
                 {uploadState === 'uploading'
                   ? 'Uploading…'
                   : uploadState === 'transcribing'
@@ -1584,7 +1627,7 @@ export default function TranslationEditor() {
                     : uploadState === 'translating'
                       ? 'Translating…'
                       : 'Upload & Transcribe'}
-                <input type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject} />
+                <input aria-label="Upload audio or video and start transcription" type="file" accept="video/*,audio/*" className="hidden" onChange={handleMediaSelected} disabled={uploadState !== 'idle' || hasRemoteDraftConflict || isReloadingProject} />
               </label>
               <span className="text-xs text-slate-500">{segments.length} segments loaded</span>
             </div>
@@ -1616,7 +1659,9 @@ export default function TranslationEditor() {
                     key={seg.id}
                     data-segment-id={seg.id}
                     onClick={() => timeline.setSelectedSegmentId(seg.id)}
-                    className={`border rounded-xl p-4 transition grid grid-cols-2 gap-4 cursor-pointer ${
+                    role="group"
+                    aria-label={`Segment by ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
+                    className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${
                       timeline.selectedSegmentId === seg.id
                         ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
                         : dirtySegments.has(seg.id)
@@ -1641,7 +1686,8 @@ export default function TranslationEditor() {
                             }}
                             className="text-[10px] bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500 hover:text-white px-2 py-0.5 rounded transition flex items-center gap-1 font-semibold uppercase tracking-wider"
                           >
-                            ▶ Play
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z" /></svg>
+                            Play
                           </button>
                           <button
                             type="button"
@@ -1678,6 +1724,7 @@ export default function TranslationEditor() {
                         </button>
                       </div>
                       <textarea
+                        dir={getTextDirection(currentProject.sourceLanguage)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
                         value={seg.text}
                         onChange={(e) => handleTextChange(seg.id, e.target.value)}
@@ -1732,7 +1779,7 @@ export default function TranslationEditor() {
                             className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded transition text-sm disabled:opacity-40"
                             title="Segment actions"
                           >
-                            {busy === 'retranslating' ? '⟳ Translating…' : busy === 'synthesizing' ? '⟳ Synthesizing…' : '⋯'}
+                            {busy === 'retranslating' ? 'Translating…' : busy === 'synthesizing' ? 'Synthesizing…' : '⋯'}
                           </button>
                           {activeActionMenu === seg.id && (
                             <div className="absolute right-0 top-6 z-20 w-44 rounded-xl border border-slate-700 bg-slate-900 shadow-xl py-1 text-sm">
@@ -1741,7 +1788,8 @@ export default function TranslationEditor() {
                                 onClick={() => void handleRetranslateSegment(seg.id)}
                                 className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition"
                               >
-                                ↻ Retranslate
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5" /><path d="M20 4v7h-7" /></svg>
+                                Retranslate
                               </button>
                               <button
                                 type="button"
@@ -1749,7 +1797,8 @@ export default function TranslationEditor() {
                                 disabled={!trans?.id}
                                 className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition disabled:opacity-40"
                               >
-                                🔊 Regenerate audio
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                                Regenerate audio
                               </button>
                               <div className="my-1 border-t border-slate-800" />
                               <button
@@ -1758,13 +1807,15 @@ export default function TranslationEditor() {
                                 disabled={!originalTranslations[seg.id]}
                                 className="w-full text-left px-3 py-2 text-red-400 hover:bg-slate-800 transition disabled:opacity-40"
                               >
-                                ✕ Reset to original
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                                Reset to original
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
                       <textarea
+                        dir={getTextDirection(currentProject.targetLanguage)}
                         className={`w-full bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
                           dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
                         }`}
@@ -1779,7 +1830,7 @@ export default function TranslationEditor() {
             )}
           </div>
           {uploadMessage && (
-            <div className="px-6 pb-4">
+            <div className="px-6 pb-4" aria-live="polite" aria-atomic="true">
               <StatePanel title="Project update">{uploadMessage}</StatePanel>
             </div>
           )}
@@ -1794,6 +1845,7 @@ export default function TranslationEditor() {
                 ref={videoRef}
                 src={renderedVideoUrl}
                 controls
+                aria-label={`${currentProject.targetLanguage.toUpperCase()} dubbed video preview`}
                 className="h-full w-full"
                 onError={() => void refreshRenderedVideoUrl()}
               >
@@ -1858,6 +1910,25 @@ export default function TranslationEditor() {
             </div>
             <div
               className="relative h-32 rounded-lg border border-slate-800 bg-slate-950 p-3"
+              role="slider"
+              tabIndex={segments.length > 0 && totalDurationSeconds > 0 ? 0 : -1}
+              aria-label="Preview timeline position"
+              aria-valuemin={0}
+              aria-valuemax={totalDurationSeconds}
+              aria-valuenow={timeline.currentTimeSeconds}
+              aria-valuetext={`${timeline.formatTimecode(timeline.currentTimeSeconds)} of ${timeline.formatTimecode(totalDurationSeconds)}`}
+              onKeyDown={(event) => {
+                if (totalDurationSeconds <= 0) return;
+                const step = event.shiftKey ? 5 : 1;
+                let nextTime = timeline.currentTimeSeconds;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowUp') nextTime += step;
+                else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') nextTime -= step;
+                else if (event.key === 'Home') nextTime = 0;
+                else if (event.key === 'End') nextTime = totalDurationSeconds;
+                else return;
+                event.preventDefault();
+                seekToTime(Math.max(0, Math.min(totalDurationSeconds, nextTime)));
+              }}
               onPointerDown={(event) => {
                 isScrubbingRef.current = true;
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -1902,6 +1973,8 @@ export default function TranslationEditor() {
                           event.stopPropagation();
                           seekToTime(segment.startTimeSeconds, segment.id);
                         }}
+                        aria-label={`Seek to segment ${timeline.formatTimecode(segment.startTimeSeconds)} by ${segment.speakerTag}`}
+                        aria-current={isActive ? 'true' : undefined}
                         title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
                         className={`min-w-[2rem] rounded-md border transition ${
                           isActive
@@ -1925,6 +1998,7 @@ export default function TranslationEditor() {
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => {
                   if (!videoRef.current) {
                     timeline.setPlaying(!timeline.isPlaying);
@@ -1937,6 +2011,8 @@ export default function TranslationEditor() {
                     videoRef.current.pause();
                   }
                 }}
+                aria-label={timeline.isPlaying ? 'Pause preview' : 'Play preview'}
+                aria-pressed={timeline.isPlaying}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition"
               >
                 {timeline.isPlaying ? '⏸' : '▶'}
