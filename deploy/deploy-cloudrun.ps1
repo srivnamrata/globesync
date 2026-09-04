@@ -91,23 +91,39 @@ if ($LASTEXITCODE -ne 0) { throw "API image build failed with exit $LASTEXITCODE
 
 Write-Host "==> Running Alembic migrations (one-off Cloud Run Job)"
 $JobName = "translation-migrate"
-try {
-  gcloud run jobs delete $JobName --region=$Region --quiet 2>&1 | Out-Null
-} catch {
-  # The migration job may not exist on the first deployment.
+$jobExists = $false
+gcloud run jobs describe $JobName --region=$Region 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) { $jobExists = $true }
+
+if ($jobExists) {
+  Write-Host "Updating existing migration job $JobName"
+  gcloud run jobs update $JobName `
+    --image=$ApiImage `
+    --region=$Region `
+    --service-account=$RuntimeSa `
+    --set-cloudsql-instances=$CloudSqlInstance `
+    --set-secrets=$ApiSecrets `
+    --env-vars-file=$EnvFile `
+    --command="alembic" `
+    --args="upgrade,head" `
+    --max-retries=0 `
+    --task-timeout=600
+  if ($LASTEXITCODE -ne 0) { throw "Migration job update failed with exit $LASTEXITCODE" }
+} else {
+  Write-Host "Creating migration job $JobName"
+  gcloud run jobs create $JobName `
+    --image=$ApiImage `
+    --region=$Region `
+    --service-account=$RuntimeSa `
+    --set-cloudsql-instances=$CloudSqlInstance `
+    --set-secrets=$ApiSecrets `
+    --env-vars-file=$EnvFile `
+    --command="alembic" `
+    --args="upgrade,head" `
+    --max-retries=0 `
+    --task-timeout=600
+  if ($LASTEXITCODE -ne 0) { throw "Migration job creation failed with exit $LASTEXITCODE" }
 }
-gcloud run jobs create $JobName `
-  --image=$ApiImage `
-  --region=$Region `
-  --service-account=$RuntimeSa `
-  --set-cloudsql-instances=$CloudSqlInstance `
-  --set-secrets=$ApiSecrets `
-  --env-vars-file=$EnvFile `
-  --command="alembic" `
-  --args="upgrade,head" `
-  --max-retries=0 `
-  --task-timeout=600
-if ($LASTEXITCODE -ne 0) { throw "Migration job creation failed with exit $LASTEXITCODE" }
 gcloud run jobs execute $JobName --region=$Region --wait
 if ($LASTEXITCODE -ne 0) { throw "Alembic migration job failed with exit $LASTEXITCODE" }
 
