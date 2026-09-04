@@ -535,7 +535,7 @@ export function WorkspaceHome({
                       value={newProjectName}
                       onChange={(e) => onProjectNameChange(e.target.value)}
                     />
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                    <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr]">
                       <select
                         aria-label="Source language"
                         className="gs-field px-2 py-2 text-xs text-slate-300"
@@ -654,14 +654,14 @@ export function WorkspaceHome({
                   );
                 })}
               </div>
-              <div className="mb-6 flex items-center justify-between">
+              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-xl font-semibold text-white">
                   {statusFilter === 'all' ? 'All Projects' : ({ draft: 'Planning', processing: 'Processing', completed: 'Complete', failed: 'Needs attention' } as Record<StatusFilter, string>)[statusFilter]}
                 </h2>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <div className="relative">
                     <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 15 15" fill="none"><path d="M10 6.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM9.5 10.207l3.146 3.147a.5.5 0 0 0 .708-.708L10.207 9.5A4.5 4.5 0 1 0 9.5 10.207Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/></svg>
-                    <input type="text" aria-label="Search projects by name" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-48 rounded-full border border-white/10 bg-slate-900/60 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-400" />
+                    <input type="text" aria-label="Search projects by name" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-full border border-white/10 bg-slate-900/60 py-1.5 pl-8 pr-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-400 sm:w-48" />
                   </div>
                   <select aria-label="Sort projects" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-indigo-400">
                     <option value="updatedAt">Last updated</option>
@@ -760,7 +760,7 @@ export function WorkspaceHome({
                               <span className="font-semibold text-amber-100">{formatPipelineStage(project.pipelineStage)}</span>
                               <span className="shrink-0 text-amber-200">{project.pipelineProgressPercent !== undefined ? `${progress}%` : 'In progress'}</span>
                             </div>
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-amber-950/70" role="progressbar" aria-label={`${formatPipelineStage(project.pipelineStage)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={project.pipelineProgressPercent !== undefined ? progress : undefined}>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-amber-950/70" role="progressbar" aria-label={`${formatPipelineStage(project.pipelineStage)} progress`} aria-valuetext={`${formatPipelineStage(project.pipelineStage)}: ${project.pipelineProgressPercent !== undefined ? `${progress}%` : 'in progress'}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={project.pipelineProgressPercent !== undefined ? progress : undefined}>
                               <div className="h-full rounded-full bg-amber-400 transition-[width] duration-interface ease-interface" style={{ width: `${project.pipelineProgressPercent !== undefined ? progress : 20}%` }} />
                             </div>
                           </div>

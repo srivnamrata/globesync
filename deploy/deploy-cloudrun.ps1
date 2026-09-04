@@ -148,9 +148,11 @@ gcloud run deploy $ApiService `
 $ApiUrl = gcloud run services describe $ApiService --region=$Region --format="value(status.url)"
 Write-Host "API URL: $ApiUrl"
 
+$ApiRuntimeVars = "CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[`\"$GoogleWebClientId`\"]"
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="CLOUD_TASKS_TARGET_URL=$ApiUrl,INTERNAL_TASKS_AUDIENCE=$ApiUrl,GCS_BUCKET_NAME=$RawBucket,GCS_EXPORTS_BUCKET=$ExportsBucket,GOOGLE_OAUTH_CLIENT_IDS=[`\"$GoogleWebClientId`\"]"
+  --update-env-vars="^##^$ApiRuntimeVars"
+if ($LASTEXITCODE -ne 0) { throw "API runtime environment update failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
 $Cloudbuild = @"
@@ -185,17 +187,21 @@ Write-Host "==> Updating API CORS allow-list"
 $ProjectNumber = (gcloud projects describe $ProjectId --format="value(projectNumber)").Trim()
 $CanonicalWebUrl = "https://$WebService-$ProjectNumber.$Region.run.app"
 $GcsCorsFile = Join-Path $env:TEMP "globesync-gcs-cors.json"
-@(
+$GcsCorsEntries = @(
   [ordered]@{
     origin = @("http://localhost:3000", "https://app.translationplatform.io", $WebUrl, $CanonicalWebUrl)
     method = @("GET", "HEAD", "PUT", "POST", "OPTIONS")
     responseHeader = @("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag")
     maxAgeSeconds = 3600
   }
-) | ConvertTo-Json -Depth 4 | Set-Content -Path $GcsCorsFile -Encoding utf8
+)
+$GcsCorsJson = ConvertTo-Json -InputObject $GcsCorsEntries -Depth 4 -Compress
+[System.IO.File]::WriteAllText($GcsCorsFile, $GcsCorsJson, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "==> Updating GCS bucket CORS"
 gcloud storage buckets update "gs://$RawBucket" --cors-file=$GcsCorsFile
+if ($LASTEXITCODE -ne 0) { throw "Raw bucket CORS update failed with exit $LASTEXITCODE" }
 gcloud storage buckets update "gs://$ExportsBucket" --cors-file=$GcsCorsFile
+if ($LASTEXITCODE -ne 0) { throw "Exports bucket CORS update failed with exit $LASTEXITCODE" }
 Remove-Item $GcsCorsFile -Force -ErrorAction SilentlyContinue
 # Cloud Run may expose both a legacy hashed host and the regional run.app host.
 # Keep both explicit; do not broaden CORS with a wildcard origin.
@@ -203,6 +209,7 @@ $AllowedOriginsJson = "[`"http://localhost:3000`",`"https://app.translationplatf
 gcloud run services update $ApiService `
   --region=$Region `
   --update-env-vars="^##^ALLOWED_ORIGINS=$AllowedOriginsJson"
+if ($LASTEXITCODE -ne 0) { throw "API CORS environment update failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Smoke checks"
 Invoke-RestMethod "$ApiUrl/health" | ConvertTo-Json -Compress

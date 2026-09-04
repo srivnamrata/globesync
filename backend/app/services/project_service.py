@@ -514,6 +514,7 @@ class ProjectService:
             transcript_id=project.transcript_id,
             current_lipsync_job_id=project.current_lipsync_job_id,
             current_export_job_id=project.current_export_job_id,
+            current_pipeline_operation_id=project.current_pipeline_operation_id,
             last_rendered_video_gcs_path=project.last_rendered_video_gcs_path,
             latest_draft_version=latest_draft_version,
             archived_at=project.archived_at,

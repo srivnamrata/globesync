@@ -225,7 +225,9 @@ export default function TranslationEditor() {
         try {
           await projectService.bootstrapAuthContext();
           backendProject = await projectService.getProject(projectId);
-          pipelineOperation = await projectService.getPipelineOperation(projectId).catch(() => null);
+          pipelineOperation = backendProject.currentPipelineOperationId === null
+            ? null
+            : await projectService.getPipelineOperation(projectId).catch(() => null);
           setPipelineOperation(pipelineOperation);
           if (backendProject.mediaId) {
             const media = await projectService.getMedia(backendProject.mediaId);
@@ -1615,7 +1617,7 @@ export default function TranslationEditor() {
       {/* Main Workspace Layout Grid */}
       <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
         {/* Left Grid: Transcript & Translation Edit Workspace */}
-        <div className="md:col-span-2 border-r border-slate-800 flex flex-col overflow-hidden">
+        <div className="order-last flex flex-col overflow-hidden border-r border-slate-800 md:order-first md:col-span-2">
           <div className="p-4 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
             <div className="flex items-center gap-3">
@@ -1837,7 +1839,7 @@ export default function TranslationEditor() {
         </div>
 
         {/* Right Grid: Video Preview Player */}
-        <div className="bg-slate-950 p-6 flex flex-col justify-between overflow-hidden">
+        <div className="order-first flex flex-col justify-between overflow-hidden bg-slate-950 p-6 md:order-last">
           <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500 overflow-hidden">
             {renderedVideoUrl ? (
               <video
@@ -1908,27 +1910,22 @@ export default function TranslationEditor() {
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Segment Timeline</h3>
               <span className="text-xs text-slate-500">Click a segment bar to seek the preview player.</span>
             </div>
+            <label className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="shrink-0">Fine seek</span>
+              <input
+                type="range"
+                aria-label="Fine seek preview timeline"
+                min={0}
+                max={totalDurationSeconds || 1}
+                step={0.1}
+                value={Math.min(timeline.currentTimeSeconds, totalDurationSeconds || 1)}
+                onChange={(event) => seekToTime(Number(event.target.value))}
+                disabled={segments.length === 0 || totalDurationSeconds === 0}
+                className="w-full accent-indigo-500 disabled:opacity-40"
+              />
+            </label>
             <div
               className="relative h-32 rounded-lg border border-slate-800 bg-slate-950 p-3"
-              role="slider"
-              tabIndex={segments.length > 0 && totalDurationSeconds > 0 ? 0 : -1}
-              aria-label="Preview timeline position"
-              aria-valuemin={0}
-              aria-valuemax={totalDurationSeconds}
-              aria-valuenow={timeline.currentTimeSeconds}
-              aria-valuetext={`${timeline.formatTimecode(timeline.currentTimeSeconds)} of ${timeline.formatTimecode(totalDurationSeconds)}`}
-              onKeyDown={(event) => {
-                if (totalDurationSeconds <= 0) return;
-                const step = event.shiftKey ? 5 : 1;
-                let nextTime = timeline.currentTimeSeconds;
-                if (event.key === 'ArrowRight' || event.key === 'ArrowUp') nextTime += step;
-                else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') nextTime -= step;
-                else if (event.key === 'Home') nextTime = 0;
-                else if (event.key === 'End') nextTime = totalDurationSeconds;
-                else return;
-                event.preventDefault();
-                seekToTime(Math.max(0, Math.min(totalDurationSeconds, nextTime)));
-              }}
               onPointerDown={(event) => {
                 isScrubbingRef.current = true;
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -1988,7 +1985,7 @@ export default function TranslationEditor() {
                 </div>
               )}
             </div>
-            <div className="flex justify-between items-center">
+            <div className="sticky bottom-0 z-10 -mx-3 flex items-center justify-between border-t border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
               <div>
                 <span className="text-sm font-mono text-slate-400">{timeline.formatTimecode(timeline.currentTimeSeconds)}</span>
                 {selectedSegment && (

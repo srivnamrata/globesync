@@ -17,6 +17,7 @@ export interface Project {
   pipelineProgressPercent?: number;
   pipelineErrorMessage?: string;
   currentLipsyncJobId?: string;
+  currentPipelineOperationId?: string | null;
   lastRenderedVideoPath?: string;
 }
 

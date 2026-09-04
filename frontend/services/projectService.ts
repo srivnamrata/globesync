@@ -125,6 +125,7 @@ interface ProjectDetailApiShape extends ProjectApiShape {
   slug: string | null;
   current_lipsync_job_id: string | null;
   current_export_job_id: string | null;
+  current_pipeline_operation_id?: string | null;
   archived_at: string | null;
 }
 
@@ -297,6 +298,7 @@ function mapProjectApiShape(project: ProjectApiShape | ProjectDetailApiShape): P
     pipelineProgressPercent: project.pipeline_progress_percent ?? undefined,
     pipelineErrorMessage: project.pipeline_error_message || undefined,
     currentLipsyncJobId: 'current_lipsync_job_id' in project ? project.current_lipsync_job_id || undefined : undefined,
+    currentPipelineOperationId: 'current_pipeline_operation_id' in project ? project.current_pipeline_operation_id : undefined,
     lastRenderedVideoPath: project.last_rendered_video_gcs_path || undefined,
   };
 }

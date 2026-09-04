@@ -163,7 +163,9 @@ export default function ProjectBrowser() {
         const response = await apiClient.get<SupportedLanguagesResponse>('/translation/languages');
         const options = response.languages.map((language) => ({
           value: language.code,
-          label: language.name,
+          label: language.native_name && language.native_name !== language.name
+            ? `${language.name} (${language.native_name})`
+            : language.name,
         }));
 
         if (!isMounted || options.length === 0) {

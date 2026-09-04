@@ -1813,6 +1813,92 @@ Track these before and after the workflow checkpoints:
 * Focused diagnostics reported no errors in the editor page.
 * `npm.cmd run build` completed successfully with no errors.
 
+### UI quiet pipeline-status hydration - slice 52
+
+#### Implemented
+
+* Project detail responses now expose the existing active pipeline-operation pointer as an optional field.
+* The editor skips the pipeline-status request when the server explicitly reports no active operation, removing expected 404 noise.
+* Older API responses that omit the field retain the previous request behavior for compatibility.
+
+#### Safety and validation
+
+* The response addition is nullable and does not alter persistence, authorization, artifact URLs, or lifecycle transitions.
+* `pytest backend/tests/test_projects_api.py -q` passed: 15 tests.
+* Frontend diagnostics and `npm.cmd run build` passed.
+
+### UI workspace progress description - slice 53
+
+#### Implemented
+
+* Processing project cards now expose stage-aware progress text through `aria-valuetext`.
+* Cards announce either the actual percentage or an explicit `in progress` state when progress is indeterminate.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI sticky mobile playback - slice 54
+
+#### Implemented
+
+* Editor timeline playback controls now remain visible at the bottom of the timeline on narrow screens.
+* Desktop layouts keep the existing normal-flow playback row.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI native timeline seeking - slice 55
+
+#### Implemented
+
+* Replaced the interactive timeline container's nested slider semantics with a native `range` control for keyboard fine-seeking.
+* Visual segment bars retain pointer scrubbing and per-segment seek actions without invalid interactive nesting.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI native language labels - slice 56
+
+#### Implemented
+
+* Workspace source and target language selectors now show native names from the supported-language API when available.
+* Existing English language names remain the fallback when no distinct native name is provided.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home page.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI responsive workspace controls - slice 57
+
+#### Implemented
+
+* Workspace search and sorting controls now stack on narrow screens and return to a compact row at the small breakpoint.
+* First-project source/target language controls now stack on narrow screens, keeping the swap control usable.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the home shell component.
+* `npm.cmd run build` completed successfully with no errors.
+
+### UI mobile editor review order - slice 58
+
+#### Implemented
+
+* On narrow screens, the editor now presents media review before transcript and translation editing as specified by the workstation blueprint.
+* Desktop retains the existing two-column media and editing arrangement.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
 #### Remaining Phase E work
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.
