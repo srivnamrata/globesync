@@ -1899,6 +1899,18 @@ Track these before and after the workflow checkpoints:
 * Focused diagnostics reported no errors in the editor page.
 * `npm.cmd run build` completed successfully with no errors.
 
+### UI labeled editor textareas - slice 59
+
+#### Implemented
+
+* Source transcript and translated textareas now have explicit accessible names.
+* Labels include content type, language, speaker, and segment timestamp for reliable navigation through long scripts.
+
+#### Validation
+
+* Focused diagnostics reported no errors in the editor page.
+* `npm.cmd run build` completed successfully with no errors.
+
 #### Remaining Phase E work
 
 1. Perform browser QA for large-file upload, job failure, output preview, forced download, and responsive history-panel behavior after deployment.

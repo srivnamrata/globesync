@@ -1727,6 +1727,7 @@ export default function TranslationEditor() {
                       </div>
                       <textarea
                         dir={getTextDirection(currentProject.sourceLanguage)}
+                        aria-label={`Source transcript for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                         className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
                         value={seg.text}
                         onChange={(e) => handleTextChange(seg.id, e.target.value)}
@@ -1818,6 +1819,7 @@ export default function TranslationEditor() {
                       </div>
                       <textarea
                         dir={getTextDirection(currentProject.targetLanguage)}
+                        aria-label={`Translation in ${currentProject.targetLanguage.toUpperCase()} for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                         className={`w-full bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
                           dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
                         }`}

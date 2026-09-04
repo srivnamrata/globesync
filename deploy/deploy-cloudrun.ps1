@@ -148,7 +148,7 @@ gcloud run deploy $ApiService `
 $ApiUrl = gcloud run services describe $ApiService --region=$Region --format="value(status.url)"
 Write-Host "API URL: $ApiUrl"
 
-$ApiRuntimeVars = "CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[`\"$GoogleWebClientId`\"]"
+$ApiRuntimeVars = "CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[`"$GoogleWebClientId`"]"
 gcloud run services update $ApiService `
   --region=$Region `
   --update-env-vars="^##^$ApiRuntimeVars"
