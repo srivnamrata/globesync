@@ -11,11 +11,13 @@ class ExportQueueManager:
     """Manages active export queues, cancellations, prioritizations, and temp file cleanups."""
 
     def __init__(self):
-        self.redis = redis.Redis.from_url(settings.REDIS_URL)
+        self.redis = redis.Redis.from_url(settings.REDIS_URL) if settings.REDIS_URL else None
         self.active_exports_key = "active_export_jobs_list"
 
     def register_job(self, job_id: str):
         """Registers a job to the active exports list."""
+        if self.redis is None:
+            return
         try:
             self.redis.rpush(self.active_exports_key, job_id)
         except Exception as e:
@@ -23,22 +25,30 @@ class ExportQueueManager:
 
     def deregister_job(self, job_id: str):
         """Deregisters a job from the active exports list."""
+        if self.redis is None:
+            return
         try:
             self.redis.lrem(self.active_exports_key, 0, job_id)
         except Exception as e:
             logger.warning(f"Failed to remove export job from Redis: {e}")
 
-    def cancel_job(self, job_id: str):
+    def cancel_job(self, job_id: str) -> bool:
         """Cancels a running export job (signals Celery or marks canceled state)."""
+        if self.redis is None:
+            return False
         try:
             # Set cancel flag in Redis
             self.redis.set(f"cancel_flag_job:{job_id}", "true", ex=3600)
             self.deregister_job(job_id)
+            return True
         except Exception as e:
             logger.warning(f"Failed to cancel export job: {e}")
+            return False
 
     def is_cancelled(self, job_id: str) -> bool:
         """Checks if a cancel signal has been set for this job."""
+        if self.redis is None:
+            return False
         try:
             return self.redis.exists(f"cancel_flag_job:{job_id}") > 0
         except Exception:

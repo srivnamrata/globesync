@@ -178,5 +178,14 @@ celery -A app.core.celery_app worker -Q audio_extract,stt_diarize,translation,tt
 
 ### 3. Run Test Suite
 ```bash
-pytest tests/ -v
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+python -m pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml
 ```
+
+The second command enforces the backend's branch-aware coverage threshold and writes
+`backend/coverage.xml`. The initial threshold is intentionally based on the
+current active-service baseline so it can be raised as coverage improves.
+Dedicated OpenAI, ElevenLabs, and Deepgram service modules are excluded because
+those retired integrations are scheduled for removal.

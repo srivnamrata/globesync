@@ -87,3 +87,21 @@ async def test_binds_subject_to_unbound_same_provider_account():
     assert result is existing_user
     assert existing_user.auth_subject == "new-subject"
     assert session.flush_count == 1
+
+
+@pytest.mark.asyncio
+async def test_rejects_subject_binding_to_another_identity_provider():
+    existing_user = SimpleNamespace(
+        email="user@example.com",
+        display_name="Legacy User",
+        auth_provider="debug",
+        auth_subject=None,
+        is_active=True,
+    )
+    session = _FakeSession([None, existing_user])
+
+    with pytest.raises(AccountAccessError, match="provider"):
+        await AuthService()._get_or_create_user(session, _identity())
+
+    assert existing_user.auth_subject is None
+    assert session.flush_count == 0

@@ -11,3 +11,9 @@ venv/
 backend/venv/
 frontend/node_modules/
 frontend/.next/
+
+# Python test and coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
