@@ -47,16 +47,17 @@ type WorkspaceHomeProps = {
   workspaceMembers: WorkspaceMember[];
 };
 
-/* Legacy encoded landing-page content retained only for source-history compatibility.
-  { icon: '🌍', heading: 'Reach 20+ languages', body: 'Translate and dub your videos into over 20 languages — without hiring studios or managing multiple vendors.' },
-  { icon: '✂️', heading: 'Edit every word', body: 'Review and fix each transcript line and translation before it goes to voice. Full control, no black boxes.' },
-  { icon: '🚀', heading: 'Upload, translate, export', body: 'From raw video to dubbed output in a few clicks. Track every stage and download when it\'s ready.' },
-]; */
-
 const productHighlights = [
-  { icon: 'languages', heading: 'Reach 20+ languages', body: 'Translate and dub your videos into over 20 languages without studios or multiple vendors.' },
-  { icon: 'edit', heading: 'Edit every word', body: 'Review and fix each transcript line and translation before it goes to voice. Full control, no black boxes.' },
-  { icon: 'export', heading: 'Upload, translate, export', body: 'Move from raw video to dubbed output in a few steps, then download when it is ready.' },
+  { icon: 'languages', heading: 'Speaker-aware transcription', body: 'Turn speech into timestamped, speaker-separated segments that stay connected to the source video.' },
+  { icon: 'edit', heading: 'Review before you render', body: 'Edit every transcript and translation segment before generating the localized voice track.' },
+  { icon: 'export', heading: 'One controlled workflow', body: 'Track transcription, translation, dubbing, synchronization, lip-sync, and export in one project.' },
+] as const;
+
+const workflowSteps = [
+  { number: '01', heading: 'Upload', body: 'Add your source video and choose the language you want to reach.' },
+  { number: '02', heading: 'Review', body: 'Check speaker labels, transcript timing, and segment-level translations.' },
+  { number: '03', heading: 'Generate', body: 'Create localized speech and synchronize it to the original timeline.' },
+  { number: '04', heading: 'Export', body: 'Download the finished video and timestamped subtitle files.' },
 ] as const;
 
 function FeatureIcon({ name }: { name: (typeof productHighlights)[number]['icon'] }) {
@@ -158,75 +159,212 @@ const languagePillRow = ['Hindi', 'Spanish', 'French', 'Arabic', 'Japanese', 'Po
 
 export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      {/* Background soft gradient */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_-10%,rgba(99,102,241,0.1),transparent),radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(14,165,233,0.05),transparent)]" />
+    <div className="min-h-screen overflow-hidden bg-[#f8f9ff] text-slate-950">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_12%_18%,rgba(99,102,241,0.13),transparent_32%),radial-gradient(circle_at_88%_10%,rgba(14,165,233,0.1),transparent_30%)]" />
 
-      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-6 lg:px-10">
-
-        {/* Nav */}
-        <nav className="flex items-center justify-between py-6">
-          <span className="text-lg font-bold tracking-tight text-slate-900">Globe<span className="text-indigo-600">Sync</span></span>
-          <span className="hidden text-sm font-medium text-slate-500 lg:inline">Translate · Dub · Export</span>
+      <div className="relative mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+        <nav aria-label="Main navigation" className="flex h-20 items-center justify-between">
+          <a href="#" aria-label="GlobeSync home" className="text-xl font-extrabold tracking-tight text-slate-950">
+            Globe<span className="text-indigo-600">Sync</span>
+          </a>
+          <div className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
+            <a href="#how-it-works" className="transition hover:text-indigo-600">How it works</a>
+            <a href="#features" className="transition hover:text-indigo-600">Features</a>
+            <a href="#security" className="transition hover:text-indigo-600">Security</a>
+          </div>
+          <a href="#get-started" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-600">
+            Start free
+          </a>
         </nav>
 
-        {/* Hero */}
-        <main className="flex flex-1 flex-col items-center justify-center pb-16 pt-12 text-center">
-
-          {/* Eyebrow */}
-          <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-600/20 bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
-            20+ languages · AI dubbing · Segment-level review
-          </span>
-
-          {/* Headline */}
-          <h1 className="mx-auto max-w-4xl text-5xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
-            If language is the barrier,<br />
-            <span className="text-indigo-600">GlobeSync</span> breaks it.
-          </h1>
-
-          {/* Sub-headline */}
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            Translate your videos into 20+ languages in a few clicks — with AI dubbing, editable transcripts, and full control at every step. No studios. No back-and-forth. Just reach.
-          </p>
-
-          {/* Primary CTA */}
-          <div className="mt-10 flex flex-col items-center gap-3">
-            <div className="flex min-h-[52px] items-center rounded-xl bg-white p-2 shadow-xl shadow-indigo-500/10 ring-1 ring-slate-900/5">{signInSlot}</div>
-            {authError ? (
-              <p role="alert" className="max-w-sm rounded-2xl border border-rose-500/30 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{authError}</p>
-            ) : (
-              <p className="text-xs font-medium text-slate-500">Free to start · No credit card required · Your workspace is ready in seconds</p>
-            )}
-          </div>
-
-          {/* Language pills */}
-          <div className="mt-12 flex flex-wrap justify-center gap-2">
-            {languagePillRow.map((lang) => (
-              <span key={lang} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
-                {lang}
+        <main>
+          <section className="grid min-h-[680px] items-center gap-14 py-16 lg:grid-cols-[0.86fr_1.14fr] lg:py-20">
+            <div className="text-center lg:text-left">
+              <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-indigo-700 shadow-sm backdrop-blur">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Video localization with human control
               </span>
-            ))}
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500 shadow-sm">+ more</span>
-          </div>
+              <h1 className="mt-7 text-4xl font-extrabold leading-[1.04] tracking-[-0.04em] text-slate-950 sm:text-6xl lg:text-7xl">
+                Translate one video.
+                <span className="mt-2 block bg-gradient-to-r from-indigo-600 to-violet-500 bg-clip-text text-transparent">
+                  Reach every audience.
+                </span>
+              </h1>
+              <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-slate-600 lg:mx-0">
+                Transcribe, translate, review, dub, synchronize, and export multilingual video from one controlled workspace.
+              </p>
 
-          {/* Feature cards */}
-          <div className="mt-16 grid w-full gap-4 sm:grid-cols-3">
-            {productHighlights.map((item) => (
-              <div key={item.heading} className="rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:shadow-md">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><FeatureIcon name={item.icon} /></div>
-                <h3 className="text-base font-bold text-slate-900">{item.heading}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{item.body}</p>
+              <div id="get-started" className="mt-9 flex flex-col items-center gap-4 lg:items-start">
+                <div className="flex min-h-[56px] items-center rounded-2xl bg-white p-2 shadow-xl shadow-indigo-500/10 ring-1 ring-slate-900/10">
+                  {signInSlot}
+                </div>
+                {authError ? (
+                  <p role="alert" className="max-w-md rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{authError}</p>
+                ) : (
+                  <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                    <span aria-hidden="true" className="text-emerald-600">✓</span>
+                    Free to start
+                    <span aria-hidden="true">·</span>
+                    No credit card required
+                  </p>
+                )}
               </div>
+
+              <div className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm font-semibold text-slate-600 lg:justify-start">
+                <span className="flex items-center gap-2"><span className="text-indigo-600">✓</span> 30+ languages</span>
+                <span className="flex items-center gap-2"><span className="text-indigo-600">✓</span> Editable transcripts</span>
+                <span className="flex items-center gap-2"><span className="text-indigo-600">✓</span> Export-ready video</span>
+              </div>
+            </div>
+
+            <div aria-label="GlobeSync editor preview" className="relative mx-auto w-full max-w-3xl">
+              <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-br from-indigo-300/35 via-violet-200/20 to-sky-200/30 blur-2xl" />
+              <div className="relative overflow-hidden rounded-[1.75rem] border border-white/80 bg-slate-950 p-2 shadow-[0_32px_80px_-28px_rgba(30,41,59,0.48)]">
+                <div className="overflow-hidden rounded-[1.35rem] bg-slate-900">
+                  <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+                      Product launch · English to Spanish
+                      <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-emerald-300">Saved</span>
+                    </div>
+                  </div>
+
+                  <div className="grid min-h-[430px] lg:grid-cols-[0.88fr_1.12fr]">
+                    <div className="border-b border-white/10 bg-slate-950/70 p-4 lg:border-b-0 lg:border-r">
+                      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_50%_30%,#334155,#0f172a_62%)]">
+                        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 to-transparent" />
+                        <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-xl backdrop-blur">
+                          <svg aria-hidden="true" viewBox="0 0 24 24" className="ml-1 h-7 w-7 fill-current"><path d="M8 5v14l11-7z" /></svg>
+                        </div>
+                        <div className="absolute bottom-3 left-3 right-3 rounded-lg bg-slate-950/75 px-3 py-2 text-center text-[11px] font-medium text-white backdrop-blur">
+                          Build products that speak to everyone.
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <div className="flex items-center justify-between text-[11px] font-semibold">
+                          <span className="text-white">Localization progress</span>
+                          <span className="text-indigo-300">68%</span>
+                        </div>
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full w-[68%] rounded-full bg-gradient-to-r from-indigo-500 to-violet-400" />
+                        </div>
+                        <div className="mt-3 grid grid-cols-4 gap-1 text-center text-[9px] text-slate-500">
+                          <span className="text-emerald-300">Upload</span>
+                          <span className="text-emerald-300">Transcript</span>
+                          <span className="text-indigo-300">Translation</span>
+                          <span>Export</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-300">Segment review</p>
+                          <h2 className="mt-1 text-sm font-bold text-white">Transcript and translation</h2>
+                        </div>
+                        <span className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400">3 speakers</span>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {[
+                          { speaker: 'Speaker 1', time: '00:04.2', source: 'Welcome to our product launch.', translated: 'Bienvenidos al lanzamiento de nuestro producto.', active: false },
+                          { speaker: 'Speaker 2', time: '00:08.7', source: 'Today, we are sharing a simpler way to work.', translated: 'Hoy compartimos una forma más sencilla de trabajar.', active: true },
+                          { speaker: 'Speaker 1', time: '00:14.1', source: 'Built for teams around the world.', translated: 'Creado para equipos de todo el mundo.', active: false },
+                        ].map((segment) => (
+                          <div key={segment.time} className={`rounded-xl border p-3 ${segment.active ? 'border-indigo-400/50 bg-indigo-500/10' : 'border-white/10 bg-white/[0.025]'}`}>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-bold text-indigo-300">{segment.speaker}</span>
+                              <span className="font-mono text-slate-500">{segment.time}</span>
+                            </div>
+                            <p className="mt-2 text-[11px] leading-5 text-slate-400">{segment.source}</p>
+                            <p className="mt-1 text-[11px] font-medium leading-5 text-white">{segment.translated}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t border-white/10 px-4 py-3">
+                    <div className="h-8 w-8 rounded-lg bg-indigo-500/15 p-2 text-indigo-300">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h3l3-9 4 18 3-9h5" /></svg>
+                    </div>
+                    <div className="flex h-8 flex-1 items-center gap-1 overflow-hidden">
+                      {[40, 65, 35, 78, 52, 85, 45, 70, 34, 62, 82, 48, 72, 38, 58, 76, 46, 68, 32, 55, 80, 44, 66, 36, 60].map((height, index) => (
+                        <span key={index} className="w-1 flex-none rounded-full bg-indigo-400/70" style={{ height: `${height}%` }} />
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">00:18 / 01:42</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section aria-label="Supported languages" className="border-y border-slate-200/80 py-7">
+            <div className="flex flex-col items-center gap-4 lg:flex-row lg:justify-between">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Localize for audiences worldwide</p>
+              <div className="flex flex-wrap justify-center gap-2 lg:justify-end">
+                {languagePillRow.slice(0, 8).map((lang) => (
+                  <span key={lang} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">{lang}</span>
+                ))}
+                <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">+ 22 more</span>
+              </div>
+            </div>
+          </section>
+
+          <section id="how-it-works" className="py-24">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">How it works</p>
+              <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">From source video to global-ready media</h2>
+              <p className="mt-4 text-base leading-7 text-slate-600">Automation handles the repetitive work. You keep control of every word and every output.</p>
+            </div>
+            <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {workflowSteps.map((step) => (
+                <article key={step.number} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <span className="font-mono text-xs font-bold text-indigo-600">{step.number}</span>
+                  <h3 className="mt-5 text-lg font-bold text-slate-950">{step.heading}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{step.body}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section id="features" className="grid gap-4 pb-24 sm:grid-cols-3">
+            {productHighlights.map((item) => (
+              <article key={item.heading} className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+                <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><FeatureIcon name={item.icon} /></div>
+                <h3 className="text-base font-bold text-slate-950">{item.heading}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.body}</p>
+              </article>
             ))}
-          </div>
+          </section>
 
-          {/* Social proof strip */}
-          <p className="mt-16 text-xs uppercase tracking-[0.2em] font-bold text-slate-400">
-            Built for creators, educators, and global teams who need real control — not a black box
-          </p>
-
+          <section id="security" className="mb-24 overflow-hidden rounded-[2rem] bg-slate-950 px-6 py-10 text-white sm:px-10 lg:flex lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Private by design</p>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">Your media stays scoped to your workspace.</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-300">Google-backed sign-in, workspace authorization, secured cloud storage, and auditable processing keep every project organized and protected.</p>
+            </div>
+            <a href="#get-started" className="mt-7 inline-flex rounded-full bg-white px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-indigo-100 lg:mt-0">
+              Create your workspace
+            </a>
+          </section>
         </main>
+
+        <footer className="flex flex-col gap-4 border-t border-slate-200 py-8 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 GlobeSync. Built for multilingual teams.</p>
+          <div className="flex gap-5">
+            <a href="#how-it-works" className="hover:text-indigo-600">How it works</a>
+            <a href="#features" className="hover:text-indigo-600">Features</a>
+            <a href="#security" className="hover:text-indigo-600">Security</a>
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -523,10 +661,26 @@ export function WorkspaceHome({
             <button type="button" onClick={onSignOut} className="shrink-0 text-sm text-slate-400">Sign out</button>
           </div>
 
-          <header className="mb-12">
-            <h1 className="text-4xl font-bold tracking-tight text-white">
-              Welcome, <span className="text-indigo-100">{authContext.user.display_name?.split(' ')[0] || 'User'}</span>
-            </h1>
+          <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-400">Your workspace</p>
+              <h1 className="mt-2 text-4xl font-bold tracking-tight text-white">
+                Welcome, <span className="text-indigo-100">{authContext.user.display_name?.split(' ')[0] || 'User'}</span>
+              </h1>
+              <p className="mt-2 text-sm text-slate-400">Create, review, and deliver every localized video from one place.</p>
+            </div>
+            {hasProjects ? (
+              <div className="flex gap-2">
+                <div className="rounded-xl border border-slate-700/70 bg-slate-900 px-4 py-2.5 text-right shadow-lg shadow-black/10">
+                  <p className="text-lg font-bold text-white">{projects.length}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Projects</p>
+                </div>
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-right">
+                  <p className="text-lg font-bold text-emerald-200">{projects.filter((project) => project.status === 'completed').length}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/70">Complete</p>
+                </div>
+              </div>
+            ) : null}
           </header>
 
           {/* Onboarding Tracker or Project Creation */}
@@ -614,7 +768,7 @@ export function WorkspaceHome({
               </div>
             </section>
           ) : (
-             <section className="mb-12 rounded-2xl border border-white/5 bg-white/5 p-6 shadow-sm">
+             <section className="mb-12 rounded-2xl border border-slate-700/70 bg-slate-900 p-6 shadow-xl shadow-black/15">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-lg font-semibold text-white">Create a new project</h2>
@@ -719,12 +873,19 @@ export function WorkspaceHome({
                     const progress = Math.max(0, Math.min(100, project.pipelineProgressPercent ?? 0));
 
                     return (
-                    <article key={project.id} className="group relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/60 transition duration-interface ease-interface hover:-translate-y-0.5 hover:border-white/20 hover:bg-slate-800/80 hover:shadow-panel motion-reduce:transform-none">
+                    <article key={project.id} className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-[0_14px_32px_-22px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.03] transition duration-interface ease-interface hover:-translate-y-1 hover:border-indigo-400/50 hover:shadow-[0_22px_45px_-24px_rgba(79,70,229,0.48)] motion-reduce:transform-none">
                       {/* HeyGen style Thumbnail Area */}
-                      <div className="relative aspect-video w-full bg-slate-950/80">
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-600">
+                      <div className={`relative aspect-video w-full border-b border-slate-700/70 ${
+                        isProcessing
+                          ? 'bg-[radial-gradient(circle_at_50%_20%,rgba(245,158,11,0.14),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                          : project.status === 'completed'
+                            ? 'bg-[radial-gradient(circle_at_50%_20%,rgba(16,185,129,0.13),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                            : 'bg-[radial-gradient(circle_at_50%_20%,rgba(99,102,241,0.14),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                      }`}>
+                        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.035)_1px,transparent_1px)] bg-[size:24px_24px]" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
                           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                          {!project.mediaId ? <span className="text-xs font-medium">No media yet</span> : null}
+                          <span className="max-w-[75%] truncate text-xs font-medium">{project.mediaFilename || (project.mediaId ? 'Media ready' : 'No media yet')}</span>
                         </div>
                         
                         {/* Play button overlay on hover */}
@@ -770,7 +931,7 @@ export function WorkspaceHome({
                       </div>
 
                       {/* Card Content */}
-                      <div className="p-4">
+                      <div className="flex flex-1 flex-col bg-gradient-to-b from-slate-900 to-slate-900/95 p-4">
                         <Link href={`/editor/${project.id}`} className="block">
                           <h3 className="truncate text-base font-semibold text-white group-hover:text-indigo-300 transition">{project.name}</h3>
                         </Link>
@@ -780,6 +941,7 @@ export function WorkspaceHome({
                         <p className="gs-meta mt-1">
                           Updated {formatProjectDate(project.updatedAt)} | {project.sourceLanguage.toUpperCase()} to {project.targetLanguage.toUpperCase()}
                         </p>
+                        <div className="mt-auto pt-1">
                         {isProcessing ? (
                           <div className="mt-4 rounded-control border border-amber-400/20 bg-amber-400/5 p-3">
                             <div className="flex items-center justify-between gap-3 text-xs">
@@ -804,6 +966,12 @@ export function WorkspaceHome({
                             </Link>
                           </div>
                         ) : null}
+                        {!isProcessing && !isFailed ? (
+                          <Link href={`/editor/${project.id}`} className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 transition hover:text-indigo-200">
+                            Open project <span aria-hidden="true">&rarr;</span>
+                          </Link>
+                        ) : null}
+                        </div>
                       </div>
                     </article>
                     );
