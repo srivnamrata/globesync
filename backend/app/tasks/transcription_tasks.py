@@ -7,10 +7,11 @@ import uuid
 from typing import Optional
 from celery import shared_task
 import redis
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import SyncSessionLocal as SyncSession
 from app.models.media import MediaFile
 from app.models.transcript import Transcript, TranscriptSegment
 from app.services.pipeline_operation_service import checkpoint_operation
@@ -22,8 +23,6 @@ from app.services.storage_service import storage_service
 from app.utils.transcript_parser import transcript_parser
 
 logger = logging.getLogger("transcription_tasks")
-sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
-SyncSession = sessionmaker(bind=sync_engine)
 
 
 def publish_progress_event(media_id: str, transcript_id: str, status: str, progress_percent: int, message: str):
@@ -82,6 +81,10 @@ def run_transcription_pipeline(
 
         if not media_file or not transcript:
             raise ValueError("Media file or transcript record not found in database.")
+        if transcript.media_file_id != media_file.id:
+            raise ValueError("Transcript does not belong to the requested media file.")
+        if transcript.workspace_id != media_file.workspace_id or transcript.project_id != media_file.project_id:
+            raise ValueError("Transcript and media file do not share the same project scope.")
 
         transcript.status = "in_progress"
         db.commit()

@@ -17,10 +17,10 @@ RAW_BUCKET="${RAW_BUCKET:-${PROJECT_ID}-media-raw}"
 EXPORTS_BUCKET="${EXPORTS_BUCKET:-${PROJECT_ID}-media-exports}"
 ENV_FILE="${ENV_FILE:-deploy/cloudrun.env.yaml}" 
 
-# Connection budget example: 100 Cloud SQL connections.
-# pool_size=5, concurrency=10 → cap max instances near 100/(5*ceil(10/5)) ≈ 10.
+# The API pool is capped at two connections per instance. Background Cloud
+# Tasks dispatch is capped separately so long media jobs cannot exhaust Cloud SQL.
 API_CONCURRENCY="${API_CONCURRENCY:-10}"
-API_MAX_INSTANCES="${API_MAX_INSTANCES:-8}"
+API_MAX_INSTANCES="${API_MAX_INSTANCES:-4}"
 API_MIN_INSTANCES="${API_MIN_INSTANCES:-0}"
 API_TIMEOUT="${API_TIMEOUT:-1800}"
 GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com}}"
@@ -122,7 +122,7 @@ echo "API URL: $API_URL"
 # Patch Cloud Tasks target placeholders and auth client configuration in the running API service.
 gcloud run services update "$API_SERVICE" \
   --region="$REGION" \
-  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=${API_URL}##INTERNAL_TASKS_AUDIENCE=${API_URL}##GCS_BUCKET_NAME=${RAW_BUCKET}##GCS_EXPORTS_BUCKET=${EXPORTS_BUCKET}##GOOGLE_OAUTH_CLIENT_IDS=[\"${GOOGLE_WEB_CLIENT_ID}\"]"
+  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=${API_URL}##CLOUD_TASKS_OIDC_SERVICE_ACCOUNT=${RUNTIME_SA}##INTERNAL_TASKS_AUDIENCE=${API_URL}##GCS_BUCKET_NAME=${RAW_BUCKET}##GCS_EXPORTS_BUCKET=${EXPORTS_BUCKET}##GOOGLE_OAUTH_CLIENT_IDS=[\"${GOOGLE_WEB_CLIENT_ID}\"]"
 
 WEB_BUILD_ARGS=(
   "--build-arg=NEXT_PUBLIC_API_URL=${API_URL}"

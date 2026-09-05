@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # Runtime deployment controls
     DEPLOYMENT_ENV: str = "development"
-    DATABASE_POOL_SIZE: int = 5
+    DATABASE_POOL_SIZE: int = 2
     DATABASE_MAX_OVERFLOW: int = 0
     DATABASE_POOL_RECYCLE_SECONDS: int = 1800
     # Celery workers are not part of the two-service Cloud Run launch.

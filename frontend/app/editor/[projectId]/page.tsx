@@ -104,7 +104,6 @@ export default function TranslationEditor() {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [sourceMediaUrl, setSourceMediaUrl] = useState<string | null>(null);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
-  const [remoteDraftVersion, setRemoteDraftVersion] = useState<number | null>(null);
   const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
   const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
   const [isReloadingProject, setIsReloadingProject] = useState(false);
@@ -127,6 +126,9 @@ export default function TranslationEditor() {
   const dialogFocusOriginRef = useRef<HTMLElement | null>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteDraftVersionRef = useRef<number | null>(null);
+  const remoteDraftConflictRef = useRef(false);
+  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const timeline = useTimeline();
   const history = useHistory();
@@ -191,8 +193,9 @@ export default function TranslationEditor() {
       }
 
       setCurrentProject(hydratedProject);
-      setRemoteDraftVersion(seededDraft.version);
+      remoteDraftVersionRef.current = seededDraft.version;
       setBaseProjectUpdatedAt(seededDraft.base_project_updated_at ?? hydratedProject.updatedAt);
+      remoteDraftConflictRef.current = false;
       setHasRemoteDraftConflict(false);
       await storageService.saveDraft(canonicalDraft);
       if (currentProject.id !== canonicalProject.id) {
@@ -246,17 +249,17 @@ export default function TranslationEditor() {
           try {
             const remoteDraft = await projectService.getProjectDraft(projectId);
             draft = mergeDraftWithProject(remoteDraft.draft, backendProject);
-            setRemoteDraftVersion(remoteDraft.version);
+            remoteDraftVersionRef.current = remoteDraft.version;
             nextBaseProjectUpdatedAt = remoteDraft.baseProjectUpdatedAt ?? backendProject.updatedAt;
           } catch (draftError) {
             draft = projectService.buildLocalDraftFromProject(backendProject);
-            setRemoteDraftVersion(null);
+            remoteDraftVersionRef.current = null;
             nextBaseProjectUpdatedAt = backendProject.updatedAt;
             console.warn('No server-side draft found yet, seeding canonical draft from project metadata:', draftError);
 
             try {
               const seededDraft = await projectService.seedProjectDraft(backendProject);
-              setRemoteDraftVersion(seededDraft.version);
+              remoteDraftVersionRef.current = seededDraft.version;
               nextBaseProjectUpdatedAt = seededDraft.base_project_updated_at ?? backendProject.updatedAt;
             } catch (seedError) {
               console.warn('Failed to seed canonical backend draft; keeping local fallback cache:', seedError);
@@ -285,6 +288,7 @@ export default function TranslationEditor() {
       setCurrentProject(hydratedProject);
       // Clear conflict state and stale upload message together before
       // updating segments/translations so the banner disappears atomically.
+      remoteDraftConflictRef.current = false;
       setHasRemoteDraftConflict(false);
       setUploadMessage(
         pipelineOperation && pipelineOperation.status !== 'completed'
@@ -544,38 +548,50 @@ export default function TranslationEditor() {
       translations: translationsOverride ?? Object.values(translations),
     };
 
-    if (projectService.hasProjectApiScope() && !hasRemoteDraftConflict) {
-      try {
-        await projectService.bootstrapAuthContext();
-        const remoteDraft = await projectService.saveProjectDraft(project.id, nextDraft, {
-          version: remoteDraftVersion ?? 1,
-          baseProjectUpdatedAt: baseProjectUpdatedAtOverride ?? baseProjectUpdatedAt,
-          ...(checkpointReason ? { checkpointReason } : {}),
-        });
-        setRemoteDraftVersion(remoteDraft.version);
-        setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
-        setHasRemoteDraftConflict(false);
-        await storageService.saveDraft(nextDraft);
-        setDirtySegments(new Set());
-        return;
-      } catch (error) {
-        const conflictDetail = getProjectDraftConflictDetail(error);
-        if (conflictDetail) {
-          setHasRemoteDraftConflict(true);
-          setUploadMessage('A newer backend draft exists for this project. Backend autosave is paused until you reload the latest shared draft. Your browser edits are still cached locally for recovery.');
+    const saveDraft = async () => {
+      if (projectService.hasProjectApiScope() && !remoteDraftConflictRef.current) {
+        try {
+          await projectService.bootstrapAuthContext();
+          const remoteDraft = await projectService.saveProjectDraft(project.id, nextDraft, {
+            version: remoteDraftVersionRef.current ?? 1,
+            baseProjectUpdatedAt: baseProjectUpdatedAtOverride ?? baseProjectUpdatedAt,
+            ...(checkpointReason ? { checkpointReason } : {}),
+          });
+          remoteDraftVersionRef.current = remoteDraft.version;
+          setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
+          remoteDraftConflictRef.current = false;
+          setHasRemoteDraftConflict(false);
           await storageService.saveDraft(nextDraft);
-          console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
+          setDirtySegments(new Set());
           return;
+        } catch (error) {
+          const conflictDetail = getProjectDraftConflictDetail(error);
+          if (conflictDetail) {
+            remoteDraftVersionRef.current = conflictDetail.server_version;
+            remoteDraftConflictRef.current = true;
+            setHasRemoteDraftConflict(true);
+            setUploadMessage('The saved project draft changed while this editor was working. Autosave is paused until you choose which draft to keep. Your translated segments remain saved.');
+            await storageService.saveDraft(nextDraft);
+            console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
+            return;
+          }
+
+          console.warn('Failed to persist project draft to backend; kept local IndexedDB draft as fallback:', error);
         }
-
-        console.warn('Failed to persist project draft to backend; kept local IndexedDB draft as fallback:', error);
       }
-    }
 
-    await storageService.saveDraft(nextDraft);
-    setDirtySegments(new Set());
-    setLastSavedAt(new Date());
-  }, [currentProject, segments, translations, hasRemoteDraftConflict, remoteDraftVersion, baseProjectUpdatedAt]);
+      await storageService.saveDraft(nextDraft);
+      setDirtySegments(new Set());
+      setLastSavedAt(new Date());
+    };
+
+    const queuedSave = draftSaveQueueRef.current.then(saveDraft, saveDraft);
+    draftSaveQueueRef.current = queuedSave.then(
+      () => undefined,
+      () => undefined,
+    );
+    await queuedSave;
+  }, [currentProject, segments, translations, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
   const comparisonUrl = comparisonMode === 'original'
@@ -1344,22 +1360,6 @@ export default function TranslationEditor() {
           >
             Readiness
           </Button>
-          <Button
-            onClick={history.undo}
-            disabled={!history.canUndo}
-            variant="secondary"
-            size="sm"
-          >
-            Undo
-          </Button>
-          <Button
-            onClick={history.redo}
-            disabled={!history.canRedo}
-            variant="secondary"
-            size="sm"
-          >
-            Redo
-          </Button>
           <div className="w-px h-6 bg-slate-800 mx-2" />
           <div className="flex items-center gap-2">
             <Button
@@ -1549,19 +1549,18 @@ export default function TranslationEditor() {
         <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-amber-100">
-              A newer draft was saved in another session. Autosave is paused to protect that work. Loading the server draft replaces this editor’s local edits only after the newer saved draft is fully loaded; already persisted translations remain safe.
+              The saved project draft changed while this editor was working. Autosave is paused to prevent an overwrite. Choose whether to keep the edits in this editor or load the saved draft; translated segments already stored by the service remain safe.
             </p>
             <div className="flex shrink-0 gap-2">
               <Button
                 onClick={() => {
-                  // "Keep my edits": Accept the remote version number so autosave resumes
-                  // from this point forward, without discarding local edits.
+                  remoteDraftConflictRef.current = false;
                   setHasRemoteDraftConflict(false);
                 }}
                 variant="secondary"
                 size="sm"
               >
-                Keep my edits
+                Keep editor edits
               </Button>
               <Button
                 onClick={() => void loadProjectData()}
@@ -1570,7 +1569,7 @@ export default function TranslationEditor() {
                 size="sm"
                 className="shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
               >
-                {isReloadingProject ? 'Reloading…' : 'Load server draft'}
+                {isReloadingProject ? 'Reloading…' : 'Load saved draft'}
               </Button>
             </div>
           </div>

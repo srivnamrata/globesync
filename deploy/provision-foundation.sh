@@ -143,6 +143,9 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
 
 echo "==> Cloud Build service account roles"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
@@ -155,6 +158,10 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 echo "==> Cloud Tasks queue"
 gcloud tasks queues describe "$TASKS_QUEUE" --location="$REGION" >/dev/null 2>&1 \
   || gcloud tasks queues create "$TASKS_QUEUE" --location="$REGION"
+gcloud tasks queues update "$TASKS_QUEUE" \
+  --location="$REGION" \
+  --max-concurrent-dispatches=2 \
+  --max-dispatches-per-second=2
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/cloudtasks.enqueuer" >/dev/null

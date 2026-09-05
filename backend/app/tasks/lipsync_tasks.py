@@ -7,10 +7,11 @@ import uuid
 from typing import Optional
 from celery import shared_task
 import redis
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker, joinedload
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import SyncSessionLocal as SyncSession
 from app.models.frame_metadata import FrameMetadata
 from app.models.generated_audio import GeneratedAudio
 from app.models.lipsync_job import LipSyncJob
@@ -30,8 +31,6 @@ from app.utils.quality_metrics import quality_metrics
 from app.utils.transcript_parser import transcript_parser
 
 logger = logging.getLogger("lipsync_tasks")
-sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
-SyncSession = sessionmaker(bind=sync_engine)
 
 
 def publish_lipsync_event(job_id: str, status: str, progress_percent: int, message: str, eta_seconds: Optional[float] = None):
@@ -119,6 +118,17 @@ def run_lipsync_project_pipeline(
 
         if not job or not media_file or not transcript:
             raise ValueError("Required database records not found for lip-sync task.")
+        if job.media_file_id != media_file.id or job.transcript_id != transcript.id:
+            raise ValueError("Lip-sync job inputs do not match the requested records.")
+        if transcript.media_file_id != media_file.id:
+            raise ValueError("Transcript does not belong to the requested media file.")
+        if (
+            job.workspace_id != media_file.workspace_id
+            or job.workspace_id != transcript.workspace_id
+            or job.project_id != media_file.project_id
+            or job.project_id != transcript.project_id
+        ):
+            raise ValueError("Lip-sync job inputs do not share the same project scope.")
 
         project = db.query(Project).filter(Project.id == job.project_id).first() if job.project_id else None
 

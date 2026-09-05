@@ -2,6 +2,7 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 # Async Engine for FastAPI async route handlers
@@ -20,6 +21,20 @@ async_engine = create_async_engine(
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
     class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
+
+# Background pipelines run inside Cloud Tasks requests and can remain active
+# for many minutes. NullPool prevents every imported task module from retaining
+# its own idle connection pool after a task releases its session.
+sync_engine = create_engine(
+    settings.SYNC_DATABASE_URL,
+    poolclass=NullPool,
+    pool_pre_ping=True,
+)
+SyncSessionLocal = sessionmaker(
+    bind=sync_engine,
     expire_on_commit=False,
     autoflush=False,
 )

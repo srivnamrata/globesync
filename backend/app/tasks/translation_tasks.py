@@ -6,18 +6,17 @@ import uuid
 from typing import Optional
 from celery import shared_task
 import redis
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import SyncSessionLocal as SyncSession
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
 from app.services.pipeline_operation_service import checkpoint_operation
 from app.services.translation_service import translation_service
 
 logger = logging.getLogger("translation_tasks")
-sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
-SyncSession = sessionmaker(bind=sync_engine)
 
 
 def publish_translation_event(transcript_id: str, status: str, progress_percent: int, message: str):

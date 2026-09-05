@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.cloud_tasks_auth import verify_cloud_tasks_request
 from app.core.database import get_db
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.translation import Translation
@@ -85,23 +85,6 @@ class RenderLipSyncProjectTaskPayload(BaseModel):
     idempotency_key: Optional[str] = None
 
 
-async def _verify_cloud_tasks_request(
-    x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
-    authorization: Optional[str] = Header(None),
-) -> None:
-    """Accept Cloud Tasks deliveries; reject anonymous browser traffic."""
-    if settings.DEPLOYMENT_ENV == "development" and not settings.CLOUD_TASKS_ENABLED:
-        return
-    if not x_cloudtasks_taskname:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Internal task endpoints accept Cloud Tasks deliveries only.",
-        )
-    # OIDC is enforced by Cloud Run IAM when --no-allow-unauthenticated / invoker
-    # bindings are configured. Presence of the Cloud Tasks header is the app-level gate.
-    _ = authorization
-
-
 @router.post(
     "/transcribe",
     status_code=status.HTTP_200_OK,
@@ -110,7 +93,7 @@ async def _verify_cloud_tasks_request(
 async def run_transcribe_task(
     payload: TranscribeTaskPayload,
     x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
-    _: None = Depends(_verify_cloud_tasks_request),
+    _: None = Depends(verify_cloud_tasks_request),
 ):
     result = await asyncio.to_thread(
         run_transcription_pipeline,
@@ -148,8 +131,14 @@ async def run_translate_project_task(
     payload: TranslateProjectTaskPayload,
     db: AsyncSession = Depends(get_db),
     x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
-    _: None = Depends(_verify_cloud_tasks_request),
+    _: None = Depends(verify_cloud_tasks_request),
 ):
+    transcript = await db.get(Transcript, payload.transcript_id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+    if payload.project_id is not None and transcript.project_id != payload.project_id:
+        raise HTTPException(status_code=404, detail="Transcript not found.")
+
     stmt = (
         select(TranscriptSegment)
         .where(TranscriptSegment.transcript_id == payload.transcript_id)
@@ -160,10 +149,7 @@ async def run_translate_project_task(
     if not segments:
         raise HTTPException(status_code=404, detail="No transcript segments found.")
 
-    transcript_stmt = select(Transcript).where(Transcript.id == payload.transcript_id)
-    transcript_result = await db.execute(transcript_stmt)
-    transcript = transcript_result.scalar_one_or_none()
-    workspace_id = transcript.workspace_id if transcript else None
+    workspace_id = transcript.workspace_id
 
     operation_id = payload.operation_id or str(payload.job_id)
     await _checkpoint_translation_operation(
@@ -248,7 +234,7 @@ async def run_translate_project_task(
 async def run_render_lipsync_project_task(
     payload: RenderLipSyncProjectTaskPayload,
     x_cloudtasks_taskname: Optional[str] = Header(None, alias="X-CloudTasks-TaskName"),
-    _: None = Depends(_verify_cloud_tasks_request),
+    _: None = Depends(verify_cloud_tasks_request),
 ):
     result = await asyncio.to_thread(
         run_lipsync_project_pipeline,

@@ -67,6 +67,10 @@ class WorkspaceAccessError(Exception):
     pass
 
 
+class AccountAccessError(Exception):
+    pass
+
+
 @dataclass
 class ResolvedIdentity:
     email: str
@@ -77,6 +81,7 @@ class ResolvedIdentity:
 
 
 app_services_auth_service_module.WorkspaceAccessError = WorkspaceAccessError
+app_services_auth_service_module.AccountAccessError = AccountAccessError
 app_services_auth_service_module.ResolvedIdentity = ResolvedIdentity
 app_services_auth_service_module.auth_service = SimpleNamespace(
     bootstrap_actor_context=None,
