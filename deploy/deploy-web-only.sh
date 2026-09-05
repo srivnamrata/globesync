@@ -32,7 +32,7 @@ esac
 API_CONCURRENCY="${API_CONCURRENCY:-10}"
 API_MAX_INSTANCES="${API_MAX_INSTANCES:-8}"
 API_MIN_INSTANCES="${API_MIN_INSTANCES:-0}"
-API_TIMEOUT="${API_TIMEOUT:-300}"
+API_TIMEOUT="${API_TIMEOUT:-1800}"
 GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com}}"
 
 if [[ -z "$GOOGLE_WEB_CLIENT_ID" ]]; then
@@ -119,7 +119,7 @@ EOF
     --min-instances="$API_MIN_INSTANCES" \
     --max-instances="$API_MAX_INSTANCES" \
     --cpu=1 \
-    --memory=1Gi \
+    --memory=2Gi \
     --add-cloudsql-instances="$CLOUDSQL_INSTANCE" \
     --set-secrets="$API_SECRETS" \
     --env-vars-file="$ENV_FILE"

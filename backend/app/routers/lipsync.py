@@ -169,6 +169,7 @@ async def render_lipsync_project(
                 "idempotency_key": idempotency_key,
             },
             task_name_suffix=f"lipsync-{job.id.hex}-{req.target_language}",
+            dispatch_deadline_seconds=1800,
         )
         await db.commit()
     else:

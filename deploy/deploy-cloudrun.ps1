@@ -23,7 +23,7 @@ $GoogleWebClientId = if ($env:GOOGLE_WEB_CLIENT_ID) { $env:GOOGLE_WEB_CLIENT_ID 
 $ApiConcurrency = if ($env:API_CONCURRENCY) { $env:API_CONCURRENCY } else { "10" }
 $ApiMaxInstances = if ($env:API_MAX_INSTANCES) { $env:API_MAX_INSTANCES } else { "8" }
 $ApiMinInstances = if ($env:API_MIN_INSTANCES) { $env:API_MIN_INSTANCES } else { "0" }
-$ApiTimeout = if ($env:API_TIMEOUT) { $env:API_TIMEOUT } else { "300" }
+$ApiTimeout = if ($env:API_TIMEOUT) { $env:API_TIMEOUT } else { "1800" }
 $ApiSecrets = "DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest"
 
 gcloud config set project $ProjectId
@@ -140,7 +140,7 @@ gcloud run deploy $ApiService `
   --min-instances=$ApiMinInstances `
   --max-instances=$ApiMaxInstances `
   --cpu=1 `
-  --memory=1Gi `
+  --memory=2Gi `
   --add-cloudsql-instances=$CloudSqlInstance `
   --set-secrets=$ApiSecrets `
   --env-vars-file=$EnvFile

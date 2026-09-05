@@ -6,6 +6,7 @@ from app.main import app
 from app.models.lipsync_job import LipSyncJob
 from app.models.media import MediaFile
 from app.models.transcript import Transcript
+from app.routers.internal_tasks import RenderLipSyncProjectTaskPayload, run_render_lipsync_project_task
 from app.schemas.lipsync_schema import RenderLipSyncProjectRequest
 from app.services.face_detection_service import face_detector
 from app.tasks.gpu_task_scheduler import gpu_scheduler
@@ -105,6 +106,27 @@ async def test_render_lipsync_project_endpoint():
             assert parsed_req.media_file_id == mock_media_id
             assert parsed_req.transcript_id == mock_transcript_id
             assert parsed_req.model_preference == "liveportrait"
+
+
+@pytest.mark.asyncio
+async def test_internal_render_task_preserves_dub_only_mode():
+    payload = RenderLipSyncProjectTaskPayload(
+        job_id=uuid.uuid4(),
+        media_file_id=uuid.uuid4(),
+        transcript_id=uuid.uuid4(),
+        target_language="es",
+        enable_lipsync=False,
+    )
+
+    with patch("app.routers.internal_tasks.run_lipsync_project_pipeline", return_value={"status": "completed"}) as pipeline:
+        result = await run_render_lipsync_project_task(
+            payload=payload,
+            x_cloudtasks_taskname="render-test",
+            _=None,
+        )
+
+    assert result == {"status": "completed"}
+    assert pipeline.call_args.kwargs["enable_lipsync"] is False
 
 
 @pytest.mark.asyncio

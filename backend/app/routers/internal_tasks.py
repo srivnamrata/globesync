@@ -80,6 +80,7 @@ class RenderLipSyncProjectTaskPayload(BaseModel):
     project_id: Optional[uuid.UUID] = None
     model_preference: str = "liveportrait"
     burn_in_subtitles: bool = False
+    enable_lipsync: bool = True
     request_id: Optional[str] = None
     idempotency_key: Optional[str] = None
 
@@ -257,6 +258,7 @@ async def run_render_lipsync_project_task(
         target_language=payload.target_language,
         model_preference=payload.model_preference,
         burn_in_subtitles=payload.burn_in_subtitles,
+        enable_lipsync=payload.enable_lipsync,
         request_id=payload.request_id,
         task_id=x_cloudtasks_taskname or str(payload.job_id),
         idempotency_key=payload.idempotency_key,

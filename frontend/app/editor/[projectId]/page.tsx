@@ -629,13 +629,13 @@ export default function TranslationEditor() {
   }, [seekToTime, totalDurationSeconds]);
 
   const playComparisonSegment = useCallback(() => {
-    if (!selectedSegment || !hasComparisonUrl || !comparisonAudioRef.current) {
+    if (!selectedSegment || !videoRef.current) {
       return;
     }
 
-    comparisonAudioRef.current.currentTime = selectedSegment.startTimeSeconds;
-    void comparisonAudioRef.current.play();
-  }, [hasComparisonUrl, selectedSegment]);
+    videoRef.current.currentTime = selectedSegment.startTimeSeconds;
+    void videoRef.current.play();
+  }, [selectedSegment]);
 
   const handleOpenVersionHistory = useCallback(async () => {
     if (!currentProject) return;
@@ -1875,16 +1875,26 @@ export default function TranslationEditor() {
 
         {/* Right Grid: Video Preview Player */}
         <div className="order-first flex min-h-0 flex-col justify-between overflow-y-auto bg-slate-950 p-6 md:order-last">
-          <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500 overflow-hidden">
-            {renderedVideoUrl ? (
+          <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-900 text-slate-500">
+            {comparisonMode === 'dubbed' && !renderedVideoUrl && sourceMediaUrl ? (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 p-4 text-center backdrop-blur-[2px]">
+                <p className="text-sm font-semibold text-slate-200">Dubbed preview not ready, showing original video.</p>
+                <p className="mt-2 text-xs text-slate-400">Run a Build to generate the dubbed video.</p>
+              </div>
+            ) : null}
+
+            {(comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)) ? (
               <video
-                key={renderedVideoUrl}
+                key={comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)}
                 ref={videoRef}
-                src={renderedVideoUrl}
+                src={(comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)) ?? undefined}
                 controls
-                aria-label={`${currentProject.targetLanguage.toUpperCase()} dubbed video preview`}
-                className="h-full w-full"
-                onError={() => void refreshRenderedVideoUrl()}
+                aria-label={`${comparisonMode === 'original' ? currentProject.sourceLanguage.toUpperCase() : currentProject.targetLanguage.toUpperCase()} video preview`}
+                className={`h-full w-full ${comparisonMode === 'dubbed' && !renderedVideoUrl ? 'opacity-50' : ''}`}
+                onError={() => {
+                   if (comparisonMode === 'original') { void refreshSourceMediaUrl(); }
+                   else { void refreshRenderedVideoUrl(); }
+                }}
               >
                 Your browser does not support embedded video playback.
               </video>
@@ -2077,7 +2087,7 @@ export default function TranslationEditor() {
                 <button
                   type="button"
                   onClick={playComparisonSegment}
-                  disabled={!selectedSegment || !hasComparisonUrl}
+                  disabled={!selectedSegment || (!sourceMediaUrl && !renderedVideoUrl)}
                   className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Play selected segment
@@ -2085,23 +2095,7 @@ export default function TranslationEditor() {
               </div>
           </div>
 
-          <audio
-            ref={comparisonAudioRef}
-            src={comparisonUrl ?? undefined}
-            onError={() => {
-              if (comparisonMode === 'original') {
-                void refreshSourceMediaUrl();
-              } else {
-                void refreshRenderedVideoUrl();
-              }
-            }}
-            onTimeUpdate={(event) => {
-              if (selectedSegment && event.currentTarget.currentTime >= selectedSegment.endTimeSeconds) {
-                event.currentTarget.pause();
-                event.currentTarget.currentTime = selectedSegment.startTimeSeconds;
-              }
-            }}
-          />
+
         </div>
       </div>
     </div>

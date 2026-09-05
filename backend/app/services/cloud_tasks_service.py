@@ -44,6 +44,7 @@ class CloudTasksService:
         relative_handler_path: str,
         payload: Dict[str, Any],
         task_name_suffix: Optional[str] = None,
+        dispatch_deadline_seconds: Optional[int] = None,
     ) -> str:
         """Creates an OIDC-authenticated HTTP task targeting the API service."""
         if not self.enabled:
@@ -54,7 +55,7 @@ class CloudTasksService:
             )
 
         from google.cloud import tasks_v2
-        from google.protobuf import timestamp_pb2  # noqa: F401  # kept for future scheduleTime
+        from google.protobuf import duration_pb2, timestamp_pb2  # noqa: F401  # kept for future scheduleTime
 
         client = self._get_client()
         parent = client.queue_path(
@@ -78,6 +79,8 @@ class CloudTasksService:
             }
 
         task: Dict[str, Any] = {"http_request": http_request}
+        if dispatch_deadline_seconds is not None:
+            task["dispatch_deadline"] = duration_pb2.Duration(seconds=dispatch_deadline_seconds)
         if task_name_suffix:
             task["name"] = f"{parent}/tasks/{task_name_suffix}"
 
