@@ -661,10 +661,26 @@ export function WorkspaceHome({
             <button type="button" onClick={onSignOut} className="shrink-0 text-sm text-slate-400">Sign out</button>
           </div>
 
-          <header className="mb-12">
-            <h1 className="text-4xl font-bold tracking-tight text-white">
-              Welcome, <span className="text-indigo-100">{authContext.user.display_name?.split(' ')[0] || 'User'}</span>
-            </h1>
+          <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-400">Your workspace</p>
+              <h1 className="mt-2 text-4xl font-bold tracking-tight text-white">
+                Welcome, <span className="text-indigo-100">{authContext.user.display_name?.split(' ')[0] || 'User'}</span>
+              </h1>
+              <p className="mt-2 text-sm text-slate-400">Create, review, and deliver every localized video from one place.</p>
+            </div>
+            {hasProjects ? (
+              <div className="flex gap-2">
+                <div className="rounded-xl border border-slate-700/70 bg-slate-900 px-4 py-2.5 text-right shadow-lg shadow-black/10">
+                  <p className="text-lg font-bold text-white">{projects.length}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Projects</p>
+                </div>
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-right">
+                  <p className="text-lg font-bold text-emerald-200">{projects.filter((project) => project.status === 'completed').length}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/70">Complete</p>
+                </div>
+              </div>
+            ) : null}
           </header>
 
           {/* Onboarding Tracker or Project Creation */}
@@ -752,7 +768,7 @@ export function WorkspaceHome({
               </div>
             </section>
           ) : (
-             <section className="mb-12 rounded-2xl border border-white/5 bg-white/5 p-6 shadow-sm">
+             <section className="mb-12 rounded-2xl border border-slate-700/70 bg-slate-900 p-6 shadow-xl shadow-black/15">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-lg font-semibold text-white">Create a new project</h2>
@@ -857,12 +873,19 @@ export function WorkspaceHome({
                     const progress = Math.max(0, Math.min(100, project.pipelineProgressPercent ?? 0));
 
                     return (
-                    <article key={project.id} className="group relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/60 transition duration-interface ease-interface hover:-translate-y-0.5 hover:border-white/20 hover:bg-slate-800/80 hover:shadow-panel motion-reduce:transform-none">
+                    <article key={project.id} className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-[0_14px_32px_-22px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.03] transition duration-interface ease-interface hover:-translate-y-1 hover:border-indigo-400/50 hover:shadow-[0_22px_45px_-24px_rgba(79,70,229,0.48)] motion-reduce:transform-none">
                       {/* HeyGen style Thumbnail Area */}
-                      <div className="relative aspect-video w-full bg-slate-950/80">
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-600">
+                      <div className={`relative aspect-video w-full border-b border-slate-700/70 ${
+                        isProcessing
+                          ? 'bg-[radial-gradient(circle_at_50%_20%,rgba(245,158,11,0.14),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                          : project.status === 'completed'
+                            ? 'bg-[radial-gradient(circle_at_50%_20%,rgba(16,185,129,0.13),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                            : 'bg-[radial-gradient(circle_at_50%_20%,rgba(99,102,241,0.14),transparent_48%),linear-gradient(145deg,#111827,#020617)]'
+                      }`}>
+                        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.035)_1px,transparent_1px)] bg-[size:24px_24px]" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
                           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                          {!project.mediaId ? <span className="text-xs font-medium">No media yet</span> : null}
+                          <span className="max-w-[75%] truncate text-xs font-medium">{project.mediaFilename || (project.mediaId ? 'Media ready' : 'No media yet')}</span>
                         </div>
                         
                         {/* Play button overlay on hover */}
@@ -908,7 +931,7 @@ export function WorkspaceHome({
                       </div>
 
                       {/* Card Content */}
-                      <div className="p-4">
+                      <div className="flex flex-1 flex-col bg-gradient-to-b from-slate-900 to-slate-900/95 p-4">
                         <Link href={`/editor/${project.id}`} className="block">
                           <h3 className="truncate text-base font-semibold text-white group-hover:text-indigo-300 transition">{project.name}</h3>
                         </Link>
@@ -918,6 +941,7 @@ export function WorkspaceHome({
                         <p className="gs-meta mt-1">
                           Updated {formatProjectDate(project.updatedAt)} | {project.sourceLanguage.toUpperCase()} to {project.targetLanguage.toUpperCase()}
                         </p>
+                        <div className="mt-auto pt-1">
                         {isProcessing ? (
                           <div className="mt-4 rounded-control border border-amber-400/20 bg-amber-400/5 p-3">
                             <div className="flex items-center justify-between gap-3 text-xs">
@@ -942,6 +966,12 @@ export function WorkspaceHome({
                             </Link>
                           </div>
                         ) : null}
+                        {!isProcessing && !isFailed ? (
+                          <Link href={`/editor/${project.id}`} className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 transition hover:text-indigo-200">
+                            Open project <span aria-hidden="true">&rarr;</span>
+                          </Link>
+                        ) : null}
+                        </div>
                       </div>
                     </article>
                     );

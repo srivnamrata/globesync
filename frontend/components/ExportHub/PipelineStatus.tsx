@@ -70,47 +70,55 @@ export function PipelineStatus({
   const visibleStages = mode === 'dub_only' ? stages.filter((stage) => stage.id !== 'lip_sync') : stages;
 
   return (
-    <section className="gs-panel space-y-4 p-4" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={status === 'queued' || status === 'in_progress' || status === 'processing'}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <section className="rounded-xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 shadow-lg shadow-slate-950/20" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={status === 'queued' || status === 'in_progress' || status === 'processing'}>
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <div className="flex min-w-[13rem] items-center justify-between gap-3 xl:block">
+          <div>
           <h2 id="pipeline-status-heading" className="text-sm font-bold text-white">
             {mode === 'upstream' ? 'Project processing status' : mode === 'dub_only' ? 'Dub build status' : 'Dub + Lip-Sync build status'}
           </h2>
           <p className="mt-1 text-xs text-slate-400">
             {isCompleted ? 'The build is complete.' : isFailed ? `Stopped during ${stageLabel(normalizedStage)}.` : `Currently ${stageLabel(normalizedStage)}.`}
           </p>
+          </div>
+          <StatusBadge tone={isFailed ? 'error' : isCompleted ? 'success' : 'processing'} className="xl:mt-2">
+            {isFailed ? 'Needs attention' : isCompleted ? 'Completed' : `${progress}% in progress`}
+          </StatusBadge>
         </div>
-        <StatusBadge tone={isFailed ? 'error' : isCompleted ? 'success' : 'processing'}>
-          {isFailed ? 'Needs attention' : isCompleted ? 'Completed' : `${progress}% in progress`}
-        </StatusBadge>
+
+        <div className="min-w-0 flex-1">
+          <ol className="flex gap-2 overflow-x-auto pb-1" aria-label="Build stages">
+            {visibleStages.map((stage, index) => {
+              const prerequisiteComplete = prerequisites[stage.id as keyof typeof prerequisites];
+              const isCurrent = stage.id === normalizedStage;
+              const isComplete = isCompleted || prerequisiteComplete || stages.findIndex((item) => item.id === normalizedStage) > stages.findIndex((item) => item.id === stage.id);
+              const tone = isCurrent && isFailed ? 'border-rose-400/50 bg-rose-400/10 text-rose-100' : isCurrent ? 'border-amber-400/50 bg-amber-400/10 text-amber-100' : isComplete ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100' : 'border-slate-700 bg-slate-950/50 text-slate-500';
+              return (
+                <li key={stage.id} className={`flex min-w-[7.5rem] flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${tone}`}>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current/30 text-[10px]">
+                    {isComplete ? '✓' : index + 1}
+                  </span>
+                  <span className="whitespace-nowrap">{stage.label}</span>
+                </li>
+              );
+            })}
+          </ol>
+
+          {!isCompleted && !isFailed && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuetext={`${progress}% during ${stageLabel(normalizedStage)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+              <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-[width] duration-interface ease-interface" style={{ width: `${Math.max(4, progress)}%` }} />
+            </div>
+          )}
+        </div>
       </div>
 
-      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Build stages">
-        {visibleStages.map((stage) => {
-          const prerequisiteComplete = prerequisites[stage.id as keyof typeof prerequisites];
-          const isCurrent = stage.id === normalizedStage;
-          const isComplete = isCompleted || prerequisiteComplete || stages.findIndex((item) => item.id === normalizedStage) > stages.findIndex((item) => item.id === stage.id);
-          const tone = isCurrent && isFailed ? 'border-rose-400/50 bg-rose-400/10 text-rose-100' : isCurrent ? 'border-amber-400/50 bg-amber-400/10 text-amber-100' : isComplete ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100' : 'border-slate-800 bg-slate-950/40 text-slate-500';
-          return (
-            <li key={stage.id} className={`rounded-control border px-3 py-2 text-xs font-semibold ${tone}`}>
-              <span className="mr-1.5 text-[10px] uppercase tracking-wide">{isCurrent && !isFailed ? 'Active' : isComplete ? 'Done' : 'Waiting'}</span>
-              {stage.label}
-            </li>
-          );
-        })}
-      </ol>
-
-      {!isCompleted && !isFailed && (
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuetext={`${progress}% during ${stageLabel(normalizedStage)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-          <div className="h-full rounded-full bg-indigo-500 transition-[width] duration-interface ease-interface" style={{ width: `${Math.max(4, progress)}%` }} />
-        </div>
-      )}
-
       {isFailed && (
-        <StatePanel title={`Safe recovery from ${stageLabel(normalizedStage)}`} tone="error">
-          {errorMessage ? `${errorMessage} ` : ''}{recoveryMessage(normalizedStage)}
-          {lastSuccessfulStage ? ` Last successful checkpoint: ${stageLabel(lastSuccessfulStage)}.` : ''}
-        </StatePanel>
+        <div className="mt-3">
+          <StatePanel title={`Safe recovery from ${stageLabel(normalizedStage)}`} tone="error">
+            {errorMessage ? `${errorMessage} ` : ''}{recoveryMessage(normalizedStage)}
+            {lastSuccessfulStage ? ` Last successful checkpoint: ${stageLabel(lastSuccessfulStage)}.` : ''}
+          </StatePanel>
+        </div>
       )}
     </section>
   );

@@ -1578,7 +1578,7 @@ export default function TranslationEditor() {
       )}
 
       {activeBuildJob && (
-        <div className="border-b border-slate-800 bg-slate-950/40 px-6 py-3">
+        <div className="border-b border-slate-800 bg-slate-950/40 px-4 py-2 sm:px-6">
           <PipelineStatus
             mode={activeBuildJob.render_mode ?? buildMode ?? 'dub_only'}
             status={activeBuildJob.status}
@@ -1639,9 +1639,9 @@ export default function TranslationEditor() {
       )}
 
       {/* Main Workspace Layout Grid */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
+      <div className="grid flex-1 grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,3fr)_minmax(380px,2fr)] xl:grid-cols-[minmax(0,1.45fr)_minmax(520px,1fr)]">
         {/* Left Grid: Transcript & Translation Edit Workspace */}
-        <div className="order-last flex flex-col overflow-hidden border-r border-slate-800 md:order-first md:col-span-2">
+        <div className="order-last flex min-w-0 flex-col overflow-hidden border-r border-slate-800 md:order-first">
           <div className="p-4 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Dialogue Segments Script</h2>
             <div className="flex items-center gap-3">
@@ -1874,8 +1874,35 @@ export default function TranslationEditor() {
         </div>
 
         {/* Right Grid: Video Preview Player */}
-        <div className="order-first flex min-h-0 flex-col justify-between overflow-y-auto bg-slate-950 p-6 md:order-last">
-          <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-900 text-slate-500">
+        <aside className="order-first flex min-h-0 min-w-0 flex-col overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 md:order-last xl:p-5" aria-label="Media preview and timeline">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-400">Media monitor</p>
+              <h2 className="mt-1 text-sm font-semibold text-white">Project preview</h2>
+            </div>
+            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-1">
+              <button
+                type="button"
+                onClick={() => setComparisonMode('original')}
+                disabled={!sourceMediaUrl?.startsWith('http')}
+                aria-pressed={comparisonMode === 'original'}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'original' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+              >
+                Original
+              </button>
+              <button
+                type="button"
+                onClick={() => setComparisonMode('dubbed')}
+                disabled={!renderedVideoUrl}
+                aria-pressed={comparisonMode === 'dubbed'}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'dubbed' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+              >
+                Dubbed
+              </button>
+            </div>
+          </div>
+
+          <div className="relative flex aspect-video min-h-[240px] w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-black text-slate-500 shadow-lg shadow-black/30">
             {comparisonMode === 'dubbed' && !renderedVideoUrl && sourceMediaUrl ? (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 p-4 text-center backdrop-blur-[2px]">
                 <p className="text-sm font-semibold text-slate-200">Dubbed preview not ready, showing original video.</p>
@@ -1890,7 +1917,7 @@ export default function TranslationEditor() {
                 src={(comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)) ?? undefined}
                 controls
                 aria-label={`${comparisonMode === 'original' ? currentProject.sourceLanguage.toUpperCase() : currentProject.targetLanguage.toUpperCase()} video preview`}
-                className={`h-full w-full ${comparisonMode === 'dubbed' && !renderedVideoUrl ? 'opacity-50' : ''}`}
+                className={`h-full w-full object-contain ${comparisonMode === 'dubbed' && !renderedVideoUrl ? 'opacity-50' : ''}`}
                 onError={() => {
                    if (comparisonMode === 'original') { void refreshSourceMediaUrl(); }
                    else { void refreshRenderedVideoUrl(); }
@@ -1903,7 +1930,7 @@ export default function TranslationEditor() {
             )}
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="mt-4 shrink-0 rounded-xl border border-slate-700/70 bg-slate-900 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Export Output</h3>
@@ -1950,7 +1977,7 @@ export default function TranslationEditor() {
             </div>
           </div>
 
-          <div className="border border-slate-800 rounded-xl p-4 bg-slate-900/30 mt-6 flex-1 flex flex-col justify-between gap-4">
+          <div className="mt-4 flex min-h-[310px] flex-1 shrink-0 flex-col justify-between gap-4 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Segment Timeline</h3>
               <span className="text-xs text-slate-500">Click a segment bar to seek the preview player.</span>
@@ -2065,25 +2092,6 @@ export default function TranslationEditor() {
               </button>
             </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">Compare audio</span>
-                <button
-                  type="button"
-                  onClick={() => setComparisonMode('original')}
-                  disabled={!sourceMediaUrl?.startsWith('http')}
-                  aria-pressed={comparisonMode === 'original'}
-                  className={`rounded border px-2 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'original' ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                >
-                  Original
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComparisonMode('dubbed')}
-                  disabled={!renderedVideoUrl}
-                  aria-pressed={comparisonMode === 'dubbed'}
-                  className={`rounded border px-2 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'dubbed' ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                >
-                  Dubbed
-                </button>
                 <button
                   type="button"
                   onClick={playComparisonSegment}
@@ -2094,10 +2102,8 @@ export default function TranslationEditor() {
                 </button>
               </div>
           </div>
-
-
+        </aside>
         </div>
       </div>
-    </div>
   );
 }
