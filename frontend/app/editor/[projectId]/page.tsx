@@ -20,6 +20,17 @@ import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { getTextDirection, normalizeLanguageTag } from '../../../utils/textDirection';
+import {
+  buildDraftSaveOptions,
+  buildProjectFromDraft,
+  enqueueSerialized,
+  formatTranslationCompletionMessage,
+  mergeDraftWithProject,
+  pollForTranslations,
+  sanitizeDraftArtifactReferences,
+  saveDraftWithRecovery,
+  toPersistableFilename,
+} from '../../../utils/editorWorkflow';
 
 type ActiveBuildJob = {
   job_id: string;
@@ -30,61 +41,6 @@ type ActiveBuildJob = {
   last_successful_stage?: string | null;
   error_message?: string | null;
 };
-
-const mergeDraftWithProject = (draft: HeygenXFile, project?: Project | null): HeygenXFile => ({
-  ...draft,
-  projectMetadata: {
-    ...draft.projectMetadata,
-    id: project?.id ?? draft.projectMetadata.id,
-    name: project?.name ?? draft.projectMetadata.name,
-    sourceLanguage: project?.sourceLanguage ?? draft.projectMetadata.sourceLanguage,
-    targetLanguage: project?.targetLanguage ?? draft.projectMetadata.targetLanguage,
-    createdAt: project?.createdAt ?? draft.projectMetadata.createdAt,
-    updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
-  },
-  mediaReferences: {
-    ...draft.mediaReferences,
-    transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
-    mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
-    videoFilename: project?.mediaFilename ?? draft.mediaReferences.videoFilename,
-  },
-});
-
-const buildProjectFromDraft = (draft: HeygenXFile, project?: Project | null): Project => ({
-  id: project?.id ?? draft.projectMetadata.id,
-  name: project?.name ?? draft.projectMetadata.name,
-  sourceLanguage: project?.sourceLanguage ?? draft.projectMetadata.sourceLanguage,
-  targetLanguage: project?.targetLanguage ?? draft.projectMetadata.targetLanguage,
-  status: project?.status ?? 'draft',
-  createdAt: project?.createdAt ?? draft.projectMetadata.createdAt,
-  updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
-  transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
-  mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
-  mediaFilename: project?.mediaFilename ?? draft.mediaReferences.videoFilename,
-  currentLipsyncJobId: project?.currentLipsyncJobId,
-  lastRenderedVideoPath: project?.lastRenderedVideoPath,
-});
-
-function toPersistableFilename(value?: string): string {
-  if (!value) return 'source_video.mp4';
-  try {
-    const url = new URL(value);
-    const filename = url.pathname.split('/').filter(Boolean).pop();
-    return filename || 'source_video.mp4';
-  } catch {
-    return value;
-  }
-}
-
-function sanitizeDraftArtifactReferences(draft: HeygenXFile): HeygenXFile {
-  return {
-    ...draft,
-    mediaReferences: {
-      ...draft.mediaReferences,
-      videoFilename: toPersistableFilename(draft.mediaReferences.videoFilename),
-    },
-  };
-}
 
 export default function TranslationEditor() {
   const params = useParams();
@@ -549,48 +505,50 @@ export default function TranslationEditor() {
     };
 
     const saveDraft = async () => {
-      if (projectService.hasProjectApiScope() && !remoteDraftConflictRef.current) {
-        try {
+      const outcome = await saveDraftWithRecovery({
+        draft: nextDraft,
+        hasProjectApiScope: projectService.hasProjectApiScope(),
+        hasActiveConflict: remoteDraftConflictRef.current,
+        saveRemote: async () => {
           await projectService.bootstrapAuthContext();
-          const remoteDraft = await projectService.saveProjectDraft(project.id, nextDraft, {
-            version: remoteDraftVersionRef.current ?? 1,
-            baseProjectUpdatedAt: baseProjectUpdatedAtOverride ?? baseProjectUpdatedAt,
-            ...(checkpointReason ? { checkpointReason } : {}),
-          });
-          remoteDraftVersionRef.current = remoteDraft.version;
-          setBaseProjectUpdatedAt(remoteDraft.base_project_updated_at ?? project.updatedAt);
-          remoteDraftConflictRef.current = false;
-          setHasRemoteDraftConflict(false);
-          await storageService.saveDraft(nextDraft);
-          setDirtySegments(new Set());
-          return;
-        } catch (error) {
-          const conflictDetail = getProjectDraftConflictDetail(error);
-          if (conflictDetail) {
-            remoteDraftVersionRef.current = conflictDetail.server_version;
-            remoteDraftConflictRef.current = true;
-            setHasRemoteDraftConflict(true);
-            setUploadMessage('The saved project draft changed while this editor was working. Autosave is paused until you choose which draft to keep. Your translated segments remain saved.');
-            await storageService.saveDraft(nextDraft);
-            console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', conflictDetail);
-            return;
-          }
+          return projectService.saveProjectDraft(
+            project.id,
+            nextDraft,
+            buildDraftSaveOptions(
+              remoteDraftVersionRef.current,
+              baseProjectUpdatedAt,
+              baseProjectUpdatedAtOverride,
+              checkpointReason,
+            ),
+          );
+        },
+        saveLocal: (draft) => storageService.saveDraft(draft),
+        getConflictDetail: getProjectDraftConflictDetail,
+      });
 
-          console.warn('Failed to persist project draft to backend; kept local IndexedDB draft as fallback:', error);
-        }
+      if (outcome.status === 'remote') {
+        remoteDraftVersionRef.current = outcome.version;
+        setBaseProjectUpdatedAt(outcome.baseProjectUpdatedAt ?? project.updatedAt);
+        remoteDraftConflictRef.current = false;
+        setHasRemoteDraftConflict(false);
+        setDirtySegments(new Set());
+        return;
       }
 
-      await storageService.saveDraft(nextDraft);
+      if (outcome.status === 'conflict') {
+        remoteDraftVersionRef.current = outcome.detail.server_version;
+        remoteDraftConflictRef.current = true;
+        setHasRemoteDraftConflict(true);
+        setUploadMessage('The saved project draft changed while this editor was working. Autosave is paused until you choose which draft to keep. Your translated segments remain saved.');
+        console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', outcome.detail);
+        return;
+      }
+
       setDirtySegments(new Set());
       setLastSavedAt(new Date());
     };
 
-    const queuedSave = draftSaveQueueRef.current.then(saveDraft, saveDraft);
-    draftSaveQueueRef.current = queuedSave.then(
-      () => undefined,
-      () => undefined,
-    );
-    await queuedSave;
+    await enqueueSerialized(draftSaveQueueRef, saveDraft);
   }, [currentProject, segments, translations, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
@@ -969,32 +927,6 @@ export default function TranslationEditor() {
   // Keep the existing local cache, but also push draft changes to the backend when scope is configured.
   useProjectAutoSave(persistDraft);
 
-  const pollForTranslations = async (
-    transcriptId: string,
-    targetLanguage: string,
-    expectedCount: number,
-  ): Promise<TranslatedSegment[]> => {
-    let latestTranslations: TranslatedSegment[] = [];
-
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      try {
-        const fetchedTranslations = await projectService.fetchTranslations(transcriptId, targetLanguage);
-        if (fetchedTranslations.length > 0) {
-          latestTranslations = fetchedTranslations;
-        }
-        if (fetchedTranslations.length >= expectedCount) {
-          return fetchedTranslations;
-        }
-      } catch (error) {
-        console.warn('Translation polling attempt failed:', error);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-    }
-
-    return latestTranslations;
-  };
-
   const syncTranslationsBeforeBuild = async (): Promise<TranslatedSegment[]> => {
     const localTranslations = Object.values(translations).filter(
       (translation) => translation.id && translation.translatedText.trim().length > 0,
@@ -1257,11 +1189,12 @@ export default function TranslationEditor() {
         );
         setUploadMessage(translationJob.message || 'Translation queued. Waiting for translated segments…');
 
-        const fetchedTranslations = await pollForTranslations(
-          job.transcript_id,
-          updatedProject.targetLanguage,
-          loadedSegments.length,
-        );
+        const fetchedTranslations = await pollForTranslations({
+          transcriptId: job.transcript_id,
+          targetLanguage: updatedProject.targetLanguage,
+          expectedCount: loadedSegments.length,
+          fetchTranslations: (id, language) => projectService.fetchTranslations(id, language),
+        });
 
         if (fetchedTranslations.length > 0) {
           setTranslations(fetchedTranslations);
@@ -1275,14 +1208,11 @@ export default function TranslationEditor() {
             mediaId: media.media_id,
             baseProjectUpdatedAtOverride: updatedProject.updatedAt,
           });
-          setUploadMessage(
-            fetchedTranslations.length >= loadedSegments.length
-              ? `Translation complete — ${fetchedTranslations.length} segments loaded.`
-              : `Translation is still running — ${fetchedTranslations.length} of ${loadedSegments.length} segments are available.`
-          );
-        } else {
-          setUploadMessage('Translation was queued, but no translated segments were available yet. Please retry in a few moments.');
         }
+        setUploadMessage(formatTranslationCompletionMessage(
+          fetchedTranslations.length,
+          loadedSegments.length,
+        ));
         break;
       }
     } catch (error) {
