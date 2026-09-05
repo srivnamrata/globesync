@@ -67,6 +67,7 @@ export function PipelineStatus({
     transcribe: hasTranscript && segmentCount > 0,
     translate: segmentCount > 0 && translationCount >= segmentCount,
   };
+  const visibleStages = mode === 'dub_only' ? stages.filter((stage) => stage.id !== 'lip_sync') : stages;
 
   return (
     <section className="gs-panel space-y-4 p-4" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={status === 'queued' || status === 'in_progress' || status === 'processing'}>
@@ -85,7 +86,7 @@ export function PipelineStatus({
       </div>
 
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Build stages">
-        {stages.map((stage) => {
+        {visibleStages.map((stage) => {
           const prerequisiteComplete = prerequisites[stage.id as keyof typeof prerequisites];
           const isCurrent = stage.id === normalizedStage;
           const isComplete = isCompleted || prerequisiteComplete || stages.findIndex((item) => item.id === normalizedStage) > stages.findIndex((item) => item.id === stage.id);

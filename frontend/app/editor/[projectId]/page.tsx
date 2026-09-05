@@ -835,6 +835,7 @@ export default function TranslationEditor() {
     if (!seg) return;
     setSegmentBusy((prev) => ({ ...prev, [segId]: 'retranslating' }));
     setActiveActionMenu(null);
+    setUploadMessage('Retranslating segment…');
     try {
       const idx = segments.indexOf(seg);
       const result = await projectService.retranslateSegment({
@@ -930,8 +931,14 @@ export default function TranslationEditor() {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setActiveActionMenu(null);
     };
+    const handleOutsideClick = () => setActiveActionMenu(null);
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    // Capture phase so this runs before the menu toggle button's own click handler.
+    window.addEventListener('click', handleOutsideClick, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('click', handleOutsideClick, true);
+    };
   }, [activeActionMenu]);
 
   useEffect(() => {
@@ -1078,6 +1085,17 @@ export default function TranslationEditor() {
           setCurrentProject(refreshedProject);
         } else {
           await applyProjectPatch({ status: 'completed' });
+        }
+
+        // The build generates new audio per segment; refresh translations so
+        // "No audio" badges reflect the audio the backend just produced.
+        if (projectForBuild.transcriptId) {
+          const refreshedTranslations = await projectService
+            .fetchTranslations(projectForBuild.transcriptId, projectForBuild.targetLanguage)
+            .catch(() => null);
+          if (refreshedTranslations && refreshedTranslations.length > 0) {
+            setTranslations(refreshedTranslations);
+          }
         }
 
         if (!withLipSync) {
@@ -1856,7 +1874,7 @@ export default function TranslationEditor() {
         </div>
 
         {/* Right Grid: Video Preview Player */}
-        <div className="order-first flex flex-col justify-between overflow-hidden bg-slate-950 p-6 md:order-last">
+        <div className="order-first flex min-h-0 flex-col justify-between overflow-y-auto bg-slate-950 p-6 md:order-last">
           <div className="border border-slate-800 rounded-xl bg-slate-900 aspect-video flex items-center justify-center text-slate-500 overflow-hidden">
             {renderedVideoUrl ? (
               <video
