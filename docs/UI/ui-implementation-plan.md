@@ -8,7 +8,7 @@ This document translates the current UI review into a sequenced implementation p
 * Split the public app landing page from the signed-in project workspace so first impressions feel product-grade
 * Make project status, processing state, and recovery paths obvious
 * Improve precision editing for transcript, translation, dubbing, and lip-sync review
-* Raise product polish to a level that can be credibly pitched against tools such as HeyGen and ElevenLabs
+* Raise product polish to a level that can be credibly pitched against leading localization platforms
 * Preserve current backend-first architecture and workspace-scoped project model while improving the user experience layer
 
 ## Product positioning goals

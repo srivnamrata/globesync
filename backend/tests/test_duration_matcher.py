@@ -38,7 +38,7 @@ def test_generate_cache_key_is_stable_for_identical_inputs() -> None:
         text="Hello world",
         src="en",
         tgt="es",
-        provider="openai",
+        provider="google",
         original_duration_ms=1000,
         speaker_tag="Speaker 1",
         previous_context="Greeting",
@@ -50,7 +50,7 @@ def test_generate_cache_key_is_stable_for_identical_inputs() -> None:
         text="Hello world",
         src="en",
         tgt="es",
-        provider="openai",
+        provider="google",
         original_duration_ms=1000,
         speaker_tag="Speaker 1",
         previous_context="Greeting",
@@ -60,7 +60,7 @@ def test_generate_cache_key_is_stable_for_identical_inputs() -> None:
     )
 
     assert key_a == key_b
-    assert key_a.startswith("cache:trans:openai:en:es:")
+    assert key_a.startswith("cache:trans:google:en:es:")
 
 
 def test_generate_cache_key_changes_for_duration_sensitive_inputs() -> None:
@@ -70,7 +70,7 @@ def test_generate_cache_key_changes_for_duration_sensitive_inputs() -> None:
         "text": "Hello world",
         "src": "en",
         "tgt": "es",
-        "provider": "openai",
+        "provider": "google",
         "original_duration_ms": 1000,
         "speaker_tag": "Speaker 1",
         "previous_context": "Greeting",

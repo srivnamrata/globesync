@@ -1,76 +1,54 @@
-import uuid
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.models.media import MediaFile
-from app.models.transcript import Transcript, TranscriptSegment
-from app.services.deepgram_service import deepgram_stt
+from app.schemas.transcription_schema import SegmentResponse, WordDetail
 from app.utils.transcript_parser import transcript_parser
 
 
 # =============================================================================
 # 1. TRANSCRIPT PARSER & FORMATTER TESTS
 # =============================================================================
-def test_transcript_parser_with_deepgram_paragraphs():
-    mock_payload = {
-        "results": {
-            "channels": [
-                {
-                    "alternatives": [
-                        {
-                            "transcript": "Hello world. This is speaker two speaking.",
-                            "confidence": 0.98,
-                            "words": [
-                                {"word": "Hello", "punctuated_word": "Hello", "start": 0.0, "end": 0.5, "confidence": 0.99, "speaker": 0},
-                                {"word": "world", "punctuated_word": "world.", "start": 0.6, "end": 1.1, "confidence": 0.98, "speaker": 0},
-                                {"word": "This", "punctuated_word": "This", "start": 2.0, "end": 2.2, "confidence": 0.97, "speaker": 1},
-                                {"word": "is", "punctuated_word": "is", "start": 2.3, "end": 2.4, "confidence": 0.98, "speaker": 1},
-                                {"word": "speaker", "punctuated_word": "speaker", "start": 2.5, "end": 2.8, "confidence": 0.99, "speaker": 1},
-                                {"word": "two", "punctuated_word": "two", "start": 2.9, "end": 3.1, "confidence": 0.97, "speaker": 1},
-                                {"word": "speaking", "punctuated_word": "speaking.", "start": 3.2, "end": 3.8, "confidence": 0.99, "speaker": 1},
-                            ],
-                            "paragraphs": {
-                                "paragraphs": [
-                                    {
-                                        "speaker": 0,
-                                        "sentences": [{"text": "Hello world.", "start": 0.0, "end": 1.1}],
-                                    },
-                                    {
-                                        "speaker": 1,
-                                        "sentences": [{"text": "This is speaker two speaking.", "start": 2.0, "end": 3.8}],
-                                    },
-                                ]
-                            },
-                        }
-                    ]
-                }
-            ]
-        }
-    }
-
-    segments, full_text, avg_conf, word_count, speaker_count = transcript_parser.parse_deepgram_response(mock_payload)
-
-    assert len(segments) == 2
-    assert segments[0].speaker == "Speaker 1"
-    assert segments[0].text == "Hello world."
-    assert segments[0].start_time == 0.0
-    assert segments[0].end_time == 1.1
-    assert len(segments[0].words) == 2
-
-    assert segments[1].speaker == "Speaker 2"
-    assert segments[1].text == "This is speaker two speaking."
-    assert segments[1].start_time == 2.0
-    assert segments[1].end_time == 3.8
-
-    assert speaker_count == 2
-    assert word_count == 7
-    assert avg_conf >= 0.95
-
-
 def test_transcript_export_formats():
-    mock_payload = deepgram_stt._generate_mock_deepgram_response("test.wav", "en")
-    segments, _, _, _, _ = transcript_parser.parse_deepgram_response(mock_payload)
+    segments = [
+        SegmentResponse(
+            start_time=0.5,
+            end_time=4.1,
+            duration=3.6,
+            speaker="Speaker 1",
+            text="Hello and welcome to the global launch presentation.",
+            confidence=0.98,
+            words=[
+                WordDetail(
+                    text="Hello",
+                    start=0.5,
+                    end=0.9,
+                    confidence=0.99,
+                    speaker="Speaker 1",
+                )
+            ],
+            sequence_order=0,
+        ),
+        SegmentResponse(
+            start_time=5.0,
+            end_time=7.4,
+            duration=2.4,
+            speaker="Speaker 2",
+            text="Thank you for joining us today.",
+            confidence=0.98,
+            words=[
+                WordDetail(
+                    text="Thank",
+                    start=5.0,
+                    end=5.3,
+                    confidence=0.99,
+                    speaker="Speaker 2",
+                )
+            ],
+            sequence_order=1,
+        ),
+    ]
 
     # 1. Test Dialogue Export Format [00:00:00] Speaker 1: "..."
     dialogue_txt = transcript_parser.export_to_dialogue_format(segments)
@@ -93,6 +71,8 @@ def test_transcript_export_formats():
 # =============================================================================
 @pytest.mark.asyncio
 async def test_start_transcription_endpoint():
+    import uuid
+
     transport = ASGITransport(app=app)
     mock_media_id = uuid.uuid4()
     mock_transcript_id = uuid.uuid4()

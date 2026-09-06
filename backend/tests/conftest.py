@@ -26,11 +26,6 @@ def make_duration_match_result(
 
 
 @pytest.fixture
-def openai_chat_completion_response():
-    return ("Bienvenidos a la presentación global.", 12, 34, 0.123456)
-
-
-@pytest.fixture
 def google_translate_text_response():
     return "Bienvenidos a la presentación global."
 
@@ -45,7 +40,7 @@ def translation_cache_hit_payload():
 
 
 @pytest.fixture
-def openai_batch_results():
+def translation_batch_results():
     return [
         make_duration_match_result("Hola", 1200, 1180, 0.983, confidence_score=0.97),
         make_duration_match_result(

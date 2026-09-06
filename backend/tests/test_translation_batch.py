@@ -64,7 +64,7 @@ def make_segment(text: str, duration_seconds: float, speaker_tag: str = "Speaker
     )
 
 
-def test_translate_segments_batch_async_passes_context_and_builds_translations(openai_batch_results) -> None:
+def test_translate_segments_batch_async_passes_context_and_builds_translations(translation_batch_results) -> None:
     segments = [
         make_segment("Hello there", 1.2, "Speaker 1"),
         make_segment("How are you", 1.6, "Speaker 2"),
@@ -72,7 +72,7 @@ def test_translate_segments_batch_async_passes_context_and_builds_translations(o
     ]
     project_id = uuid.uuid4()
 
-    duration_matcher_mock = AsyncMock(side_effect=openai_batch_results)
+    duration_matcher_mock = AsyncMock(side_effect=translation_batch_results)
     translate_segments_batch_async = load_translate_segments_batch_async(duration_matcher_mock)
 
     translations = asyncio.run(
