@@ -125,10 +125,18 @@ def run_lipsync_project_pipeline(
         if (
             job.workspace_id != media_file.workspace_id
             or job.workspace_id != transcript.workspace_id
-            or job.project_id != media_file.project_id
-            or job.project_id != transcript.project_id
         ):
-            raise ValueError("Lip-sync job inputs do not share the same project scope.")
+            raise ValueError("Lip-sync job inputs do not share the same workspace scope.")
+
+        if (
+            media_file.project_id is not None
+            and transcript.project_id is not None
+            and media_file.project_id != transcript.project_id
+        ):
+            raise ValueError("Lip-sync source media and transcript do not share the same project scope.")
+
+        if job.project_id is None:
+            job.project_id = media_file.project_id or transcript.project_id
 
         project = db.query(Project).filter(Project.id == job.project_id).first() if job.project_id else None
 

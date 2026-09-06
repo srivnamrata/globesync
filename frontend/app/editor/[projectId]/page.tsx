@@ -316,6 +316,12 @@ export default function TranslationEditor() {
   }, [projectId, router, setCurrentProject, setSegments, setTranslations]);
 
   useEffect(() => {
+    setComparisonMode('original');
+    setActiveBuildJob(null);
+    setLipSyncStatuses({});
+  }, [projectId]);
+
+  useEffect(() => {
     void loadProjectData();
   }, [loadProjectData]);
 

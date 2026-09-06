@@ -435,6 +435,112 @@ def test_run_lipsync_project_pipeline_completes_and_records_checkpoints(tmp_path
     assert db.closed == 1
 
 
+def test_run_lipsync_project_pipeline_allows_shared_media_and_transcript_for_a_different_job_project(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.tasks.lipsync_tasks.settings.PROCESSED_MEDIA_DIR", str(tmp_path))
+
+    job_id = uuid.uuid4()
+    media_file_id = uuid.uuid4()
+    transcript_id = uuid.uuid4()
+    source_project_id = uuid.uuid4()
+    render_project_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+    segments = [
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            transcript_id=transcript_id,
+            speaker_tag="Speaker 1",
+            start_time_seconds=0.0,
+            end_time_seconds=1.0,
+            duration_seconds=1.0,
+            text="One",
+            sequence_order=1,
+        ),
+    ]
+    job, media, transcript, project, translations = _lipsync_entities(
+        job_id,
+        media_file_id,
+        transcript_id,
+        source_project_id,
+        workspace_id,
+        segments,
+    )
+    job.project_id = render_project_id
+    project.id = render_project_id
+    monkeypatch.setattr("app.tasks.lipsync_tasks.Translation", _DummyTranslation)
+    db = _FakeSession(
+        first_values={
+            LipSyncJob: job,
+            MediaFile: media,
+            Transcript: transcript,
+            Project: project,
+        },
+        all_values={
+            TranscriptSegment: segments,
+            _DummyTranslation: translations,
+        },
+    )
+
+    def download_file(source_key, destination_path, **kwargs):
+        _write_output(destination_path, b"downloaded")
+
+    def extract_video_segment(**kwargs):
+        _write_output(kwargs["output_segment_path"], b"segment")
+
+    def extract_frame_at_timestamp(video_path, timestamp_seconds, output_jpg_path):
+        _write_output(output_jpg_path, b"frame")
+
+    def render_segment_lipsync(**kwargs):
+        _write_output(kwargs["output_rendered_path"], b"rendered")
+        return kwargs["output_rendered_path"]
+
+    def reconstruct_video_with_lip_sync(**kwargs):
+        _write_output(kwargs["output_final_video_path"], b"final-mux")
+        return kwargs["output_final_video_path"]
+
+    fake_task_instance = SimpleNamespace(request=SimpleNamespace(id="celery-task-4"), retry=MagicMock(side_effect=_RetrySignal("retry")))
+
+    with (
+        patch("app.tasks.lipsync_tasks.joinedload", side_effect=lambda attr: attr),
+        patch("app.tasks.lipsync_tasks.SyncSession", return_value=db),
+        patch("app.tasks.lipsync_tasks.publish_lipsync_event"),
+        patch("app.tasks.lipsync_tasks.storage_service.download_file", new=AsyncMock(side_effect=download_file)),
+        patch("app.tasks.lipsync_tasks.storage_service.upload_file", new=AsyncMock(return_value="gs://bucket/final.mp4")),
+        patch("app.tasks.lipsync_tasks.video_processor.extract_video_segment", new=AsyncMock(side_effect=extract_video_segment)),
+        patch("app.tasks.lipsync_tasks.video_processor.extract_frame_at_timestamp", new=AsyncMock(side_effect=extract_frame_at_timestamp)),
+        patch("app.tasks.lipsync_tasks.replicate_lipsync.render_segment_lipsync", new=AsyncMock(side_effect=render_segment_lipsync)),
+        patch("app.tasks.lipsync_tasks.video_reconstructor.reconstruct_video_with_lip_sync", new=AsyncMock(side_effect=reconstruct_video_with_lip_sync)),
+        patch("app.tasks.lipsync_tasks.face_detector.analyze_frame", return_value=SimpleNamespace(
+            face_detected=True,
+            is_suitable_for_lipsync=True,
+            confidence=0.91,
+            bbox={"x": 1},
+            landmarks={"nose": [1, 2]},
+            head_rotation_deg=1.5,
+        )),
+        patch("app.tasks.lipsync_tasks.av_sync_service.measure_av_drift_ms", new=AsyncMock(return_value=12.5)),
+        patch("app.tasks.lipsync_tasks.quality_metrics.evaluate_lipsync_quality", return_value={"overall_quality_score": 0.9876}),
+        patch("app.tasks.lipsync_tasks.gpu_scheduler.estimate_eta_seconds", return_value=42.0),
+        patch("app.tasks.lipsync_tasks.run_project_tts_pipeline", return_value={"status": "completed"}),
+    ):
+        result = run_lipsync_project_pipeline(
+            str(job_id),
+            str(media_file_id),
+            str(transcript_id),
+            "fr",
+            request_id="new-request",
+            task_id="new-task",
+            idempotency_key="new-idempotency",
+            task_instance=fake_task_instance,
+        )
+
+    assert result["status"] == "completed"
+    assert job.status == "completed"
+    assert project.current_lipsync_job_id == job.id
+    assert job.output_video_gcs_path == f"exports/{render_project_id}/fr/{job.id}_{job.render_mode}_translated_master.mp4"
+    assert db.rollbacks == 0
+    assert db.closed == 1
+
+
 def test_run_lipsync_project_pipeline_marks_failed_and_retries_on_tts_error(tmp_path, monkeypatch):
     monkeypatch.setattr("app.tasks.lipsync_tasks.settings.PROCESSED_MEDIA_DIR", str(tmp_path))
 
