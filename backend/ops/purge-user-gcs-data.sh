@@ -22,20 +22,158 @@
 #  OBJECT_URIS_FILE="$WORK_DIR/object_uris.txt"
 # For an actual delete after reviewing the preview files:
 # APPLY=1 bash ./backend/ops/purge-user-gcs-data.sh
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ID="${PROJECT_ID:-project-794c406e-c0ab-4a50-8e9}"
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-${PROJECT_ID}:asia-south1:translation-pg}"
 RAW_BUCKET_NAME="${RAW_BUCKET_NAME:-${PROJECT_ID}-media-raw}"
 EXPORTS_BUCKET_NAME="${EXPORTS_BUCKET_NAME:-${PROJECT_ID}-media-exports}"
 RAW_BUCKET_URI="gs://${RAW_BUCKET_NAME}"
 EXPORTS_BUCKET_URI="gs://${EXPORTS_BUCKET_NAME}"
 DATABASE_URL="${DATABASE_URL:-${SYNC_DATABASE_URL:-}}"
 DB_SECRET_NAME="${DB_SECRET_NAME:-translation-sync-database-url}"
+DB_TCP_HOST="${DB_TCP_HOST:-127.0.0.1}"
+DB_TCP_PORT="${DB_TCP_PORT:-5432}"
+CLOUD_SQL_PROXY_BIN="${CLOUD_SQL_PROXY_BIN:-}"
 APPLY="${APPLY:-0}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRIPT_DIR}/.purge-user-gcs-data}"
 RUN_LABEL="${RUN_LABEL:-$(date +%Y%m%d-%H%M%S)}"
 WORK_DIR="${OUTPUT_ROOT}/${RUN_LABEL}"
+CLOUD_SQL_PROXY_PID=""
+PROXY_LOG_FILE=""
+
+cleanup() {
+  if [[ -n "${CLOUD_SQL_PROXY_PID}" ]] && kill -0 "${CLOUD_SQL_PROXY_PID}" >/dev/null 2>&1; then
+    kill "${CLOUD_SQL_PROXY_PID}" >/dev/null 2>&1 || true
+    wait "${CLOUD_SQL_PROXY_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+print_help() {
+  sed -n '1,16p' "$0"
+}
+
+database_url_uses_cloudsql_socket() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlparse, parse_qs
+url = sys.argv[1]
+parsed = urlparse(url)
+query = parse_qs(parsed.query)
+hosts = query.get("host", [])
+uses_socket = any(h.startswith("/cloudsql/") for h in hosts)
+print("1" if uses_socket else "0")
+PY
+}
+
+extract_cloudsql_instance_from_url() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlparse, parse_qs
+url = sys.argv[1]
+parsed = urlparse(url)
+query = parse_qs(parsed.query)
+for host in query.get("host", []):
+    if host.startswith("/cloudsql/"):
+        print(host.removeprefix("/cloudsql/"))
+        break
+PY
+}
+
+rewrite_database_url_for_tcp() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import sys
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote
+url, host, port = sys.argv[1:4]
+parsed = urlparse(url)
+query_items = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k.lower() != "host"]
+username = parsed.username or ""
+password = parsed.password or ""
+auth = quote(username, safe="")
+if parsed.password is not None:
+    auth += ":" + quote(password, safe="")
+auth += "@"
+netloc = f"{auth}{host}:{port}"
+print(urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, urlencode(query_items), parsed.fragment)))
+PY
+}
+
+wait_for_local_port() {
+  python3 - "$1" "$2" <<'PY'
+import socket, sys, time
+host = sys.argv[1]
+port = int(sys.argv[2])
+last_error = None
+for _ in range(60):
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            sys.exit(0)
+    except OSError as exc:
+        last_error = exc
+        time.sleep(1)
+print(last_error or f"Unable to connect to {host}:{port}", file=sys.stderr)
+sys.exit(1)
+PY
+}
+
+ensure_cloud_sql_proxy() {
+  if [[ -n "${CLOUD_SQL_PROXY_BIN}" ]]; then
+    echo "${CLOUD_SQL_PROXY_BIN}"
+    return 0
+  fi
+
+  if command -v cloud-sql-proxy >/dev/null 2>&1; then
+    command -v cloud-sql-proxy
+    return 0
+  fi
+
+  local proxy_path="${WORK_DIR}/cloud-sql-proxy"
+  if [[ ! -x "${proxy_path}" ]]; then
+    echo "Downloading cloud-sql-proxy to ${proxy_path}" >&2
+    curl -fsSL https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.linux.amd64 -o "${proxy_path}"
+    chmod +x "${proxy_path}"
+  fi
+  echo "${proxy_path}"
+}
+
+prepare_database_url() {
+  local uses_socket instance proxy_bin
+  uses_socket="$(database_url_uses_cloudsql_socket "${DATABASE_URL}")"
+  if [[ "${uses_socket}" != "1" ]]; then
+    return 0
+  fi
+
+  instance="$(extract_cloudsql_instance_from_url "${DATABASE_URL}")"
+  if [[ -z "${instance}" ]]; then
+    instance="${CLOUDSQL_INSTANCE}"
+  fi
+
+  proxy_bin="$(ensure_cloud_sql_proxy)"
+  PROXY_LOG_FILE="${WORK_DIR}/cloud-sql-proxy.log"
+  echo "Starting Cloud SQL Auth Proxy for ${instance} on ${DB_TCP_HOST}:${DB_TCP_PORT}" >&2
+  "${proxy_bin}" --address "${DB_TCP_HOST}" --port "${DB_TCP_PORT}" "${instance}" >"${PROXY_LOG_FILE}" 2>&1 &
+  CLOUD_SQL_PROXY_PID=$!
+
+  if ! wait_for_local_port "${DB_TCP_HOST}" "${DB_TCP_PORT}"; then
+    echo "ERROR: Cloud SQL Auth Proxy did not become ready." >&2
+    if [[ -f "${PROXY_LOG_FILE}" ]]; then
+      echo "Proxy log:" >&2
+      cat "${PROXY_LOG_FILE}" >&2 || true
+    fi
+    exit 1
+  fi
+
+  DATABASE_URL="$(rewrite_database_url_for_tcp "${DATABASE_URL}" "${DB_TCP_HOST}" "${DB_TCP_PORT}")"
+}
+
+trap cleanup EXIT
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  print_help
+  exit 0
+fi
 
 if [[ $# -gt 0 ]]; then
   EMAIL_1="$1"
@@ -43,11 +181,6 @@ if [[ $# -gt 0 ]]; then
 else
   EMAIL_1="${EMAIL_1:-srivnamrata@gmail.com}"
   EMAIL_2="${EMAIL_2:-roboplaylab@gmail.com}"
-fi
-
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '1,14p' "$0"
-  exit 0
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
@@ -76,7 +209,11 @@ mkdir -p "$WORK_DIR"
 PROJECT_IDS_FILE="$WORK_DIR/project_ids.txt"
 OBJECT_URIS_FILE="$WORK_DIR/object_uris.txt"
 
+prepare_database_url
+
 echo "Using database connection source: ${DB_SECRET_NAME} secret or environment"
+
+echo "Resolved database connection for psql."
 
 PSQL_ARGS=("$DATABASE_URL" -v ON_ERROR_STOP=1 -v email_1="$EMAIL_1")
 if [[ -n "$EMAIL_2" ]]; then
