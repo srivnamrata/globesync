@@ -81,7 +81,8 @@ export function PipelineStatus({
   translationCount,
   segmentCount,
 }: PipelineStatusProps) {
-  const normalizedStage = currentStage.replace(/-/g, '_').toLowerCase() as PipelineStage;
+  const rawStage = currentStage.replace(/-/g, '_').toLowerCase() as PipelineStage;
+  const normalizedStage = mode === 'dub_only' && rawStage === 'lip_sync' ? 'export' : rawStage;
   const isFailed = status === 'failed';
   const isCompleted = status === 'completed';
   const progress = Math.max(0, Math.min(100, progressPercent));

@@ -220,6 +220,58 @@ describe('TranslationEditor workflow', () => {
     expect(screen.getByRole('button', { name: 'Dubbed' })).toBeDisabled();
   });
 
+  it('does not leave a queued message behind when lip-sync is unavailable', async () => {
+    const user = userEvent.setup();
+    const projectWithAssets: Project = {
+      ...baseProject,
+      mediaId: 'media-1',
+      transcriptId: 'transcript-1',
+      targetLanguage: 'es',
+    };
+    const draftWithAssets = {
+      ...draftWithContent(),
+      mediaReferences: {
+        ...draftWithContent().mediaReferences,
+        mediaId: 'media-1',
+        transcriptId: 'transcript-1',
+      },
+    };
+
+    service.getProject.mockResolvedValue(projectWithAssets);
+    service.getProjectDraft.mockResolvedValue({
+      draft: draftWithAssets,
+      version: 2,
+      baseProjectUpdatedAt: projectWithAssets.updatedAt,
+    });
+    service.getMedia.mockResolvedValue({
+      media_id: 'media-1',
+      filename: 'source.mp4',
+      media_type: 'video/mp4',
+      filesize_bytes: 1024,
+      duration_seconds: 2,
+      status: 'ready',
+      storage_path: 'gs://bucket/source.mp4',
+      created_at: projectWithAssets.createdAt,
+      media_url: 'https://cdn.test/source.mp4',
+    });
+    service.fetchTranslations.mockResolvedValue([loadedTranslation]);
+    service.updateTranslationSegment.mockResolvedValue(loadedTranslation);
+    service.updateProject.mockResolvedValue(projectWithAssets);
+    service.triggerLipSync.mockRejectedValue(new ApiError(
+      'Dub + Lip-Sync is not configured for this deployment. Add a valid Replicate API token, or use Dub only.',
+      503,
+      { detail: 'Dub + Lip-Sync is not configured for this deployment. Add a valid Replicate API token, or use Dub only.' },
+    ));
+
+    render(<TranslationEditor />);
+    await screen.findByRole('heading', { name: 'Launch film' });
+
+    await user.click(screen.getByRole('button', { name: 'Dub + Lip-Sync' }));
+
+    await screen.findByText('Dub + Lip-Sync is not configured for this deployment. Ask an administrator to add the Replicate credential, or use Dub only.');
+    expect(screen.queryByText('Queuing dub and lip-sync pipeline…')).not.toBeInTheDocument();
+  });
+
   it('preserves local edits on a genuine conflict and supports both resolution choices', async () => {
     const user = userEvent.setup();
     render(<TranslationEditor />);

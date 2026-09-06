@@ -103,7 +103,12 @@ def run_lipsync_project_pipeline(
     idempotency_key = idempotency_key or f"lipsync:{job_id_str}:{target_language}:{model_preference}"
     start_time = time.time()
 
-    publish_lipsync_event(job_id_str, "in_progress", 5, "Initializing neural lip-sync video pipeline...")
+    build_label = "lip-sync" if enable_lipsync else "dub"
+    segment_stage = "lip_sync" if enable_lipsync else "export"
+    segment_activity = "Rendering neural lip-sync" if enable_lipsync else "Building dubbed video"
+    recovery_stage = "lip_sync" if enable_lipsync else "voice"
+
+    publish_lipsync_event(job_id_str, "in_progress", 5, f"Initializing {build_label} video pipeline...")
 
     db: Session = SyncSession()
     temp_dir = settings.PROCESSED_MEDIA_DIR
@@ -164,7 +169,7 @@ def run_lipsync_project_pipeline(
         persist_lipsync_checkpoint(db, job, stage="voice", progress_percent=10, successful_stage="voice")
 
         # 1. Download source video
-        persist_lipsync_checkpoint(db, job, stage="lip_sync", progress_percent=10)
+        persist_lipsync_checkpoint(db, job, stage=segment_stage, progress_percent=10)
         publish_lipsync_event(job_id_str, "in_progress", 10, "Downloading high-resolution source video...")
         asyncio.run(
             storage_service.download_file(
@@ -208,12 +213,12 @@ def run_lipsync_project_pipeline(
             eta = gpu_scheduler.estimate_eta_seconds(len(segments), idx, elapsed)
             
             pct = 15 + int((idx / max(1, len(segments))) * 65)
-            persist_lipsync_checkpoint(db, job, stage="lip_sync", progress_percent=pct)
+            persist_lipsync_checkpoint(db, job, stage=segment_stage, progress_percent=pct)
             publish_lipsync_event(
                 job_id_str,
                 "in_progress",
                 pct,
-                f"Rendering neural lip-sync for segment {idx + 1}/{len(segments)}...",
+                f"{segment_activity} for segment {idx + 1}/{len(segments)}...",
                 eta_seconds=eta,
             )
 
@@ -322,7 +327,7 @@ def run_lipsync_project_pipeline(
             job.completed_segments = idx + 1
             db.commit()
 
-        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=88, successful_stage="lip_sync")
+        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=88, successful_stage=recovery_stage)
 
         # Step 4: Assemble Master Dubbed Audio for full muxing
         master_dubbed_key = f"master_dubbed/{str(job.project_id or transcript_id)}/{target_language}_dubbed.wav"
@@ -361,7 +366,7 @@ def run_lipsync_project_pipeline(
         )
 
         # Step 6: Upload Final Export Video to Cloud Storage
-        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=96, successful_stage="lip_sync")
+        persist_lipsync_checkpoint(db, job, stage="export", progress_percent=96, successful_stage=recovery_stage)
         publish_lipsync_event(job_id_str, "in_progress", 96, "Uploading final master video to cloud storage...")
         # A job-owned immutable key prevents a later dub mode from replacing an earlier output.
         export_storage_key = (
@@ -398,7 +403,7 @@ def run_lipsync_project_pipeline(
             job_id_str,
             "completed",
             100,
-            f"Neural lip-sync video rendering completed successfully in {execution_dur}s (Quality Score: {avg_quality * 100:.1f}%).",
+            f"{('Neural lip-sync' if enable_lipsync else 'Dub')} video rendering completed successfully in {execution_dur}s (Quality Score: {avg_quality * 100:.1f}%).",
         )
 
         return {

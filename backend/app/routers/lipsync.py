@@ -194,7 +194,11 @@ async def render_lipsync_project(
     return LipSyncDispatchResponse(
         job_id=job.id,
         status="queued",
-        message="Neural lip-sync video rendering pipeline queued.",
+        message=(
+            "Dub + Lip-Sync pipeline queued."
+            if req.enable_lipsync
+            else "Dub-only pipeline queued."
+        ),
     )
 
 

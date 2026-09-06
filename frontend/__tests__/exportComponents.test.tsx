@@ -179,6 +179,25 @@ describe('PipelineStatus', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
+  it('maps legacy lip-sync stage copy to export for dub-only builds', () => {
+    render(
+      <PipelineStatus
+        mode="dub_only"
+        status="in_progress"
+        progressPercent={42}
+        currentStage="lip_sync"
+        hasMedia
+        hasTranscript
+        translationCount={1}
+        segmentCount={1}
+      />,
+    );
+
+    expect(screen.getByText('Currently Export.')).toBeInTheDocument();
+    expect(screen.getByText('Exporting')).toBeInTheDocument();
+    expect(screen.queryByText('Lip-sync')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['transcribe', 'retry transcription'],
     ['translate', 'retry translation'],

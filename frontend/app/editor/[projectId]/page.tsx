@@ -1012,7 +1012,7 @@ export default function TranslationEditor() {
       }
 
       setBuildState('building');
-      setUploadMessage(withLipSync ? 'Queuing dub and lip-sync pipeline…' : 'Queuing dub-only pipeline…');
+      setUploadMessage(withLipSync ? 'Checking Dub + Lip-Sync availability…' : 'Queuing dub-only pipeline…');
 
       const trigger = withLipSync ? projectService.triggerLipSync : projectService.triggerDubOnly;
       const job = await trigger.call(
@@ -1022,6 +1022,7 @@ export default function TranslationEditor() {
         effectiveProjectForBuild.targetLanguage,
         effectiveProjectForBuild.id,
       );
+      setUploadMessage(withLipSync ? 'Queuing dub and lip-sync pipeline…' : 'Queuing dub-only pipeline…');
       setActiveBuildJob({
         job_id: job.job_id,
         render_mode: withLipSync ? 'dub_and_lipsync' : 'dub_only',
