@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.database import async_engine
+from app.core.database import Base, async_engine
 from app.routers import auth, internal_tasks, lipsync, projects, transcription, translation, tts, upload
 from app.utils.error_codes import ErrorCode, MediaAppException
 
@@ -106,15 +106,78 @@ async def health_check():
     }
 
 
+def _expected_table_names() -> list[str]:
+    return sorted(table.name for table in Base.metadata.sorted_tables)
+
+
 # Readiness probe — only dependencies required to accept traffic
 @app.get("/healthz", tags=["Health"])
 async def readiness_check():
     try:
+        expected_tables = _expected_table_names()
         async with async_engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+            await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+
+            missing_table_privileges = []
+            for table_name in expected_tables:
+                result = await conn.execute(
+                    text(
+                        """
+                        SELECT has_table_privilege(current_user, :table_name, 'SELECT,INSERT,UPDATE,DELETE')
+                        """
+                    ),
+                    {"table_name": table_name},
+                )
+                if not result.scalar():
+                    missing_table_privileges.append(table_name)
+
+            sequence_result = await conn.execute(
+                text(
+                    """
+                    SELECT sequence_name
+                    FROM information_schema.sequences
+                    WHERE sequence_schema = 'public'
+                      AND NOT has_sequence_privilege(
+                          current_user,
+                          format('%I.%I', sequence_schema, sequence_name),
+                          'USAGE,SELECT,UPDATE'
+                      )
+                    ORDER BY sequence_name
+                    """
+                )
+            )
+            missing_sequence_privileges = list(sequence_result.scalars())
+
+        if missing_table_privileges or missing_sequence_privileges:
+            checks = {
+                "database": "failed",
+                "alembic_version": "ok",
+                "table_privileges": "ok" if not missing_table_privileges else "failed",
+                "sequence_privileges": "ok" if not missing_sequence_privileges else "failed",
+            }
+            detail = {
+                "missing_table_privileges": missing_table_privileges,
+                "missing_sequence_privileges": missing_sequence_privileges,
+            }
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "not_ready",
+                    "checks": checks,
+                    "detail": detail if settings.DEBUG else "database access incomplete",
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                },
+            )
+
         return {
             "status": "ready",
-            "checks": {"database": "ok"},
+            "checks": {
+                "database": "ok",
+                "alembic_version": "ok",
+                "table_privileges": "ok",
+                "sequence_privileges": "ok",
+            },
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     except Exception as exc:
@@ -122,7 +185,12 @@ async def readiness_check():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "status": "not_ready",
-                "checks": {"database": "failed"},
+                "checks": {
+                    "database": "failed",
+                    "alembic_version": "failed",
+                    "table_privileges": "unknown",
+                    "sequence_privileges": "unknown",
+                },
                 "detail": str(exc) if settings.DEBUG else "database unavailable",
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
