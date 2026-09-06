@@ -712,9 +712,9 @@ export default function TranslationEditor() {
         ...(sourceLanguage !== undefined ? { sourceLanguage } : {}),
         ...(targetLanguage !== undefined
           ? {
-              targetLanguage,
-              activeTranslationLanguage: targetLanguage,
-            }
+            targetLanguage,
+            activeTranslationLanguage: targetLanguage,
+          }
           : {}),
         ...(mediaId !== undefined ? { mediaId } : {}),
         ...(transcriptId !== undefined ? { transcriptId } : {}),
@@ -994,6 +994,18 @@ export default function TranslationEditor() {
       }
 
       const projectForBuild = (await applyProjectPatch({ status: 'processing' })) ?? currentProject;
+      const canonicalProjectForBuild = projectService.hasProjectApiScope()
+        ? await projectService.getProject(projectForBuild.id).catch(() => null)
+        : null;
+      const effectiveProjectForBuild = canonicalProjectForBuild ?? projectForBuild;
+
+      if (canonicalProjectForBuild) {
+        setCurrentProject(canonicalProjectForBuild);
+      }
+
+      if (!effectiveProjectForBuild.mediaId || !effectiveProjectForBuild.transcriptId) {
+        throw new Error('Reload the latest workspace draft before building the dubbed preview.');
+      }
 
       setBuildState('building');
       setUploadMessage(withLipSync ? 'Queuing dub and lip-sync pipeline…' : 'Queuing dub-only pipeline…');
@@ -1001,10 +1013,10 @@ export default function TranslationEditor() {
       const trigger = withLipSync ? projectService.triggerLipSync : projectService.triggerDubOnly;
       const job = await trigger.call(
         projectService,
-        projectForBuild.mediaId!,
-        projectForBuild.transcriptId!,
-        projectForBuild.targetLanguage,
-        projectForBuild.id,
+        effectiveProjectForBuild.mediaId,
+        effectiveProjectForBuild.transcriptId,
+        effectiveProjectForBuild.targetLanguage,
+        effectiveProjectForBuild.id,
       );
       setActiveBuildJob({
         job_id: job.job_id,
@@ -1037,9 +1049,9 @@ export default function TranslationEditor() {
 
         // The build generates new audio per segment; refresh translations so
         // "No audio" badges reflect the audio the backend just produced.
-        if (projectForBuild.transcriptId) {
+        if (effectiveProjectForBuild.transcriptId) {
           const refreshedTranslations = await projectService
-            .fetchTranslations(projectForBuild.transcriptId, projectForBuild.targetLanguage)
+            .fetchTranslations(effectiveProjectForBuild.transcriptId, effectiveProjectForBuild.targetLanguage)
             .catch(() => null);
           if (refreshedTranslations && refreshedTranslations.length > 0) {
             setTranslations(refreshedTranslations);
@@ -1296,11 +1308,10 @@ export default function TranslationEditor() {
               onClick={handleManualSave}
               variant="secondary"
               size="sm"
-              className={`${
-                dirtySegments.size > 0
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
-                  : 'text-slate-400'
-              }`}
+              className={`${dirtySegments.size > 0
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                : 'text-slate-400'
+                }`}
               title="Save changes (Ctrl+S)"
             >
               {dirtySegments.size > 0 ? `Save (${dirtySegments.size})` : 'Saved'}
@@ -1368,45 +1379,45 @@ export default function TranslationEditor() {
           role="presentation"
           onClick={() => setIsHistoryOpen(false)}
         >
-        <aside
-          className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="version-history-heading"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="flex items-center justify-between">
-            <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
-            <Button
-              onClick={() => setIsHistoryOpen(false)}
-              variant="quiet"
-              size="sm"
-              className="min-h-7 px-2 text-slate-400"
-              aria-label="Close version history"
-              autoFocus
-            >
-              Close
-            </Button>
-          </div>
-          {isLoadingHistory ? (
-            <p className="mt-4 text-sm text-slate-400">Loading versions...</p>
-          ) : projectVersions.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-400">No saved versions yet.</p>
-          ) : (
-            <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto">
-              {projectVersions.map((version) => (
-                <li key={version.version} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                  <div className="flex items-center justify-between text-sm text-slate-200">
-                    <span>Version {version.version}</span>
-                    <span className="text-xs text-slate-500">
-                      {formatDateTime(version.created_at)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+          <aside
+            className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="version-history-heading"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
+              <Button
+                onClick={() => setIsHistoryOpen(false)}
+                variant="quiet"
+                size="sm"
+                className="min-h-7 px-2 text-slate-400"
+                aria-label="Close version history"
+                autoFocus
+              >
+                Close
+              </Button>
+            </div>
+            {isLoadingHistory ? (
+              <p className="mt-4 text-sm text-slate-400">Loading versions...</p>
+            ) : projectVersions.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">No saved versions yet.</p>
+            ) : (
+              <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+                {projectVersions.map((version) => (
+                  <li key={version.version} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                    <div className="flex items-center justify-between text-sm text-slate-200">
+                      <span>Version {version.version}</span>
+                      <span className="text-xs text-slate-500">
+                        {formatDateTime(version.created_at)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
         </div>
       )}
 
@@ -1424,17 +1435,17 @@ export default function TranslationEditor() {
             aria-label="Project outputs"
             onClick={(event) => event.stopPropagation()}
           >
-          <div className="mb-2 flex justify-end">
-            <Button
-              onClick={() => setIsExportHistoryOpen(false)}
-              variant="secondary"
-              size="sm"
-              autoFocus
-            >
-              Close exports
-            </Button>
-          </div>
-          <ExportHistory projectId={currentProject.id} />
+            <div className="mb-2 flex justify-end">
+              <Button
+                onClick={() => setIsExportHistoryOpen(false)}
+                variant="secondary"
+                size="sm"
+                autoFocus
+              >
+                Close exports
+              </Button>
+            </div>
+            <ExportHistory projectId={currentProject.id} />
           </aside>
         </div>
       )}
@@ -1453,24 +1464,24 @@ export default function TranslationEditor() {
             aria-label="Export readiness"
             onClick={(event) => event.stopPropagation()}
           >
-          <div className="mb-2 flex justify-end">
-            <Button
-              onClick={() => setIsExportReadinessOpen(false)}
-              variant="secondary"
-              size="sm"
-              autoFocus
-            >
-              Close readiness
-            </Button>
-          </div>
-          <ExportReadiness
-            hasDraftConflict={hasRemoteDraftConflict}
-            hasMedia={Boolean(currentProject.mediaId)}
-            hasTranscript={Boolean(currentProject.transcriptId)}
-            dirtySegmentCount={dirtySegments.size}
-            segments={segments}
-            translations={translations}
-          />
+            <div className="mb-2 flex justify-end">
+              <Button
+                onClick={() => setIsExportReadinessOpen(false)}
+                variant="secondary"
+                size="sm"
+                autoFocus
+              >
+                Close readiness
+              </Button>
+            </div>
+            <ExportReadiness
+              hasDraftConflict={hasRemoteDraftConflict}
+              hasMedia={Boolean(currentProject.mediaId)}
+              hasTranscript={Boolean(currentProject.transcriptId)}
+              dirtySegmentCount={dirtySegments.size}
+              segments={segments}
+              translations={translations}
+            />
           </aside>
         </div>
       )}
@@ -1616,15 +1627,14 @@ export default function TranslationEditor() {
                     onClick={() => timeline.setSelectedSegmentId(seg.id)}
                     role="group"
                     aria-label={`Segment by ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                    className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${
-                      timeline.selectedSegmentId === seg.id
-                        ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
-                        : dirtySegments.has(seg.id)
+                    className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${timeline.selectedSegmentId === seg.id
+                      ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+                      : dirtySegments.has(seg.id)
                         ? 'border-amber-500/50 bg-amber-950/20'
                         : hasRisk
-                        ? 'border-red-800/50 bg-red-950/10'
-                        : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
-                    }`}
+                          ? 'border-red-800/50 bg-red-950/10'
+                          : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
+                      }`}
                   >
                     {/* Left column: source transcript */}
                     <div>
@@ -1654,11 +1664,10 @@ export default function TranslationEditor() {
                                 void videoRef.current.play();
                               }
                             }}
-                            className={`text-[10px] px-2 py-0.5 rounded transition font-semibold uppercase tracking-wider ${
-                              loopSegmentId === seg.id
-                                ? 'bg-amber-500/30 text-amber-200'
-                                : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
-                            }`}
+                            className={`text-[10px] px-2 py-0.5 rounded transition font-semibold uppercase tracking-wider ${loopSegmentId === seg.id
+                              ? 'bg-amber-500/30 text-amber-200'
+                              : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
+                              }`}
                             aria-pressed={loopSegmentId === seg.id}
                             title="Loop this segment"
                           >
@@ -1782,9 +1791,8 @@ export default function TranslationEditor() {
                         lang={normalizeLanguageTag(currentProject.targetLanguage)}
                         dir={getTextDirection(currentProject.targetLanguage)}
                         aria-label={`Translation in ${currentProject.targetLanguage.toUpperCase()} for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                        className={`w-full break-words bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${
-                          dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
-                        }`}
+                        className={`w-full break-words bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
+                          }`}
                         value={trans?.translatedText || ''}
                         onChange={(e) => handleTranslationChange(seg.id, e.target.value)}
                         placeholder={isMissingTranslation ? 'No translation yet — use ⋯ to retranslate' : 'Edit translation…'}
@@ -1834,8 +1842,8 @@ export default function TranslationEditor() {
           <div className="relative flex aspect-video min-h-[240px] w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-black text-slate-500 shadow-lg shadow-black/30">
             {comparisonMode === 'dubbed' && !renderedVideoUrl && sourceMediaUrl ? (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 p-4 text-center backdrop-blur-[2px]">
-                <p className="text-sm font-semibold text-slate-200">Dubbed preview not ready, showing original video.</p>
-                <p className="mt-2 text-xs text-slate-400">Run a Build to generate the dubbed video.</p>
+                <p className="text-sm font-semibold text-slate-200">Dubbed preview not ready yet. Click Original to keep reviewing the source video.</p>
+                <p className="mt-2 text-xs text-slate-400">Run Build when you're ready to generate the dubbed preview.</p>
               </div>
             ) : null}
 
@@ -1848,8 +1856,8 @@ export default function TranslationEditor() {
                 aria-label={`${comparisonMode === 'original' ? currentProject.sourceLanguage.toUpperCase() : currentProject.targetLanguage.toUpperCase()} video preview`}
                 className={`h-full w-full object-contain ${comparisonMode === 'dubbed' && !renderedVideoUrl ? 'opacity-50' : ''}`}
                 onError={() => {
-                   if (comparisonMode === 'original') { void refreshSourceMediaUrl(); }
-                   else { void refreshRenderedVideoUrl(); }
+                  if (comparisonMode === 'original') { void refreshSourceMediaUrl(); }
+                  else { void refreshRenderedVideoUrl(); }
                 }}
               >
                 Your browser does not support embedded video playback.
@@ -1866,7 +1874,7 @@ export default function TranslationEditor() {
                 <p className="mt-2 text-sm text-slate-300">
                   {renderedVideoUrl
                     ? `Your ${currentProject.targetLanguage.toUpperCase()} dubbed video preview is ready.`
-                    : 'Run dub and lip-sync to generate a preview and downloadable output.'}
+                    : 'Run Dub only or Dub & Lip-Sync to generate a preview and downloadable output.'}
                 </p>
               </div>
               {renderedVideoUrl && (
@@ -1974,11 +1982,10 @@ export default function TranslationEditor() {
                         aria-label={`Seek to segment ${timeline.formatTimecode(segment.startTimeSeconds)} by ${segment.speakerTag}`}
                         aria-current={isActive ? 'true' : undefined}
                         title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
-                        className={`min-w-[2rem] rounded-md border transition ${
-                          isActive
-                            ? 'border-indigo-400 bg-indigo-500/40'
-                            : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
-                        }`}
+                        className={`min-w-[2rem] rounded-md border transition ${isActive
+                          ? 'border-indigo-400 bg-indigo-500/40'
+                          : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
+                          }`}
                         style={{ width: `${widthPercent}%`, height: `${Math.max(30, Math.min(96, 28 + segment.durationSeconds * 18))}px` }}
                       />
                     );
@@ -2020,19 +2027,19 @@ export default function TranslationEditor() {
                 )}
               </button>
             </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={playComparisonSegment}
-                  disabled={!selectedSegment || (!sourceMediaUrl && !renderedVideoUrl)}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Play selected segment
-                </button>
-              </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={playComparisonSegment}
+                disabled={!selectedSegment || (!sourceMediaUrl && !renderedVideoUrl)}
+                className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Play selected segment
+              </button>
+            </div>
           </div>
         </aside>
-        </div>
       </div>
+    </div>
   );
 }

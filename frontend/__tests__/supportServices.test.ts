@@ -42,6 +42,8 @@ describe('user-facing error mapping', () => {
     [new Error('auth bootstrap is not configured'), 'Sign-in is temporarily unavailable'],
     [new Error('Google Identity Services failed'), 'Google sign-in is not available'],
     [new Error('Project API scope is not configured'), 'workspace is still being prepared'],
+    [new Error('Lip-sync job inputs do not share the same project scope.'), 'needs a quick refresh before Dub only can run'],
+    [new Error('Reload the latest workspace draft before building the dubbed preview.'), 'needs a quick refresh before Dub only can run'],
     [new Error('Failed to fetch'), 'could not reach the service'],
   ])('maps operational failures to actionable copy', (error, expected) => {
     expect(mapUserFacingError(error, 'fallback')).toContain(expected);

@@ -59,6 +59,10 @@ export function mapUserFacingError(error: unknown, fallbackMessage: string): str
     return 'Your workspace is still being prepared. Sign in again to refresh your GlobeSync workspace context.';
   }
 
+  if (containsAny(message, ['project scope', 'reload the latest workspace draft before building the dubbed preview'])) {
+    return 'This project needs a quick refresh before Dub only can run. Reload the saved workspace draft, then try again.';
+  }
+
   if (containsAny(message, ['failed to fetch', 'networkerror', 'network error'])) {
     return 'GlobeSync could not reach the service. Check your connection and try again.';
   }
