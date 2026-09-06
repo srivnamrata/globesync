@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "alternatives": [
+        {
+          "transcript": "Hello and welcome to the global launch presentation. Thank you for joining us today.",
+          "confidence": 0.982,
+          "words": [
+            {"word": "Hello", "startTime": "0.5s", "endTime": "0.9s", "confidence": 0.99, "speakerTag": 1},
+            {"word": "and", "startTime": "1.0s", "endTime": "1.1s", "confidence": 0.98, "speakerTag": 1},
+            {"word": "welcome", "startTime": "1.2s", "endTime": "1.7s", "confidence": 0.99, "speakerTag": 1},
+            {"word": "to", "startTime": "1.8s", "endTime": "1.9s", "confidence": 0.97, "speakerTag": 1},
+            {"word": "the", "startTime": "2.0s", "endTime": "2.1s", "confidence": 0.98, "speakerTag": 1},
+            {"word": "global", "startTime": "2.2s", "endTime": "2.6s", "confidence": 0.98, "speakerTag": 1},
+            {"word": "launch", "startTime": "2.7s", "endTime": "3.1s", "confidence": 0.97, "speakerTag": 1},
+            {"word": "presentation.", "startTime": "3.2s", "endTime": "4.1s", "confidence": 0.98, "speakerTag": 1},
+            {"word": "Thank", "startTime": "5.0s", "endTime": "5.3s", "confidence": 0.99, "speakerTag": 2},
+            {"word": "you", "startTime": "5.4s", "endTime": "5.6s", "confidence": 0.98, "speakerTag": 2},
+            {"word": "for", "startTime": "5.7s", "endTime": "5.9s", "confidence": 0.97, "speakerTag": 2},
+            {"word": "joining", "startTime": "6.0s", "endTime": "6.4s", "confidence": 0.99, "speakerTag": 2},
+            {"word": "us", "startTime": "6.5s", "endTime": "6.7s", "confidence": 0.98, "speakerTag": 2},
+            {"word": "today.", "startTime": "6.8s", "endTime": "7.4s", "confidence": 0.98, "speakerTag": 2}
+          ]
+        }
+      ]
+    }
+  ]
+}

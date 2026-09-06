@@ -66,7 +66,7 @@ audio-video-translation-app/
 │   │   │   ├── media_schema.py           # Pydantic v2 schemas for chunked & direct media upload
 │   │   │   ├── transcription_schema.py   # Pydantic schemas for STT, diarization & word timestamps
 │   │   │   ├── translation_schema.py     # Pydantic schemas for batch translation & duration matching
-│   │   │   └── tts_schema.py             # Pydantic schemas for voice cloning & speech synthesis
+│   │   │   └── tts_schema.py             # Pydantic schemas for speech synthesis
 │   │   ├── services/
 │   │   │   ├── storage_service.py        # S3 / MinIO / GCS multipart storage abstraction layer
 │   │   │   ├── media_service.py          # FFprobe stream inspector & FFmpeg thumbnail generator
@@ -88,7 +88,7 @@ audio-video-translation-app/
 │   │   ├── tasks/
 │   │   │   ├── transcription_tasks.py    # Celery tasks for demuxing, preprocessing & STT
 │   │   │   ├── translation_tasks.py      # Celery tasks for batch translation & duration matching
-│   │   │   └── tts_tasks.py              # Celery tasks for voice cloning, TTS & master audio mixing
+│   │   │   └── tts_tasks.py              # Celery tasks for TTS and master audio mixing
 │   │   ├── routers/
 │   │   │   ├── upload.py                 # Direct & resumable chunked upload endpoints
 │   │   │   ├── transcription.py          # Transcription start, lookup, export & SSE stream
@@ -99,7 +99,7 @@ audio-video-translation-app/
 │   │   ├── test_upload_pipeline.py       # Tests for chunked upload, magic bytes, and file validators
 │   │   ├── test_transcription_pipeline.py# Tests for STT parser, diarization, and subtitle exports
 │   │   ├── test_translation_pipeline.py  # Tests for speech rate, duration matching & translation API
-│   │   └── test_tts_pipeline.py          # Tests for voice cloning, prosody extraction & retiming
+│   │   └── test_tts_pipeline.py          # Tests for speech synthesis and retiming
 │   ├── .env.example                      # Environment variables template
 │   └── requirements.txt                  # Python dependencies
 └── README.md

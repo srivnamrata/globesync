@@ -53,10 +53,6 @@ class Settings(BaseSettings):
     TEMP_UPLOAD_DIR: str = os.path.join(os.getcwd(), "tmp", "uploads")
     PROCESSED_MEDIA_DIR: str = os.path.join(os.getcwd(), "tmp", "processed")
 
-    # Speech-to-Text provider selection
-    STT_PRIMARY_PROVIDER: str = "google"
-    STT_FALLBACK_PROVIDER: str = "deepgram"
-
     # Google Cloud Speech-to-Text
     GOOGLE_STT_LANGUAGE_CODE: str = "en-US"
     GOOGLE_STT_MODEL: str = "latest_long"
@@ -67,20 +63,8 @@ class Settings(BaseSettings):
     GOOGLE_STT_USE_ENHANCED: bool = True
     GOOGLE_STT_MAX_SPEAKERS: int = 8
 
-    # AI & Speech-to-Text Services (Deepgram Nova-2)
-    DEEPGRAM_API_KEY: Optional[str] = None
-    DEEPGRAM_MODEL: str = "nova-2"
-    DEEPGRAM_TIER: str = "enhanced"
-    DEEPGRAM_SMART_FORMAT: bool = True
-    DEEPGRAM_DIARIZE: bool = True
-    DEEPGRAM_PUNCTUATE: bool = True
-    DEEPGRAM_UTTERANCES: bool = True
-
     # Active translation engine.
     TRANSLATION_PROVIDER: str = "google"
-    OPENAI_API_KEY: str = "test_openai_api_key_placeholder"
-    OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_TEMPERATURE: float = 0.3
     TRANSLATION_DURATION_TOLERANCE: float = 0.10  # ±10% tolerance
     TRANSLATION_MAX_ITERATIONS: int = 3
     TRANSLATION_CACHE_TTL_SECONDS: int = 2592000  # 30 days
