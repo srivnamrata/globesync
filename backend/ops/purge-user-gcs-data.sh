@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # Reusable GlobeSync GCS cleanup for user-owned media and derived artifacts.
 # Usage:
-#   DATABASE_URL='postgresql://...' APPLY=1 ./deploy/purge-user-gcs-data.sh \
+#   DATABASE_URL='postgresql://...' APPLY=1 bash backend/ops/purge-user-gcs-data.sh \
 #     srivnamrata@gmail.com roboplaylab@gmail.com
 #
 # Defaults:
 # * With no CLI args, the script targets the two known cleanup emails.
 # * With APPLY unset or APPLY=0, the script only previews matching URIs and project IDs.
+# * Preview files are persisted under backend/ops/.purge-user-gcs-data/ by default.
 #
 # Important:
-# * Run this before the database purge, or keep the exported URI/project files if you need
-#   to execute the delete step later.
+# * Run this before the database purge so the database can still resolve project IDs and object paths.
+# * Review the generated object_uris.txt and project_ids.txt files before running with APPLY=1.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ID="${PROJECT_ID:-project-794c406e-c0ab-4a50-8e9}"
 RAW_BUCKET_NAME="${RAW_BUCKET_NAME:-${PROJECT_ID}-media-raw}"
 EXPORTS_BUCKET_NAME="${EXPORTS_BUCKET_NAME:-${PROJECT_ID}-media-exports}"
@@ -21,6 +23,9 @@ RAW_BUCKET_URI="gs://${RAW_BUCKET_NAME}"
 EXPORTS_BUCKET_URI="gs://${EXPORTS_BUCKET_NAME}"
 DATABASE_URL="${DATABASE_URL:-${SYNC_DATABASE_URL:-}}"
 APPLY="${APPLY:-0}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRIPT_DIR}/.purge-user-gcs-data}"
+RUN_LABEL="${RUN_LABEL:-$(date +%Y%m%d-%H%M%S)}"
+WORK_DIR="${OUTPUT_ROOT}/${RUN_LABEL}"
 
 if [[ $# -gt 0 ]]; then
   EMAIL_1="$1"
@@ -28,6 +33,11 @@ if [[ $# -gt 0 ]]; then
 else
   EMAIL_1="${EMAIL_1:-srivnamrata@gmail.com}"
   EMAIL_2="${EMAIL_2:-roboplaylab@gmail.com}"
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  sed -n '1,14p' "$0"
+  exit 0
 fi
 
 if [[ -z "${DATABASE_URL}" ]]; then
@@ -45,10 +55,11 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "$WORK_DIR"' EXIT
+mkdir -p "$WORK_DIR"
 PROJECT_IDS_FILE="$WORK_DIR/project_ids.txt"
 OBJECT_URIS_FILE="$WORK_DIR/object_uris.txt"
+
+gcloud config set project "$PROJECT_ID" >/dev/null
 
 PSQL_ARGS=("$DATABASE_URL" -v ON_ERROR_STOP=1 -v email_1="$EMAIL_1")
 if [[ -n "$EMAIL_2" ]]; then
@@ -197,6 +208,7 @@ PROJECT_COUNT=$(grep -c . "$PROJECT_IDS_FILE" || true)
 OBJECT_COUNT=$(grep -c . "$OBJECT_URIS_FILE" || true)
 
 echo "Prepared GlobeSync GCS cleanup inputs"
+echo "  Project: ${PROJECT_ID}"
 echo "  Email 1: ${EMAIL_1}"
 if [[ -n "$EMAIL_2" ]]; then
   echo "  Email 2: ${EMAIL_2}"
@@ -220,6 +232,7 @@ cat "$PROJECT_IDS_FILE" || true
 echo
 if [[ "$APPLY" != "1" ]]; then
   echo "Dry run only. Re-run with APPLY=1 to delete the listed GCS objects and prefixes."
+  echo "Preview files retained under: ${WORK_DIR}"
   exit 0
 fi
 
@@ -240,3 +253,4 @@ while IFS= read -r project_id; do
 done < "$PROJECT_IDS_FILE"
 
 echo "GCS cleanup completed."
+echo "Run artifacts retained under: ${WORK_DIR}"
