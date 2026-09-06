@@ -211,6 +211,15 @@ describe('TranslationEditor workflow', () => {
       .toHaveTextContent('Readiness conflict: false');
   });
 
+  it('defaults preview playback to the original media until a dubbed render exists', async () => {
+    render(<TranslationEditor />);
+
+    await screen.findByRole('heading', { name: 'Launch film' });
+    expect(screen.getByRole('button', { name: 'Original' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Dubbed' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Dubbed' })).toBeDisabled();
+  });
+
   it('preserves local edits on a genuine conflict and supports both resolution choices', async () => {
     const user = userEvent.setup();
     render(<TranslationEditor />);

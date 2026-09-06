@@ -19,9 +19,9 @@ export const mergeDraftWithProject = (
   },
   mediaReferences: {
     ...draft.mediaReferences,
-    transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
-    mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
-    videoFilename: project?.mediaFilename ?? draft.mediaReferences.videoFilename,
+    transcriptId: project ? project.transcriptId : draft.mediaReferences.transcriptId,
+    mediaId: project ? project.mediaId : draft.mediaReferences.mediaId,
+    videoFilename: project ? project.mediaFilename : draft.mediaReferences.videoFilename,
   },
 });
 
@@ -37,9 +37,9 @@ export function buildProjectFromDraft(
     status: project?.status ?? 'draft',
     createdAt: project?.createdAt ?? draft.projectMetadata.createdAt,
     updatedAt: project?.updatedAt ?? draft.projectMetadata.updatedAt,
-    transcriptId: project?.transcriptId ?? draft.mediaReferences.transcriptId,
-    mediaId: project?.mediaId ?? draft.mediaReferences.mediaId,
-    mediaFilename: project?.mediaFilename ?? draft.mediaReferences.videoFilename,
+    transcriptId: project ? project.transcriptId : draft.mediaReferences.transcriptId,
+    mediaId: project ? project.mediaId : draft.mediaReferences.mediaId,
+    mediaFilename: project ? project.mediaFilename : draft.mediaReferences.videoFilename,
     currentLipsyncJobId: project?.currentLipsyncJobId,
     lastRenderedVideoPath: project?.lastRenderedVideoPath,
   };

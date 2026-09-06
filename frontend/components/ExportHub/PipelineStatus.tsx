@@ -46,6 +46,29 @@ function recoveryMessage(stage?: string | null): string {
   }
 }
 
+function stageActivityLabel(stage: PipelineStage, status: string): string {
+  if (status === 'queued') {
+    return 'Queued';
+  }
+
+  switch (stage) {
+    case 'upload':
+      return 'Uploading';
+    case 'transcribe':
+      return 'Transcribing';
+    case 'translate':
+      return 'Translating';
+    case 'voice':
+      return 'Generating voice';
+    case 'lip_sync':
+      return 'Syncing lips';
+    case 'export':
+      return 'Exporting';
+    default:
+      return 'In progress';
+  }
+}
+
 export function PipelineStatus({
   mode,
   status,
@@ -67,6 +90,7 @@ export function PipelineStatus({
     transcribe: hasTranscript && segmentCount > 0,
     translate: segmentCount > 0 && translationCount >= segmentCount,
   };
+  const activityLabel = stageActivityLabel(normalizedStage, status);
   const visibleStages = mode === 'dub_only' ? stages.filter((stage) => stage.id !== 'lip_sync') : stages;
 
   return (
@@ -74,15 +98,15 @@ export function PipelineStatus({
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
         <div className="flex min-w-[13rem] items-center justify-between gap-3 xl:block">
           <div>
-          <h2 id="pipeline-status-heading" className="text-sm font-bold text-white">
-            {mode === 'upstream' ? 'Project processing status' : mode === 'dub_only' ? 'Dub build status' : 'Dub + Lip-Sync build status'}
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">
-            {isCompleted ? 'The build is complete.' : isFailed ? `Stopped during ${stageLabel(normalizedStage)}.` : `Currently ${stageLabel(normalizedStage)}.`}
-          </p>
+            <h2 id="pipeline-status-heading" className="text-sm font-bold text-white">
+              {mode === 'upstream' ? 'Project processing status' : mode === 'dub_only' ? 'Dub build status' : 'Dub + Lip-Sync build status'}
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {isCompleted ? 'The build is complete.' : isFailed ? `Stopped during ${stageLabel(normalizedStage)}.` : `Currently ${stageLabel(normalizedStage)}.`}
+            </p>
           </div>
           <StatusBadge tone={isFailed ? 'error' : isCompleted ? 'success' : 'processing'} className="xl:mt-2">
-            {isFailed ? 'Needs attention' : isCompleted ? 'Completed' : `${progress}% in progress`}
+            {isFailed ? 'Needs attention' : isCompleted ? 'Completed' : activityLabel}
           </StatusBadge>
         </div>
 

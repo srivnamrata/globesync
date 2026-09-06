@@ -136,9 +136,27 @@ describe('PipelineStatus', () => {
     );
 
     expect(screen.getByText('Project processing status')).toBeInTheDocument();
-    expect(screen.getByText('100% in progress')).toBeInTheDocument();
+    expect(screen.getByText('Generating voice')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '100% during Voice');
+  });
+
+  it('uses stage copy instead of showing 0 percent', () => {
+    render(
+      <PipelineStatus
+        mode="dub_only"
+        status="in_progress"
+        progressPercent={0}
+        currentStage="translate"
+        hasMedia
+        hasTranscript
+        translationCount={0}
+        segmentCount={1}
+      />,
+    );
+
+    expect(screen.getByText('Translating')).toBeInTheDocument();
+    expect(screen.queryByText('0% in progress')).not.toBeInTheDocument();
   });
 
   it('omits lip-sync for dub-only builds and renders completion', () => {

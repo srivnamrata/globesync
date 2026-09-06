@@ -57,6 +57,18 @@ describe('editor draft mapping', () => {
         transcriptId: projectFixture.transcriptId,
       }),
     }));
+
+    const canonicalWithoutLinks = mergeDraftWithProject(draftFixture, {
+      ...projectFixture,
+      mediaId: undefined,
+      transcriptId: undefined,
+      mediaFilename: undefined,
+    });
+    expect(canonicalWithoutLinks.mediaReferences).toEqual(expect.objectContaining({
+      mediaId: undefined,
+      transcriptId: undefined,
+      videoFilename: undefined,
+    }));
     expect(mergeDraftWithProject(draftFixture)).toEqual(draftFixture);
   });
 
@@ -73,6 +85,16 @@ describe('editor draft mapping', () => {
     })).toEqual(expect.objectContaining({
       status: 'processing',
       currentLipsyncJobId: 'job-1',
+    }));
+    expect(buildProjectFromDraft(draftFixture, {
+      ...projectFixture,
+      mediaId: undefined,
+      transcriptId: undefined,
+      mediaFilename: undefined,
+    })).toEqual(expect.objectContaining({
+      mediaId: undefined,
+      transcriptId: undefined,
+      mediaFilename: undefined,
     }));
   });
 
