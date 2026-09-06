@@ -1,26 +1,28 @@
-\set ON_ERROR_STOP on
-
--- Reusable hard-delete script for GlobeSync user data.
--- Usage:
---   psql "$DATABASE_URL" \
---     -v email_1='srivnamrata@gmail.com' \
---     -v email_2='roboplaylab@gmail.com' \
---     -f backend/scripts/purge_target_users.sql
+-- Cloud SQL Studio-safe GlobeSync user purge.
 --
--- Notes:
--- * This permanently deletes user-owned workspaces, projects, media, and related rows.
--- * It assumes you do not need to preserve shared history created or last-saved by these users.
--- * Run the separate GCS cleanup script before or immediately after this database purge.
+-- How to use:
+-- 1) Edit the single row in purge_params below.
+-- 2) Leave apply = FALSE to preview the scoped row counts without deleting data.
+-- 3) Set apply = TRUE only when you are ready to execute the purge.
+-- 4) Run the separate GCS cleanup script before this database purge so object paths can still be resolved.
 
 BEGIN;
 
+CREATE TEMP TABLE purge_params AS
+SELECT
+  FALSE::boolean AS apply,
+  'srivnamrata@gmail.com'::text AS email_1,
+  'roboplaylab@gmail.com'::text AS email_2;
+
 CREATE TEMP TABLE target_users AS
-SELECT id, email
-FROM users
-WHERE lower(email) IN (
-  lower(:'email_1'),
-  lower(:'email_2')
-);
+SELECT u.id, u.email
+FROM users u
+CROSS JOIN purge_params p
+WHERE lower(u.email) = lower(p.email_1)
+   OR (
+        nullif(btrim(p.email_2), '') IS NOT NULL
+        AND lower(u.email) = lower(p.email_2)
+      );
 
 CREATE TEMP TABLE target_workspaces AS
 SELECT DISTINCT w.id
@@ -115,69 +117,103 @@ SELECT 'target_upload_sessions', count(*) FROM target_upload_sessions
 ORDER BY scope;
 
 DO $$
+DECLARE
+  v_apply boolean;
+  v_email_1 text;
+  v_email_2 text;
 BEGIN
+  SELECT apply, email_1, nullif(btrim(email_2), '')
+  INTO v_apply, v_email_1, v_email_2
+  FROM purge_params;
+
   IF NOT EXISTS (SELECT 1 FROM target_users) THEN
-    RAISE EXCEPTION 'No matching users found for %, %', :'email_1', :'email_2';
+    RAISE EXCEPTION 'No matching users found for %, %', v_email_1, coalesce(v_email_2, '');
+  END IF;
+
+  IF v_apply THEN
+    RAISE NOTICE 'APPLY=true confirmed. Proceeding with hard delete.';
+  ELSE
+    RAISE NOTICE 'Preview only. No rows will be deleted. Set purge_params.apply = TRUE to execute.';
   END IF;
 END $$;
 
 DELETE FROM generated_audios
-WHERE translation_id IN (SELECT id FROM target_translations);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND translation_id IN (SELECT id FROM target_translations);
 
 DELETE FROM frame_metadata
-WHERE lipsync_job_id IN (SELECT id FROM target_lipsync_jobs)
-   OR transcript_segment_id IN (SELECT id FROM target_segments)
-   OR translation_id IN (SELECT id FROM target_translations);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND (
+    lipsync_job_id IN (SELECT id FROM target_lipsync_jobs)
+    OR transcript_segment_id IN (SELECT id FROM target_segments)
+    OR translation_id IN (SELECT id FROM target_translations)
+  );
 
 DELETE FROM upload_chunks
-WHERE session_id IN (SELECT id FROM target_upload_sessions);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND session_id IN (SELECT id FROM target_upload_sessions);
 
 DELETE FROM voice_profiles
-WHERE project_id IN (SELECT id FROM target_projects);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND project_id IN (SELECT id FROM target_projects);
 
 DELETE FROM translations
-WHERE id IN (SELECT id FROM target_translations);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_translations);
 
 DELETE FROM transcript_segments
-WHERE id IN (SELECT id FROM target_segments);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_segments);
 
 DELETE FROM project_versions
-WHERE project_id IN (SELECT id FROM target_projects)
-   OR created_by_user_id IN (SELECT id FROM target_users);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND project_id IN (SELECT id FROM target_projects);
 
 DELETE FROM project_drafts
-WHERE project_id IN (SELECT id FROM target_projects)
-   OR last_saved_by_user_id IN (SELECT id FROM target_users);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND project_id IN (SELECT id FROM target_projects);
 
 DELETE FROM pipeline_operations
-WHERE id IN (SELECT id FROM target_pipeline_operations);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_pipeline_operations);
 
 DELETE FROM export_jobs
-WHERE id IN (SELECT id FROM target_export_jobs);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_export_jobs);
 
 DELETE FROM lipsync_jobs
-WHERE id IN (SELECT id FROM target_lipsync_jobs);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_lipsync_jobs);
 
 DELETE FROM upload_sessions
-WHERE id IN (SELECT id FROM target_upload_sessions);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_upload_sessions);
 
 DELETE FROM transcripts
-WHERE id IN (SELECT id FROM target_transcripts);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_transcripts);
 
 DELETE FROM media_files
-WHERE id IN (SELECT id FROM target_media_files);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_media_files);
 
 DELETE FROM projects
-WHERE id IN (SELECT id FROM target_projects);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_projects);
 
 DELETE FROM workspace_members
-WHERE workspace_id IN (SELECT id FROM target_workspaces)
-   OR user_id IN (SELECT id FROM target_users);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND (
+    workspace_id IN (SELECT id FROM target_workspaces)
+    OR user_id IN (SELECT id FROM target_users)
+  );
 
 DELETE FROM workspaces
-WHERE id IN (SELECT id FROM target_workspaces);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_workspaces);
 
 DELETE FROM users
-WHERE id IN (SELECT id FROM target_users);
+WHERE EXISTS (SELECT 1 FROM purge_params WHERE apply)
+  AND id IN (SELECT id FROM target_users);
 
 COMMIT;

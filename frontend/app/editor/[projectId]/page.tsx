@@ -573,14 +573,6 @@ export default function TranslationEditor() {
   }, [currentProject, segments, translations, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
-  const previewLabel = comparisonMode === 'original' ? 'original' : 'dubbed';
-  const previewUrl = comparisonMode === 'original' ? sourceMediaUrl : renderedVideoUrl;
-  const previewDownloadName = comparisonMode === 'original'
-    ? ensureMp4Filename(currentProject.mediaFilename ?? deriveFilenameFromUrl(sourceMediaUrl) ?? `${currentProject.name}-original`)
-    : ensureMp4Filename(
-      deriveFilenameFromUrl(renderedVideoUrl)
-      ?? `${currentProject.name}-${currentProject.targetLanguage}`,
-    );
   const totalDurationSeconds = useMemo(
     () => segments.reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
     [segments],
@@ -1279,6 +1271,19 @@ export default function TranslationEditor() {
     );
   }
 
+  const previewLabel = comparisonMode === 'original' ? 'original' : 'dubbed';
+  const previewUrl = comparisonMode === 'original' ? sourceMediaUrl : renderedVideoUrl;
+  const previewDownloadName = comparisonMode === 'original'
+    ? ensureMp4Filename(
+      currentProject.mediaFilename
+      ?? deriveFilenameFromUrl(sourceMediaUrl)
+      ?? `${currentProject.name}-original`,
+    )
+    : ensureMp4Filename(
+      deriveFilenameFromUrl(renderedVideoUrl)
+      ?? `${currentProject.name}-${currentProject.targetLanguage}`,
+    );
+
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-slate-950 text-white">
       {/* Editor Header Bar */}
@@ -1346,8 +1351,8 @@ export default function TranslationEditor() {
               variant="secondary"
               size="sm"
               className={`${dirtySegments.size > 0
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
-                : 'text-slate-400'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                  : 'text-slate-400'
                 }`}
               title="Save changes (Ctrl+S)"
             >
@@ -1665,12 +1670,12 @@ export default function TranslationEditor() {
                     role="group"
                     aria-label={`Segment by ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                     className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${timeline.selectedSegmentId === seg.id
-                      ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
-                      : dirtySegments.has(seg.id)
-                        ? 'border-amber-500/50 bg-amber-950/20'
-                        : hasRisk
-                          ? 'border-red-800/50 bg-red-950/10'
-                          : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
+                        ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+                        : dirtySegments.has(seg.id)
+                          ? 'border-amber-500/50 bg-amber-950/20'
+                          : hasRisk
+                            ? 'border-red-800/50 bg-red-950/10'
+                            : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
                       }`}
                   >
                     {/* Left column: source transcript */}
@@ -1702,8 +1707,8 @@ export default function TranslationEditor() {
                               }
                             }}
                             className={`text-[10px] px-2 py-0.5 rounded transition font-semibold uppercase tracking-wider ${loopSegmentId === seg.id
-                              ? 'bg-amber-500/30 text-amber-200'
-                              : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
+                                ? 'bg-amber-500/30 text-amber-200'
+                                : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
                               }`}
                             aria-pressed={loopSegmentId === seg.id}
                             title="Loop this segment"
@@ -2027,8 +2032,8 @@ export default function TranslationEditor() {
                         aria-current={isActive ? 'true' : undefined}
                         title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
                         className={`min-w-[2rem] rounded-md border transition ${isActive
-                          ? 'border-indigo-400 bg-indigo-500/40'
-                          : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
+                            ? 'border-indigo-400 bg-indigo-500/40'
+                            : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
                           }`}
                         style={{ width: `${widthPercent}%`, height: `${Math.max(30, Math.min(96, 28 + segment.durationSeconds * 18))}px` }}
                       />
