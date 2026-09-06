@@ -28,13 +28,6 @@ $ApiSecrets = "DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=tr
 
 gcloud config set project $ProjectId
 
-$DeepgramSecretExists = $true
-try { gcloud secrets describe transcription-deepgram-api-key | Out-Null } catch { $DeepgramSecretExists = $false }
-if ($LASTEXITCODE -ne 0) { $DeepgramSecretExists = $false }
-if ($DeepgramSecretExists) {
-    $ApiSecrets += ",DEEPGRAM_API_KEY=transcription-deepgram-api-key:latest"
-}
-
 $ReplicateSecretExists = $true
 try { gcloud secrets describe replicate-api-token | Out-Null } catch { $ReplicateSecretExists = $false }
 if ($LASTEXITCODE -ne 0) { $ReplicateSecretExists = $false }

@@ -51,9 +51,6 @@ fi
 gcloud config set project "$PROJECT_ID"
 
 API_SECRETS="DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest"
-if gcloud secrets describe transcription-deepgram-api-key >/dev/null 2>&1; then
-  API_SECRETS="${API_SECRETS},DEEPGRAM_API_KEY=transcription-deepgram-api-key:latest"
-fi
 if [[ "$SKIP_ENABLE_APIS" == "1" ]]; then
   echo "==> Skipping API enable step (SKIP_ENABLE_APIS=1)"
 else

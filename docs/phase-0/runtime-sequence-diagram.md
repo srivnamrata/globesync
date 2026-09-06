@@ -35,7 +35,7 @@ This diagram reflects the current reviewed behavior across:
 * FastAPI internal task handlers (`/v1/internal/tasks/*`)
 * Cloud SQL
 * GCS
-* External AI providers (Google STT, Deepgram fallback, translation provider, Google TTS, lip-sync provider)
+* External AI providers (Google STT, Google Cloud Translation, Google TTS, lip-sync provider)
 
 ## Current end-to-end sequence
 
@@ -88,7 +88,7 @@ sequenceDiagram
         Tasks->>Internal: POST /v1/internal/tasks/transcribe
         Internal->>Internal: Verify Cloud Tasks headers
         Internal->>Providers: Run STT pipeline
-        Note over Providers: Google STT primary, Deepgram fallback when no explicit language is provided
+        Note over Providers: Google STT performs transcription and speaker diarization
         Internal->>GCS: Read staged media as needed
         Internal->>DB: Persist transcript and transcript_segments
         Internal-->>Tasks: Task success/failure

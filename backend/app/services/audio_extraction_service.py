@@ -37,7 +37,7 @@ class AudioExtractor:
             "-i", video_input_path,
             "-vn",                       # Drop video stream completely
             "-acodec", "pcm_s16le",       # Uncompressed 16-bit Little Endian PCM
-            "-ar", str(sample_rate),      # 16000 Hz sample rate (Deepgram Nova-2 standard)
+            "-ar", str(sample_rate),      # 16000 Hz sample rate for speech recognition
             "-ac", str(channels),         # Mono channel
             output_wav_path,
         ]

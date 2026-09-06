@@ -282,8 +282,6 @@ def test_transcription_pipeline_updates_progress_state_and_idempotency_context(m
         "settings": SimpleNamespace(
             TEMP_UPLOAD_DIR=str(tmp_path / "temp"),
             PROCESSED_MEDIA_DIR=str(tmp_path / "processed"),
-            STT_PRIMARY_PROVIDER="google",
-            STT_FALLBACK_PROVIDER="deepgram",
         ),
         "SyncSession": lambda: session,
         "MediaFile": FakeMediaFileModel,
@@ -297,7 +295,6 @@ def test_transcription_pipeline_updates_progress_state_and_idempotency_context(m
         ),
         "storage_service": SimpleNamespace(download_file=download_file),
         "google_stt_service": SimpleNamespace(transcribe_audio_file=stt_call),
-        "deepgram_stt": SimpleNamespace(transcribe_audio_file=AsyncMock()),
         "transcript_parser": SimpleNamespace(parse_google_response=parse_google_response),
         "logger": SimpleNamespace(
             warning=lambda *args, **kwargs: None,

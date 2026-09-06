@@ -259,7 +259,7 @@ async def start_transcription(
             transcript_id=transcript.id,
             media_id=req.media_id,
             status="queued",
-            message="Audio extraction, noise reduction, and Deepgram Nova-2 diarization job queued on Cloud Tasks.",
+            message="Audio extraction, noise reduction, and Google Cloud diarization job queued on Cloud Tasks.",
         )
 
     require_background_pipelines()
@@ -286,7 +286,7 @@ async def start_transcription(
         transcript_id=transcript.id,
         media_id=req.media_id,
         status="queued",
-        message="Audio extraction, noise reduction, and Deepgram Nova-2 diarization job queued.",
+        message="Audio extraction, noise reduction, and Google Cloud diarization job queued.",
     )
 
 

@@ -8,7 +8,7 @@ if str(backend_root) not in sys.path:
 
 from app.utils.transcript_parser import transcript_parser
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "deepgram_mock_response.json"
+FIXTURE_PATH = Path(__file__).parent / "fixtures" / "google_stt_mock_response.json"
 
 
 def load_payload() -> dict:
@@ -16,10 +16,10 @@ def load_payload() -> dict:
         return json.load(f)
 
 
-def test_parse_deepgram_response_from_saved_json_fixture() -> None:
+def test_parse_google_response_from_saved_json_fixture() -> None:
     payload = load_payload()
 
-    segments, full_text, avg_confidence, word_count, speaker_count = transcript_parser.parse_deepgram_response(payload)
+    segments, full_text, avg_confidence, word_count, speaker_count = transcript_parser.parse_google_response(payload)
 
     assert len(segments) == 2
     assert full_text == "Hello and welcome to the global launch presentation. Thank you for joining us today."
@@ -42,7 +42,7 @@ def test_parse_deepgram_response_from_saved_json_fixture() -> None:
 
 def test_export_formats_from_saved_json_fixture() -> None:
     payload = load_payload()
-    segments, _, _, _, _ = transcript_parser.parse_deepgram_response(payload)
+    segments, _, _, _, _ = transcript_parser.parse_google_response(payload)
 
     dialogue_output = transcript_parser.export_to_dialogue_format(segments)
     srt_output = transcript_parser.export_to_srt(segments)

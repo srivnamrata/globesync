@@ -12,12 +12,6 @@ from pydantic import ValidationError
 
 from app.schemas.translation_schema import TranslateProjectRequest, TranslateSegmentRequest
 from app.routers.translation import _format_translation_item
-from app.utils.prompt_templates import (
-    get_refinement_condensation_prompt,
-    get_refinement_expansion_prompt,
-    get_segment_translation_user_prompt,
-    get_system_translation_prompt,
-)
 from app.utils.speech_rate import speech_rate_estimator
 
 DURATION_MATCHER_PATH = Path(__file__).resolve().parents[1] / "app" / "services" / "duration_matcher.py"
@@ -56,8 +50,7 @@ class DurationMatchedTranslationResult:
 
 
 def load_translate_with_duration_matching(
-    provider: str = "openai",
-    openai_response=None,
+    provider: str = "google",
     google_response=None,
     cached_data=None,
 ):
@@ -79,9 +72,6 @@ def load_translate_with_duration_matching(
     extracted_module = ast.Module(body=[method_node], type_ignores=[])
     ast.fix_missing_locations(extracted_module)
 
-    openai_mock = AsyncMock(
-        return_value=openai_response or ("Bienvenidos a la presentación global.", 12, 34, 0.123456)
-    )
     google_mock = AsyncMock(return_value=google_response or "Bienvenidos a la presentación global.")
     get_from_cache = AsyncMock(return_value=cached_data)
     save_to_cache = AsyncMock()
@@ -93,12 +83,7 @@ def load_translate_with_duration_matching(
         "Optional": Optional,
         "DurationMatchedTranslationResult": DurationMatchedTranslationResult,
         "speech_rate_estimator": speech_rate_estimator,
-        "get_system_translation_prompt": lambda src, tgt: f"system:{src}:{tgt}",
-        "get_segment_translation_user_prompt": lambda **kwargs: f"translate:{kwargs['original_text']}",
-        "get_refinement_condensation_prompt": lambda **kwargs: "condense",
-        "get_refinement_expansion_prompt": lambda **kwargs: "expand",
         "settings": SimpleNamespace(TRANSLATION_PROVIDER=provider),
-        "openai_service": SimpleNamespace(generate_chat_completion=openai_mock),
         "google_translate_service": SimpleNamespace(translate_text=google_mock),
     }
     exec(compile(extracted_module, str(DURATION_MATCHER_PATH), "exec"), namespace)
@@ -108,7 +93,7 @@ def load_translate_with_duration_matching(
         _get_from_cache=get_from_cache,
         _save_to_cache=save_to_cache,
     )
-    return namespace["translate_with_duration_matching"], cls, openai_mock, google_mock, save_to_cache
+    return namespace["translate_with_duration_matching"], cls, google_mock, save_to_cache
 
 
 # =============================================================================
@@ -153,10 +138,9 @@ def test_duration_delta_calculation():
 # =============================================================================
 # 2. DURATION MATCHER FLOW TESTS
 # =============================================================================
-def test_duration_matcher_flow(openai_chat_completion_response) -> None:
-    translate_with_duration_matching, cls, openai_mock, _google_mock, save_to_cache = load_translate_with_duration_matching(
-        provider="openai",
-        openai_response=openai_chat_completion_response,
+def test_duration_matcher_flow(google_translate_text_response) -> None:
+    translate_with_duration_matching, cls, google_mock, save_to_cache = load_translate_with_duration_matching(
+        google_response=google_translate_text_response,
     )
 
     result = asyncio.run(
@@ -177,14 +161,13 @@ def test_duration_matcher_flow(openai_chat_completion_response) -> None:
     assert result.estimated_duration_ms > 0
     assert result.confidence_score >= 0.70
     assert len(result.iteration_history) >= 1
-    assert result.total_cost_usd > 0
-    assert openai_mock.await_count == len(result.iteration_history)
+    assert result.total_cost_usd == 0
+    assert google_mock.await_count == 1
     assert save_to_cache.await_count == 1
 
 
 def test_duration_matcher_cache_hit_skips_provider_calls(translation_cache_hit_payload) -> None:
-    translate_with_duration_matching, cls, openai_mock, google_mock, save_to_cache = load_translate_with_duration_matching(
-        provider="openai",
+    translate_with_duration_matching, cls, google_mock, save_to_cache = load_translate_with_duration_matching(
         cached_data=translation_cache_hit_payload,
     )
 
@@ -206,15 +189,13 @@ def test_duration_matcher_cache_hit_skips_provider_calls(translation_cache_hit_p
     assert result.total_cost_usd == 0.0
     assert result.iterations_count == 1
     assert result.iteration_history[0]["status"] == "cache_hit"
-    assert openai_mock.await_count == 0
     assert google_mock.await_count == 0
     assert save_to_cache.await_count == 0
 
 
 
 def test_duration_matcher_google_provider_single_pass(google_translate_text_response) -> None:
-    translate_with_duration_matching, cls, openai_mock, google_mock, save_to_cache = load_translate_with_duration_matching(
-        provider="google",
+    translate_with_duration_matching, cls, google_mock, save_to_cache = load_translate_with_duration_matching(
         google_response=google_translate_text_response,
     )
 
@@ -234,7 +215,6 @@ def test_duration_matcher_google_provider_single_pass(google_translate_text_resp
     assert result.translated_text == google_translate_text_response
     assert result.total_cost_usd == 0.0
     assert len(result.iteration_history) == 1
-    assert openai_mock.await_count == 0
     assert google_mock.await_count == 1
     assert save_to_cache.await_count == 1
 
@@ -274,75 +254,7 @@ def test_single_segment_response_handles_generated_audio_state(generated_audio, 
 
 
 # =============================================================================
-# 3. TRANSLATION PROMPT REGRESSION TESTS
-# =============================================================================
-def test_hindi_system_translation_prompt_prefers_natural_semantic_translation() -> None:
-    prompt = get_system_translation_prompt("en", "hi")
-
-    assert "HINDI-SPECIFIC GUIDANCE" in prompt
-    assert "Prioritize meaning, intent, and flow over word-for-word correspondence with the source." in prompt
-    assert "Resolve English discourse patterns into clean Hindi sentence structure instead of preserving English syntax." in prompt
-    assert "My name is Namrata, and we are going to explore retrieval augmented generation today." in prompt
-    assert "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन को समझेंगे।" in prompt
-
-
-
-def test_segment_translation_prompt_prefers_natural_target_language_rendering() -> None:
-    prompt = get_segment_translation_user_prompt(
-        original_text="My name is Namrata, and we are going to explore retrieval augmented generation today.",
-        target_duration_ms=4200,
-        previous_context="Welcome to the session.",
-        next_context="Let's get started.",
-        speaker_tag="Host",
-    )
-
-    assert 'Previous Dialogue Context: "Welcome to the session."' in prompt
-    assert 'Following Dialogue Context: "Let\'s get started."' in prompt
-    assert "Speaker: Host" in prompt
-    assert "Target Spoken Duration: approximately 4200 ms" in prompt
-    assert "Prefer a natural, meaning-preserving sentence in the target language over a literal word-by-word rendering." in prompt
-
-
-
-def test_refinement_condensation_prompt_preserves_meaning_while_shortening() -> None:
-    prompt = get_refinement_condensation_prompt(
-        current_translation="मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन के बारे में विस्तार से बात करेंगे।",
-        original_text="My name is Namrata, and today we will explore retrieval augmented generation in detail.",
-        target_duration_ms=4200,
-        estimated_duration_ms=5100,
-        excess_pct=21.4,
-    )
-
-    assert "The previous translation is too long" in prompt
-    assert 'Original Text: "My name is Namrata, and today we will explore retrieval augmented generation in detail."' in prompt
-    assert 'Previous Translation: "मेरा नाम नम्रता है, और आज हम रिट्रीवल ऑगमेंटेड जेनरेशन के बारे में विस्तार से बात करेंगे।"' in prompt
-    assert "Current Estimated Duration: 5100 ms (approximately 21.4% too long)" in prompt
-    assert "while retaining the essential message and emotional tone" in prompt
-    assert "Use more concise phrasing, omit non-essential filler words, or use shorter synonyms." in prompt
-    assert "Provide ONLY the revised translation." in prompt
-
-
-
-def test_refinement_expansion_prompt_preserves_natural_delivery() -> None:
-    prompt = get_refinement_expansion_prompt(
-        current_translation="आज हम रिट्रीवल ऑगमेंटेड जेनरेशन समझेंगे।",
-        original_text="Today we will explore retrieval augmented generation.",
-        target_duration_ms=4200,
-        estimated_duration_ms=3000,
-        deficit_pct=28.6,
-    )
-
-    assert "The previous translation is too short" in prompt
-    assert 'Original Text: "Today we will explore retrieval augmented generation."' in prompt
-    assert 'Previous Translation: "आज हम रिट्रीवल ऑगमेंटेड जेनरेशन समझेंगे।"' in prompt
-    assert "Current Estimated Duration: 3000 ms (approximately 28.6% too short)" in prompt
-    assert "Please slightly expand the translation with natural phrasing" in prompt
-    assert "without padding with nonsense" in prompt
-    assert "Provide ONLY the revised translation." in prompt
-
-
-# =============================================================================
-# 4. TRANSLATION REQUEST SCHEMA TESTS
+# 3. TRANSLATION REQUEST SCHEMA TESTS
 # =============================================================================
 def test_translate_request_schemas() -> None:
     transcript_id = uuid.uuid4()

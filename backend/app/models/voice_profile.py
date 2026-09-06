@@ -15,7 +15,7 @@ from app.core.database import Base
 
 
 class VoiceProfile(Base):
-    """SQLAlchemy model for cloned speaker voice profiles and ElevenLabs voice associations."""
+    """SQLAlchemy model for persisted speaker voice profiles."""
     __tablename__ = "voice_profiles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -26,8 +26,8 @@ class VoiceProfile(Base):
     gender = Column(String(20), nullable=True)
     language = Column(String(10), default="en", nullable=False)
 
-    external_provider = Column(String(50), default="elevenlabs", nullable=False)
-    external_voice_id = Column(String(255), nullable=False)  # ElevenLabs generated Voice ID
+    external_provider = Column(String(50), default="google_tts", nullable=False)
+    external_voice_id = Column(String(255), nullable=False)
     reference_sample_gcs_path = Column(String(1024), nullable=True)
     reference_sample_duration_sec = Column(Numeric(8, 2), nullable=True)
 
