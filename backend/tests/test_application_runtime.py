@@ -6,6 +6,7 @@ from fastapi import Response
 from starlette.requests import Request
 
 from app import main
+from app.core.config import Settings
 from app.utils.error_codes import ErrorCode, MediaAppException
 
 
@@ -22,6 +23,10 @@ def _request(headers=None):
             "query_string": b"",
         }
     )
+
+
+def test_translation_provider_defaults_to_google():
+    assert Settings.model_fields["TRANSLATION_PROVIDER"].default == "google"
 
 
 @pytest.mark.asyncio

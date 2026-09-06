@@ -76,9 +76,8 @@ class Settings(BaseSettings):
     DEEPGRAM_PUNCTUATE: bool = True
     DEEPGRAM_UTTERANCES: bool = True
 
-    # Translation Engine (Google Cloud Translation or OpenAI GPT-4o)
-    # Set TRANSLATION_PROVIDER="google" to use Google Cloud Translation Advanced.
-    TRANSLATION_PROVIDER: str = "openai"
+    # Active translation engine.
+    TRANSLATION_PROVIDER: str = "google"
     OPENAI_API_KEY: str = "test_openai_api_key_placeholder"
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_TEMPERATURE: float = 0.3
