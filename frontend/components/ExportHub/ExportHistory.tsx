@@ -49,25 +49,27 @@ export const ExportHistory: React.FC<{ projectId: string }> = ({ projectId }) =>
       setLoading(true);
       setExportError(null);
       setRenderError(null);
-      const [exportResult, renderResult] = await Promise.allSettled([
-          projectService.getProjectExportHistory(projectId),
-          projectService.getProjectRenderHistory(projectId),
-      ]);
-      if (!active) return;
-
-      if (exportResult.status === 'fulfilled') {
-        setHistory(exportResult.value);
-      } else {
-        console.error('Failed to load format export history:', exportResult.reason);
-        setExportError('Format export history is unavailable right now. Existing outputs are unchanged.');
-      }
-      if (renderResult.status === 'fulfilled') {
-        setRenderHistory(renderResult.value);
-      } else {
-        console.error('Failed to load dub and lip-sync history:', renderResult.reason);
+      try {
+        const renderItems = await projectService.getProjectRenderHistory(projectId);
+        if (!active) return;
+        setRenderHistory(renderItems);
+      } catch (error) {
+        if (!active) return;
+        console.error('Failed to load dub and lip-sync history:', error);
         setRenderError('Dub and lip-sync history is unavailable right now. Existing outputs are unchanged.');
       }
-      setLoading(false);
+
+      try {
+        const exportItems = await projectService.getProjectExportHistory(projectId);
+        if (!active) return;
+        setHistory(exportItems);
+      } catch (error) {
+        if (!active) return;
+        console.error('Failed to load format export history:', error);
+        setExportError('Format export history is unavailable right now. Existing outputs are unchanged.');
+      }
+
+      if (active) setLoading(false);
     }
 
     void loadHistory();

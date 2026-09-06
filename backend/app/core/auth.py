@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.project import Project
 from app.schemas.auth import AuthBootstrapResponse, WorkspaceRole
-from app.services.auth_service import WorkspaceAccessError, ResolvedIdentity, auth_service
+from app.services.auth_service import AccountAccessError, WorkspaceAccessError, ResolvedIdentity, auth_service
 
 
 WRITE_WORKSPACE_ROLES: tuple[WorkspaceRole, ...] = ("owner", "editor")
@@ -51,7 +51,7 @@ async def get_request_context(
             identity=identity,
             requested_workspace_id=requested_workspace_id,
         )
-    except WorkspaceAccessError as exc:
+    except (AccountAccessError, WorkspaceAccessError) as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     return AuthenticatedRequestContext(

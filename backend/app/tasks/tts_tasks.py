@@ -7,10 +7,11 @@ import uuid
 from typing import Optional
 from celery import shared_task
 import redis
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker, joinedload
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import SyncSessionLocal as SyncSession
 from app.models.generated_audio import GeneratedAudio
 from app.models.media import MediaFile
 from app.models.transcript import Transcript, TranscriptSegment
@@ -20,8 +21,6 @@ from app.services.storage_service import storage_service
 from app.services.tts_orchestrator import tts_orchestrator
 
 logger = logging.getLogger("tts_tasks")
-sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
-SyncSession = sessionmaker(bind=sync_engine)
 
 
 def publish_tts_event(project_id: str, status: str, progress_percent: int, message: str):

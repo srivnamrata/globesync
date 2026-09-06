@@ -428,7 +428,7 @@ class StorageService:
             if download_filename:
                 # Object names are application generated, but normalise the
                 # filename defensively before putting it in an HTTP header.
-                safe_filename = os.path.basename(download_filename).replace('"', "")
+                safe_filename = os.path.basename(download_filename.replace("\\", "/")).replace('"', "")
                 response_disposition = f'attachment; filename="{safe_filename}"'
             return blob.generate_signed_url(
                 expiration=timedelta(seconds=expires_in_seconds),

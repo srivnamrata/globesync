@@ -1,11 +1,13 @@
 import hashlib
-import io
-import os
+from datetime import datetime, timezone
 import uuid
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
+from app.core.auth import get_request_context, require_workspace_write_context
+from app.core.database import get_db
 from app.main import app
+from app.models.media import MediaFile, UploadChunk, UploadSession
 from app.schemas.media_schema import MediaMetadata, MediaStreamInfo
 from app.utils.file_validators import (
     calculate_sha256,
@@ -19,6 +21,67 @@ from app.utils.error_codes import (
     UnsupportedCodecException,
     UnsupportedMediaFormatException,
 )
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+class _UploadSessionDatabase:
+    def __init__(self):
+        self.upload_session = None
+        self.media_file = None
+
+    async def execute(self, statement):
+        entity = statement.column_descriptions[0].get("entity")
+        if entity is UploadSession:
+            return _ScalarResult(self.upload_session)
+        if entity is MediaFile:
+            return _ScalarResult(self.media_file)
+        return _ScalarResult(None)
+
+    def add(self, value):
+        if isinstance(value, UploadSession):
+            value.id = value.id or uuid.uuid4()
+            value.chunks = []
+            self.upload_session = value
+        elif isinstance(value, UploadChunk):
+            value.id = value.id or uuid.uuid4()
+            self.upload_session.chunks.append(value)
+        elif isinstance(value, MediaFile):
+            value.id = value.id or uuid.uuid4()
+            value.created_at = value.created_at or datetime.now(timezone.utc)
+            self.media_file = value
+
+    async def commit(self):
+        return None
+
+    async def flush(self):
+        return None
+
+    async def refresh(self, value):
+        return None
+
+
+@pytest.fixture
+def authenticated_upload_dependencies():
+    database = _UploadSessionDatabase()
+    context = MagicMock(
+        workspace_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        membership_role="editor",
+    )
+    app.dependency_overrides[get_request_context] = lambda: context
+    app.dependency_overrides[require_workspace_write_context] = lambda: context
+    app.dependency_overrides[get_db] = lambda: database
+    try:
+        yield database
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -123,74 +186,72 @@ async def test_health_check():
 
 
 @pytest.mark.asyncio
-async def test_resumable_upload_lifecycle(mock_storage, mock_media_service):
+async def test_resumable_upload_lifecycle(
+    mock_storage,
+    mock_media_service,
+    authenticated_upload_dependencies,
+):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. Initialize Resumable Upload
-        init_payload = {
-            "filename": "conference_talk.mp4",
-            "filesize_bytes": 16777216,  # 16 MB = 2 chunks of 8MB
-            "mime_type": "video/mp4",
-            "chunk_size_bytes": 8388608,
-        }
-        init_res = await client.post("/v1/media/uploads/resumable", json=init_payload)
-        assert init_res.status_code == 201
-        data = init_res.json()
-        upload_id = data["upload_id"]
-        assert data["total_chunks"] == 2
-        assert data["filename"] == "conference_talk.mp4"
+    with patch("app.routers.upload.calculate_sha256", return_value="a" * 64):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            init_payload = {
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            }
+            init_res = await client.post("/v1/media/uploads/resumable", json=init_payload)
+            assert init_res.status_code == 201
+            data = init_res.json()
+            upload_id = data["upload_id"]
+            assert data["total_chunks"] == 2
+            assert data["filename"] == "conference_talk.mp4"
 
-        # 2. Upload Chunk 0
-        chunk_0_data = b"0" * 8388608
-        chunk_0_hash = hashlib.sha256(chunk_0_data).hexdigest()
-        chunk_0_headers = {
-            "Content-Range": "bytes 0-8388607/16777216",
-            "X-Chunk-Index": "0",
-            "X-Checksum-SHA256": chunk_0_hash,
-            "Content-Type": "application/octet-stream",
-        }
-        chunk_0_res = await client.put(
-            f"/v1/media/uploads/resumable/{upload_id}/chunk",
-            content=chunk_0_data,
-            headers=chunk_0_headers,
-        )
-        assert chunk_0_res.status_code == 202
-        assert chunk_0_res.json()["progress_percent"] == 50.0
+            chunk_0_data = b"0" * 5242880
+            chunk_0_headers = {
+                "Content-Range": "bytes 0-5242879/10485760",
+                "X-Chunk-Index": "0",
+                "X-Checksum-SHA256": hashlib.sha256(chunk_0_data).hexdigest(),
+                "Content-Type": "application/octet-stream",
+            }
+            chunk_0_res = await client.put(
+                f"/v1/media/uploads/resumable/{upload_id}/chunk",
+                content=chunk_0_data,
+                headers=chunk_0_headers,
+            )
+            assert chunk_0_res.status_code == 202
+            assert chunk_0_res.json()["progress_percent"] == 50.0
 
-        # 3. Check Session Status (should show chunk 0 completed, chunk 1 missing)
-        status_res = await client.get(f"/v1/media/uploads/resumable/{upload_id}/status")
-        assert status_res.status_code == 200
-        status_data = status_res.json()
-        assert status_data["completed_chunks"] == [0]
-        assert status_data["missing_chunks"] == [1]
+            status_res = await client.get(f"/v1/media/uploads/resumable/{upload_id}/status")
+            assert status_res.status_code == 200
+            status_data = status_res.json()
+            assert status_data["completed_chunks"] == [0]
+            assert status_data["missing_chunks"] == [1]
 
-        # 4. Upload Chunk 1
-        chunk_1_data = b"1" * 8388608
-        chunk_1_hash = hashlib.sha256(chunk_1_data).hexdigest()
-        chunk_1_headers = {
-            "Content-Range": "bytes 8388608-16777215/16777216",
-            "X-Chunk-Index": "1",
-            "X-Checksum-SHA256": chunk_1_hash,
-            "Content-Type": "application/octet-stream",
-        }
-        chunk_1_res = await client.put(
-            f"/v1/media/uploads/resumable/{upload_id}/chunk",
-            content=chunk_1_data,
-            headers=chunk_1_headers,
-        )
-        assert chunk_1_res.status_code == 202
-        assert chunk_1_res.json()["progress_percent"] == 100.0
+            chunk_1_data = b"1" * 5242880
+            chunk_1_headers = {
+                "Content-Range": "bytes 5242880-10485759/10485760",
+                "X-Chunk-Index": "1",
+                "X-Checksum-SHA256": hashlib.sha256(chunk_1_data).hexdigest(),
+                "Content-Type": "application/octet-stream",
+            }
+            chunk_1_res = await client.put(
+                f"/v1/media/uploads/resumable/{upload_id}/chunk",
+                content=chunk_1_data,
+                headers=chunk_1_headers,
+            )
+            assert chunk_1_res.status_code == 202
+            assert chunk_1_res.json()["progress_percent"] == 100.0
 
-        # 5. Complete Resumable Upload
-        complete_res = await client.post(
-            f"/v1/media/uploads/resumable/{upload_id}/complete",
-            json={},
-        )
-        assert complete_res.status_code == 200
-        media_info = complete_res.json()
-        assert media_info["filename"] == "conference_talk.mp4"
-        assert media_info["resolution"] == "1920x1080"
-        assert media_info["video_codec"] == "h264"
-        assert media_info["audio_codec"] == "aac"
-        assert media_info["duration_seconds"] == 185.5
-        assert media_info["status"] == "ready"
+            complete_res = await client.post(
+                f"/v1/media/uploads/resumable/{upload_id}/complete",
+                json={},
+            )
+            assert complete_res.status_code == 200
+            media_info = complete_res.json()
+            assert media_info["filename"] == "conference_talk.mp4"
+            assert media_info["resolution"] == "1920x1080"
+            assert media_info["video_codec"] == "h264"
+            assert media_info["audio_codec"] == "aac"
+            assert media_info["duration_seconds"] == 185.5
+            assert media_info["status"] == "ready"

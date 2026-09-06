@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+    "**/__init__.py",
+    # Database revisions and retired provider integrations are outside this baseline.
+    "migrations/*",
+    "app/services/deepgram_service.py",
+    "app/services/openai_service.py",
+    "app/services/voice_cloning_service.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+precision = 1
+show_missing = true
+skip_empty = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"

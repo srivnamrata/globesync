@@ -24,6 +24,8 @@ class CloudTasksService:
             and settings.CLOUD_TASKS_LOCATION
             and settings.CLOUD_TASKS_QUEUE
             and settings.CLOUD_TASKS_TARGET_URL
+            and settings.CLOUD_TASKS_OIDC_SERVICE_ACCOUNT
+            and settings.INTERNAL_TASKS_AUDIENCE
         )
 
     def _get_client(self):
@@ -72,11 +74,10 @@ class CloudTasksService:
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps(payload).encode("utf-8"),
         }
-        if settings.CLOUD_TASKS_OIDC_SERVICE_ACCOUNT:
-            http_request["oidc_token"] = {
-                "service_account_email": settings.CLOUD_TASKS_OIDC_SERVICE_ACCOUNT,
-                "audience": audience,
-            }
+        http_request["oidc_token"] = {
+            "service_account_email": settings.CLOUD_TASKS_OIDC_SERVICE_ACCOUNT,
+            "audience": audience,
+        }
 
         task: Dict[str, Any] = {"http_request": http_request}
         if dispatch_deadline_seconds is not None:

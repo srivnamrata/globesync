@@ -1,6 +1,48 @@
 # Enterprise Audio & Video Translation Platform
 
-A production-ready, cloud-agnostic platform for automated video translation, speech-to-text, speaker diarization, context-aware translation with duration matching, voice cloning, and audio retiming.
+A production-ready, cloud-agnostic platform for automated video translation, speech-to-text, speaker diarization, context-aware translation with duration matching, speech synthesis, and audio retiming.
+
+---
+
+## Tech Stack
+
+
+| Layer | Technologies |
+| --- | --- |
+| **Frontend** | Next.js 16, React 18, TypeScript 5, Tailwind CSS, Zustand, and IndexedDB for local project drafts |
+| **Backend / API** | FastAPI, Python 3.10+, Uvicorn, Pydantic v2, async HTTP with HTTPX, and server-sent events for pipeline progress |
+| **Database** | PostgreSQL with SQLAlchemy 2 ORM, `asyncpg` for asynchronous application access, `psycopg2` for synchronous workers and migrations, and Alembic |
+| **Task queue and caching** | Celery backed by Redis for task brokering, result storage, caching, and Pub/Sub progress events. Work is routed across seven queues: `audio_extract`, `stt_diarize`, `translation`, `tts_clone`, `audio_retiming`, `lipsync_render`, and `mux_export` |
+| **Media and audio processing** | FFmpeg/FFprobe for demuxing, muxing, transcoding, and `atempo` time-stretching; Pydub, Librosa, NumPy, and SciPy for audio analysis and post-processing |
+| **Computer vision** | OpenCV headless and Pillow for face detection, frame extraction, and frame metadata |
+| **AI services** | Replicate for lip-sync generation, Google Cloud Speech-to-Text for speech-to-text and diarization, Google Cloud Translation Advanced API for Translation, and Google Cloud Speech-to-Text (Chirp / latest_long)|
+| **Storage** | Google Cloud Storage with resumable multipart uploads, object composition, and V4 signed URLs; MinIO is available as a local Docker service |
+| **Authentication and security** | Google Identity Platform/OIDC token verification, workspace-scoped authorization, JWT signing, Google Application Default Credentials, IAM, and Secret Manager |
+| **Cloud and deployment** | Docker, Docker Compose, Google Cloud Run, Cloud Run Jobs for Alembic migrations, Cloud SQL for PostgreSQL, Cloud Tasks for optional HTTP task dispatch, and Artifact Registry |
+| **Testing** | Pytest with branch coverage, Vitest with V8 coverage, and Playwright critical-path browser tests |
+| --- | --- |
+
+---
+
+## MVP Delivery Roadmap
+
+| # | Step / Milestone | Planned Completion |
+| --- | --- | --- |
+| ☐ 1 | Finalize product scope, target users, and MVP features | **20 Aug 2026** |
+| ☐ 2 | Finalize product name, branding, UI flow, and architecture | **21 Aug 2026** |
+| ☐ 3 | Set up development environment, repositories, cloud resources, and deployment pipeline | **22 Aug 2026** |
+| ☐ 4 | Build **audio/video upload and file-processing pipeline** | **23 Aug 2026** |
+| ☐ 5 | Implement **speech-to-text transcription** | **24 Aug 2026** |
+| ☐ 6 | Implement **multi-language translation** | **25 Aug 2026** |
+| ☐ 7 | Implement **AI voice generation and dubbing** | **26 Aug 2026** |
+| ☐ 8 | Implement **audio-video synchronization and subtitle generation** | **27 Aug 2026** |
+| ☐ 9 | Integrate complete **end-to-end translation workflow** | **28 Aug 2026** |
+| ☐ 10 | Build UI, progress tracking, preview, and downloadable output | **29 Aug 2026** |
+| ☐ 11 | Perform functional and quality testing and fix critical issues | **30 Aug 2026** |
+| ☐ 12 | Complete final deployment, documentation, demo, and MVP release | **31 Aug 2026** |
+| ☐ 13 | Finalize new features to enhance the application UI/UX | **01 Sep 2026** |
+| ☐ 14 | Implement **authentication, project/workspace scoping, local draft recovery, and deployment hardening** | **02 Sep 2026** |
+| ☐ 15 | Add **project versioning, pipeline operation tracking, data-integrity safeguards, and lip-sync/export stage checkpoints** | **03 Sep 2026** |
 
 ---
 
@@ -18,7 +60,7 @@ audio-video-translation-app/
 │   │   │   ├── media.py                  # MediaFile, UploadSession, UploadChunk models
 │   │   │   ├── transcript.py             # Transcript and TranscriptSegment models
 │   │   │   ├── translation.py            # Translation model with duration metrics and iteration history
-│   │   │   ├── voice_profile.py          # VoiceProfile model for speaker embeddings & ElevenLabs IDs
+│   │   │   ├── voice_profile.py          # VoiceProfile model for synthesized speaker voices
 │   │   │   └── generated_audio.py        # GeneratedAudio model for retimed TTS audio segments
 │   │   ├── schemas/
 │   │   │   ├── media_schema.py           # Pydantic v2 schemas for chunked & direct media upload
@@ -30,12 +72,8 @@ audio-video-translation-app/
 │   │   │   ├── media_service.py          # FFprobe stream inspector & FFmpeg thumbnail generator
 │   │   │   ├── audio_extraction_service.py # 16kHz mono WAV demuxing (<30s for 4GB)
 │   │   │   ├── audio_preprocessing_service.py # Noise reduction, -20 LUFS norm & VAD chunking
-│   │   │   ├── deepgram_service.py       # Deepgram Nova-2 STT with speaker diarization
-│   │   │   ├── openai_service.py         # OpenAI GPT-4o async client with token/cost tracking
 │   │   │   ├── duration_matcher.py       # Iterative length matching feedback loop (±10% tolerance)
 │   │   │   ├── translation_service.py    # Batch translation orchestrator with sliding context window
-│   │   │   ├── elevenlabs_service.py     # ElevenLabs Multilingual v2 & instant voice cloning
-│   │   │   ├── voice_cloning_service.py  # 30-90s speaker sample harvester & profile creator
 │   │   │   ├── tts_orchestrator.py       # Concurrent TTS speech synthesis & S3 uploader
 │   │   │   └── audio_postprocessor.py    # FFmpeg atempo time-stretching, de-clicking & master mixing
 │   │   ├── utils/
@@ -110,9 +148,8 @@ GOOGLE_APPLICATION_CREDENTIALS="C:/absolute/path/to/service-account.json"
 
 Install dependencies again after this change: `pip install -r requirements.txt`.
 The Google account email is not used by the application; the project ID and
-service-account credentials determine access. Google Cloud translations are
-measured for duration and then retimed in the media pipeline; duration-guided
-text rewriting remains available through the OpenAI provider.
+service-account credentials determine access. Google Cloud translations are measured for duration and then retimed in the
+media pipeline.
 
 ### 2. Start Services
 ```bash
@@ -136,5 +173,39 @@ celery -A app.core.celery_app worker -Q audio_extract,stt_diarize,translation,tt
 
 ### 3. Run Test Suite
 ```bash
-pytest tests/ -v
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --cov-report=json
+
+cd ../frontend
+npm ci
+npm run test:coverage
+npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
+
+The backend gate enforces 80% combined statement/branch coverage (current baseline:
+84.49% statements, 64.19% branches, 81.24% combined). The frontend gate enforces
+80% statements, 75% branches, 75% functions, and 80% lines, with higher
+file-specific thresholds in `frontend/vitest.config.ts` (current baseline: 84.48%
+statements and 82.69% branches). Thresholds may be raised, but must not be lowered.
+
+Playwright runs seven critical-path scenarios in Chromium for pull requests.
+Firefox and WebKit projects are available through `npm run test:e2e:all` when
+those browser binaries are installed. The suite intercepts the application API
+and upload destinations with deterministic local fixtures; it never calls paid
+or cloud services and needs no production credentials.
+
+CI runs backend and frontend coverage, the Next.js production build/type-check,
+Playwright Chromium, PostgreSQL 15 fresh-schema and preceding-revision migration
+checks, dependency review, CodeQL, and secret scanning. Failed browser traces and
+coverage/migration reports are uploaded as workflow artifacts. Native GitHub
+secret scanning and push protection should also remain enabled in repository
+settings.
+
+Historical retired-provider modules are excluded from the active coverage
+baseline pending removal and are not exercised or referenced by E2E or CI jobs.
+Credentialed production or staging smoke tests remain separate for Google
+sign-in/OIDC, Google Cloud Storage signed uploads, Cloud Tasks delivery, and
+Replicate rendering.

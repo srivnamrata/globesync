@@ -7,10 +7,10 @@ import uuid
 from typing import Any, Dict, Optional
 from celery import shared_task
 import redis
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import SyncSessionLocal as SyncSession
 from app.models.export_job import ExportJob
 from app.models.media import MediaFile
 from app.services.export_orchestrator import export_orchestrator
@@ -18,8 +18,6 @@ from app.services.export_queue_manager import export_queue_manager
 from app.services.storage_service import storage_service
 
 logger = logging.getLogger("export_tasks")
-sync_engine = create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
-SyncSession = sessionmaker(bind=sync_engine)
 
 
 def publish_export_progress(job_id: str, status: str, stage: str, progress: int, eta_seconds: Optional[float] = None):

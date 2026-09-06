@@ -21,7 +21,7 @@ $EnvFile = if ($env:ENV_FILE) { $env:ENV_FILE } else { "deploy/cloudrun.env.yaml
 $GoogleWebClientId = if ($env:GOOGLE_WEB_CLIENT_ID) { $env:GOOGLE_WEB_CLIENT_ID } elseif ($env:NEXT_PUBLIC_GOOGLE_CLIENT_ID) { $env:NEXT_PUBLIC_GOOGLE_CLIENT_ID } else { "164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com" }
 
 $ApiConcurrency = if ($env:API_CONCURRENCY) { $env:API_CONCURRENCY } else { "10" }
-$ApiMaxInstances = if ($env:API_MAX_INSTANCES) { $env:API_MAX_INSTANCES } else { "8" }
+$ApiMaxInstances = if ($env:API_MAX_INSTANCES) { $env:API_MAX_INSTANCES } else { "4" }
 $ApiMinInstances = if ($env:API_MIN_INSTANCES) { $env:API_MIN_INSTANCES } else { "0" }
 $ApiTimeout = if ($env:API_TIMEOUT) { $env:API_TIMEOUT } else { "1800" }
 $ApiSecrets = "DATABASE_URL=translation-database-url:latest,SYNC_DATABASE_URL=translation-sync-database-url:latest,JWT_SECRET_KEY=translation-jwt-secret:latest"
@@ -151,7 +151,7 @@ Write-Host "API URL: $ApiUrl"
 # Merge-only update, matching deploy-cloudrun.sh: never replaces existing env vars like ALLOWED_ORIGINS or GOOGLE_OAUTH_CLIENT_IDS.
 gcloud run services update $ApiService `
   --region=$Region `
-  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=$ApiUrl##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[\`"$GoogleWebClientId\`"]"
+  --update-env-vars="^##^CLOUD_TASKS_TARGET_URL=$ApiUrl##CLOUD_TASKS_OIDC_SERVICE_ACCOUNT=$RuntimeSa##INTERNAL_TASKS_AUDIENCE=$ApiUrl##GCS_BUCKET_NAME=$RawBucket##GCS_EXPORTS_BUCKET=$ExportsBucket##GOOGLE_OAUTH_CLIENT_IDS=[\`"$GoogleWebClientId\`"]"
 if ($LASTEXITCODE -ne 0) { throw "API runtime environment update failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"

@@ -30,6 +30,10 @@ class WorkspaceAccessError(AuthServiceError):
     """Raised when a user requests a workspace they do not belong to."""
 
 
+class AccountAccessError(AuthServiceError):
+    """Raised when a persisted account cannot be safely authenticated."""
+
+
 @dataclass(slots=True)
 class ResolvedIdentity:
     email: str
@@ -145,13 +149,23 @@ class AuthService:
             await db.flush()
             return user
 
+        if not user.is_active:
+            raise AccountAccessError("This account is inactive.")
+
+        if identity.auth_subject:
+            if user.auth_subject and (
+                user.auth_provider != identity.auth_provider
+                or user.auth_subject != identity.auth_subject
+            ):
+                raise AccountAccessError("This identity is not linked to the existing account.")
+            if not user.auth_subject and user.auth_provider != identity.auth_provider:
+                raise AccountAccessError("This identity provider cannot be linked to the existing account.")
+
         user.email = identity.email
         if identity.display_name:
             user.display_name = identity.display_name
         if identity.auth_subject and not user.auth_subject:
             user.auth_subject = identity.auth_subject
-        if not user.is_active:
-            user.is_active = True
         user.last_login_at = now
         user.updated_at = now
         await db.flush()

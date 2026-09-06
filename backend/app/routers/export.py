@@ -254,7 +254,11 @@ async def cancel_export_job(
         not_found_detail="Export job not found.",
     )
 
-    export_queue_manager.cancel_job(str(job_id))
+    if not export_queue_manager.cancel_job(str(job_id)):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Export cancellation is unavailable.",
+        )
     job.status = "failed"
     job.error_message = "Export cancelled by user."
     await db.commit()

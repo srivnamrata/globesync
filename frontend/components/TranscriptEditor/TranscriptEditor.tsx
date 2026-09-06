@@ -18,7 +18,7 @@ export const TranscriptEditor: React.FC = () => {
 
   const handleOriginalTextChange = (id: string, text: string) => {
     editor.updateSegmentText(id, 'original', text);
-    // Request GPT-4o retranslation of the modified source segment text
+    // Keep the translated segment synchronized after source edits.
     reTrans.requestReTranslation(id, text, 'es');
   };
 
