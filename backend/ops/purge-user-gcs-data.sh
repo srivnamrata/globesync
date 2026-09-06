@@ -12,7 +12,16 @@
 # Important:
 # * Run this before the database purge so the database can still resolve project IDs and object paths.
 # * Review the generated object_uris.txt and project_ids.txt files before running with APPLY=1.
-
+# * If DATABASE_URL / SYNC_DATABASE_URL is unset, the script will try Secret Manager secret
+#   translation-sync-database-url in the configured GCP project.
+#
+# For a preview of what will be deleted:
+# bash ./backend/ops/purge-user-gcs-data.sh
+# Output files -
+#  PROJECT_IDS_FILE="$WORK_DIR/project_ids.txt"
+#  OBJECT_URIS_FILE="$WORK_DIR/object_uris.txt"
+# For an actual delete after reviewing the preview files:
+# APPLY=1 bash ./backend/ops/purge-user-gcs-data.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +31,7 @@ EXPORTS_BUCKET_NAME="${EXPORTS_BUCKET_NAME:-${PROJECT_ID}-media-exports}"
 RAW_BUCKET_URI="gs://${RAW_BUCKET_NAME}"
 EXPORTS_BUCKET_URI="gs://${EXPORTS_BUCKET_NAME}"
 DATABASE_URL="${DATABASE_URL:-${SYNC_DATABASE_URL:-}}"
+DB_SECRET_NAME="${DB_SECRET_NAME:-translation-sync-database-url}"
 APPLY="${APPLY:-0}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRIPT_DIR}/.purge-user-gcs-data}"
 RUN_LABEL="${RUN_LABEL:-$(date +%Y%m%d-%H%M%S)}"
@@ -40,11 +50,6 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
-if [[ -z "${DATABASE_URL}" ]]; then
-  echo "ERROR: Set DATABASE_URL or SYNC_DATABASE_URL before running this script." >&2
-  exit 1
-fi
-
 if ! command -v psql >/dev/null 2>&1; then
   echo "ERROR: psql is required but was not found on PATH." >&2
   exit 1
@@ -55,11 +60,23 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
+gcloud config set project "$PROJECT_ID" >/dev/null
+
+if [[ -z "${DATABASE_URL}" ]]; then
+  DATABASE_URL="$(gcloud secrets versions access latest --secret="$DB_SECRET_NAME" 2>/dev/null || true)"
+fi
+
+if [[ -z "${DATABASE_URL}" ]]; then
+  echo "ERROR: No database URL available." >&2
+  echo "Set DATABASE_URL or SYNC_DATABASE_URL, or ensure Secret Manager secret ${DB_SECRET_NAME} exists in project ${PROJECT_ID}." >&2
+  exit 1
+fi
+
 mkdir -p "$WORK_DIR"
 PROJECT_IDS_FILE="$WORK_DIR/project_ids.txt"
 OBJECT_URIS_FILE="$WORK_DIR/object_uris.txt"
 
-gcloud config set project "$PROJECT_ID" >/dev/null
+echo "Using database connection source: ${DB_SECRET_NAME} secret or environment"
 
 PSQL_ARGS=("$DATABASE_URL" -v ON_ERROR_STOP=1 -v email_1="$EMAIL_1")
 if [[ -n "$EMAIL_2" ]]; then
