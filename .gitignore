@@ -12,9 +12,12 @@ backend/venv/
 frontend/node_modules/
 frontend/.next/
 frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
 
 # Python test and coverage artifacts
 .pytest_cache/
 .coverage
 coverage.xml
+coverage.json
 htmlcov/

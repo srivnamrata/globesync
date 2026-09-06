@@ -9,7 +9,9 @@
     "lint": "next lint",
     "test": "vitest",
     "test:ci": "vitest run --reporter=verbose --no-file-parallelism",
-    "test:coverage": "vitest run --coverage --no-file-parallelism"
+    "test:coverage": "vitest run --coverage --no-file-parallelism",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:all": "playwright test"
   },
   "dependencies": {
     "next": "^16.3.1",
@@ -21,6 +23,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
