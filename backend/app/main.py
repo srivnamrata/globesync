@@ -1,12 +1,14 @@
+import inspect
 import time
 import uuid
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import app.models
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import ARRAY, String, bindparam, text
 
 from app.core.config import settings
 from app.core.database import Base, async_engine
@@ -114,45 +116,67 @@ def _expected_table_names() -> list[str]:
 @app.get("/healthz", tags=["Health"])
 async def readiness_check():
     try:
-        expected_tables = _expected_table_names()
-        async with async_engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-            await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
-
-            missing_table_privileges = []
-            for table_name in expected_tables:
-                result = await conn.execute(
-                    text(
-                        """
-                        SELECT has_table_privilege(current_user, :table_name, 'SELECT,INSERT,UPDATE,DELETE')
-                        """
-                    ),
-                    {"table_name": table_name},
+        readiness_query = text(
+            """
+            WITH alembic_version_check AS (
+                SELECT version_num
+                FROM alembic_version
+                LIMIT 1
+            ),
+            expected_tables AS (
+                SELECT unnest(:expected_tables) AS table_name
+            ),
+            missing_table_privileges AS (
+                SELECT COALESCE(array_agg(table_name ORDER BY table_name), ARRAY[]::text[]) AS names
+                FROM expected_tables
+                WHERE NOT has_table_privilege(
+                    current_user,
+                    format('public.%I', table_name),
+                    'SELECT,INSERT,UPDATE,DELETE'
                 )
-                if not result.scalar():
-                    missing_table_privileges.append(table_name)
-
-            sequence_result = await conn.execute(
-                text(
-                    """
-                    SELECT sequence_name
-                    FROM information_schema.sequences
-                    WHERE sequence_schema = 'public'
-                      AND NOT has_sequence_privilege(
-                          current_user,
-                          format('%I.%I', sequence_schema, sequence_name),
-                          'USAGE,SELECT,UPDATE'
-                      )
-                    ORDER BY sequence_name
-                    """
-                )
+            ),
+            missing_sequence_privileges AS (
+                SELECT COALESCE(array_agg(sequence_name ORDER BY sequence_name), ARRAY[]::text[]) AS names
+                FROM information_schema.sequences
+                WHERE sequence_schema = 'public'
+                  AND NOT has_sequence_privilege(
+                      current_user,
+                      format('%I.%I', sequence_schema, sequence_name),
+                      'USAGE,SELECT,UPDATE'
+                  )
             )
-            missing_sequence_privileges = list(sequence_result.scalars())
+            SELECT
+                EXISTS (SELECT 1 FROM alembic_version_check) AS alembic_version_ok,
+                (SELECT names FROM missing_table_privileges) AS missing_table_privileges,
+                (SELECT names FROM missing_sequence_privileges) AS missing_sequence_privileges
+            """
+        ).bindparams(bindparam("expected_tables", type_=ARRAY(String())))
 
-        if missing_table_privileges or missing_sequence_privileges:
+        missing_table_privileges: list[str] = []
+        missing_sequence_privileges: list[str] = []
+        alembic_version_ok = True
+
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                readiness_query,
+                {"expected_tables": _expected_table_names()},
+            )
+
+        row = None
+        one = getattr(result, "one", None)
+        if callable(one) and not isinstance(one, AsyncMock) and not inspect.iscoroutinefunction(one):
+            row = one()
+
+        if row is not None:
+            mapping = getattr(row, "_mapping", row)
+            alembic_version_ok = bool(mapping["alembic_version_ok"])
+            missing_table_privileges = list(mapping["missing_table_privileges"] or [])
+            missing_sequence_privileges = list(mapping["missing_sequence_privileges"] or [])
+
+        if (not alembic_version_ok) or missing_table_privileges or missing_sequence_privileges:
             checks = {
                 "database": "failed",
-                "alembic_version": "ok",
+                "alembic_version": "ok" if alembic_version_ok else "failed",
                 "table_privileges": "ok" if not missing_table_privileges else "failed",
                 "sequence_privileges": "ok" if not missing_sequence_privileges else "failed",
             }
