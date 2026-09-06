@@ -198,6 +198,24 @@ describe('PipelineStatus', () => {
     expect(screen.queryByText('Lip-sync')).not.toBeInTheDocument();
   });
 
+  it('treats succeeded exports as completed for stage styling and badge copy', () => {
+    render(
+      <PipelineStatus
+        mode="dub_only"
+        status="succeeded"
+        progressPercent={100}
+        currentStage="export"
+        hasMedia
+        hasTranscript
+        translationCount={1}
+        segmentCount={1}
+      />,
+    );
+
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('The build is complete.')).toBeInTheDocument();
+  });
+
   it.each([
     ['transcribe', 'retry transcription'],
     ['translate', 'retry translation'],

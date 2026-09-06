@@ -220,6 +220,60 @@ describe('TranslationEditor workflow', () => {
     expect(screen.getByRole('button', { name: 'Dubbed' })).toBeDisabled();
   });
 
+  it('switches media monitor download actions between original and dubbed outputs', async () => {
+    const user = userEvent.setup();
+    const projectWithRender: Project = {
+      ...baseProject,
+      mediaId: 'media-1',
+      transcriptId: 'transcript-1',
+      mediaFilename: 'source.mp4',
+      currentLipsyncJobId: 'job-1',
+      targetLanguage: 'es',
+    };
+    const draftWithAssets = {
+      ...draftWithContent(),
+      mediaReferences: {
+        ...draftWithContent().mediaReferences,
+        mediaId: 'media-1',
+        transcriptId: 'transcript-1',
+        videoFilename: 'source.mp4',
+      },
+    };
+
+    service.getProject.mockResolvedValue(projectWithRender);
+    service.getProjectDraft.mockResolvedValue({
+      draft: draftWithAssets,
+      version: 2,
+      baseProjectUpdatedAt: projectWithRender.updatedAt,
+    });
+    service.getMedia.mockResolvedValue({
+      media_id: 'media-1',
+      filename: 'source.mp4',
+      media_type: 'video/mp4',
+      filesize_bytes: 1024,
+      duration_seconds: 2,
+      status: 'ready',
+      storage_path: 'gs://bucket/source.mp4',
+      created_at: projectWithRender.createdAt,
+      media_url: 'https://cdn.test/source.mp4',
+    });
+    service.getExportStatus.mockResolvedValue({
+      job_id: 'job-1',
+      status: 'completed',
+      progress_percent: 100,
+      current_stage: 'export',
+      output_video_url: 'https://cdn.test/globesync_dub_only_es.mp4',
+    });
+    service.fetchTranslations.mockResolvedValue([loadedTranslation]);
+
+    render(<TranslationEditor />);
+    await screen.findByRole('heading', { name: 'Launch film' });
+
+    expect(screen.getByRole('button', { name: 'Download original' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dubbed' }));
+    expect(screen.getByRole('button', { name: 'Download dubbed' })).toBeInTheDocument();
+  });
+
   it('does not leave a queued message behind when lip-sync is unavailable', async () => {
     const user = userEvent.setup();
     const projectWithAssets: Project = {

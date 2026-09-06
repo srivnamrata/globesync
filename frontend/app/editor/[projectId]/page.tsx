@@ -42,6 +42,21 @@ type ActiveBuildJob = {
   error_message?: string | null;
 };
 
+function deriveFilenameFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const pathname = new URL(url).pathname;
+    const candidate = decodeURIComponent(pathname.split('/').filter(Boolean).pop() ?? '');
+    return candidate || null;
+  } catch {
+    return null;
+  }
+}
+
+function ensureMp4Filename(name: string): string {
+  return /\.mp4$/i.test(name) ? name : `${name}.mp4`;
+}
+
 export default function TranslationEditor() {
   const params = useParams();
   const router = useRouter();
@@ -558,10 +573,14 @@ export default function TranslationEditor() {
   }, [currentProject, segments, translations, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
-  const comparisonUrl = comparisonMode === 'original'
-    ? sourceMediaUrl
-    : renderedVideoUrl;
-  const hasComparisonUrl = Boolean(comparisonUrl?.startsWith('http'));
+  const previewLabel = comparisonMode === 'original' ? 'original' : 'dubbed';
+  const previewUrl = comparisonMode === 'original' ? sourceMediaUrl : renderedVideoUrl;
+  const previewDownloadName = comparisonMode === 'original'
+    ? ensureMp4Filename(currentProject.mediaFilename ?? deriveFilenameFromUrl(sourceMediaUrl) ?? `${currentProject.name}-original`)
+    : ensureMp4Filename(
+      deriveFilenameFromUrl(renderedVideoUrl)
+      ?? `${currentProject.name}-${currentProject.targetLanguage}`,
+    );
   const totalDurationSeconds = useMemo(
     () => segments.reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
     [segments],
@@ -989,9 +1008,19 @@ export default function TranslationEditor() {
     }
 
     try {
-      setBuildMode(withLipSync ? 'dub_and_lipsync' : 'dub_only');
+      const nextRenderMode = withLipSync ? 'dub_and_lipsync' : 'dub_only';
+      setBuildMode(nextRenderMode);
       setBuildState('syncing');
       setLipSyncStatuses({});
+      setActiveBuildJob({
+        job_id: 'pending',
+        render_mode: nextRenderMode,
+        status: 'queued',
+        progress_percent: 0,
+        current_stage: 'queued',
+        last_successful_stage: null,
+        error_message: null,
+      });
       setUploadMessage('Saving translated segment edits…');
       const persistedTranslations = await syncTranslationsBeforeBuild();
 
@@ -1022,16 +1051,17 @@ export default function TranslationEditor() {
         effectiveProjectForBuild.targetLanguage,
         effectiveProjectForBuild.id,
       );
-      setUploadMessage(withLipSync ? 'Queuing dub and lip-sync pipeline…' : 'Queuing dub-only pipeline…');
       setActiveBuildJob({
         job_id: job.job_id,
-        render_mode: withLipSync ? 'dub_and_lipsync' : 'dub_only',
+        render_mode: nextRenderMode,
         status: 'queued',
         progress_percent: 0,
         current_stage: 'queued',
+        last_successful_stage: null,
+        error_message: null,
       });
 
-      setUploadMessage(withLipSync ? 'Building dubbed audio and syncing lip motion…' : 'Building dubbed audio…');
+      setUploadMessage(withLipSync ? 'Starting Dub + Lip-Sync build…' : 'Queuing dub-only pipeline…');
       const completedJob = await pollForLipSyncCompletion(job.job_id, withLipSync);
       if (withLipSync && Array.isArray(completedJob?.segments_metadata)) {
         setLipSyncStatuses(
@@ -1065,15 +1095,15 @@ export default function TranslationEditor() {
         }
 
         if (!withLipSync) {
-          setUploadMessage('Dub complete. Preview is ready — download the dubbed video below.');
+          setUploadMessage('Dub complete. Preview is ready.');
         } else {
           const skippedSegments = Array.isArray(completedJob?.segments_metadata)
             ? completedJob.segments_metadata.filter((s: { render_status?: string }) => s.render_status && s.render_status !== 'completed')
             : [];
           if (skippedSegments.length === 0) {
-            setUploadMessage('Dub & Lip-Sync complete. Preview is ready, and you can download the finished video below.');
+            setUploadMessage('Dub & Lip-Sync complete. Preview is ready.');
           } else if (skippedSegments.length === segments.length) {
-            setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video below.');
+            setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video.');
           } else {
             setUploadMessage(`Dub completed. Lip-sync was skipped for ${skippedSegments.length} segment${skippedSegments.length === 1 ? '' : 's'}, so parts of the video may keep the original facial motion.`);
           }
@@ -1083,6 +1113,7 @@ export default function TranslationEditor() {
         setUploadMessage('Build completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
       }
     } catch (error) {
+      setActiveBuildJob((job) => (job?.job_id === 'pending' ? null : job));
       setUploadMessage(mapUserFacingError(error, withLipSync ? 'Unable to build dub and lip-sync output.' : 'Unable to build dubbed output.'));
     } finally {
       setBuildState('idle');
@@ -1315,8 +1346,8 @@ export default function TranslationEditor() {
               variant="secondary"
               size="sm"
               className={`${dirtySegments.size > 0
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
-                  : 'text-slate-400'
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                : 'text-slate-400'
                 }`}
               title="Save changes (Ctrl+S)"
             >
@@ -1634,12 +1665,12 @@ export default function TranslationEditor() {
                     role="group"
                     aria-label={`Segment by ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
                     className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${timeline.selectedSegmentId === seg.id
-                        ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
-                        : dirtySegments.has(seg.id)
-                          ? 'border-amber-500/50 bg-amber-950/20'
-                          : hasRisk
-                            ? 'border-red-800/50 bg-red-950/10'
-                            : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
+                      ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+                      : dirtySegments.has(seg.id)
+                        ? 'border-amber-500/50 bg-amber-950/20'
+                        : hasRisk
+                          ? 'border-red-800/50 bg-red-950/10'
+                          : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
                       }`}
                   >
                     {/* Left column: source transcript */}
@@ -1671,8 +1702,8 @@ export default function TranslationEditor() {
                               }
                             }}
                             className={`text-[10px] px-2 py-0.5 rounded transition font-semibold uppercase tracking-wider ${loopSegmentId === seg.id
-                                ? 'bg-amber-500/30 text-amber-200'
-                                : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
+                              ? 'bg-amber-500/30 text-amber-200'
+                              : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
                               }`}
                             aria-pressed={loopSegmentId === seg.id}
                             title="Loop this segment"
@@ -1879,45 +1910,52 @@ export default function TranslationEditor() {
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Export Output</h3>
                 <p className="mt-2 text-sm text-slate-300">
                   {renderedVideoUrl
-                    ? `Your ${currentProject.targetLanguage.toUpperCase()} dubbed video preview is ready.`
+                    ? comparisonMode === 'original'
+                      ? 'The original source video is selected in Media monitor.'
+                      : `Your ${currentProject.targetLanguage.toUpperCase()} dubbed video preview is ready.`
                     : 'Run Dub only or Dub & Lip-Sync to generate a preview and downloadable output.'}
                 </p>
               </div>
-              {renderedVideoUrl && (
+              {previewUrl && (
                 <div className="flex shrink-0 gap-2">
                   <a
-                    href={renderedVideoUrl}
+                    href={previewUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
                   >
-                    Open video
+                    {comparisonMode === 'original' ? 'Open original' : 'Open dubbed'}
                   </a>
                   <button
                     type="button"
                     className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={async () => {
                       try {
-                        const response = await fetch(renderedVideoUrl);
+                        const response = await fetch(previewUrl);
                         const blob = await response.blob();
                         const objectUrl = URL.createObjectURL(blob);
                         const anchor = document.createElement('a');
                         anchor.href = objectUrl;
-                        anchor.download = `${currentProject.name}-${currentProject.targetLanguage}.mp4`;
+                        anchor.download = previewDownloadName;
                         document.body.appendChild(anchor);
                         anchor.click();
                         document.body.removeChild(anchor);
                         URL.revokeObjectURL(objectUrl);
                       } catch {
-                        window.open(renderedVideoUrl, '_blank');
+                        window.open(previewUrl, '_blank');
                       }
                     }}
                   >
-                    Download video
+                    {comparisonMode === 'original' ? 'Download original' : 'Download dubbed'}
                   </button>
                 </div>
               )}
             </div>
+            {previewUrl && (
+              <p className="mt-3 text-xs text-slate-500">
+                Downloading {previewLabel} media as `{previewDownloadName}`.
+              </p>
+            )}
           </div>
 
           <div className="mt-4 flex min-h-[310px] flex-1 shrink-0 flex-col justify-between gap-4 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
@@ -1989,8 +2027,8 @@ export default function TranslationEditor() {
                         aria-current={isActive ? 'true' : undefined}
                         title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
                         className={`min-w-[2rem] rounded-md border transition ${isActive
-                            ? 'border-indigo-400 bg-indigo-500/40'
-                            : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
+                          ? 'border-indigo-400 bg-indigo-500/40'
+                          : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
                           }`}
                         style={{ width: `${widthPercent}%`, height: `${Math.max(30, Math.min(96, 28 + segment.durationSeconds * 18))}px` }}
                       />

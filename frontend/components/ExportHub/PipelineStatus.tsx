@@ -46,6 +46,20 @@ function recoveryMessage(stage?: string | null): string {
   }
 }
 
+function normalizePipelineStatus(status: string): 'queued' | 'in_progress' | 'completed' | 'failed' {
+  const normalized = status.toLowerCase();
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'success' || normalized === 'succeeded') {
+    return 'completed';
+  }
+  if (normalized === 'failed' || normalized === 'error') {
+    return 'failed';
+  }
+  if (normalized === 'processing' || normalized === 'running') {
+    return 'in_progress';
+  }
+  return normalized === 'queued' ? 'queued' : 'in_progress';
+}
+
 function stageActivityLabel(stage: PipelineStage, status: string): string {
   if (status === 'queued') {
     return 'Queued';
@@ -83,19 +97,20 @@ export function PipelineStatus({
 }: PipelineStatusProps) {
   const rawStage = currentStage.replace(/-/g, '_').toLowerCase() as PipelineStage;
   const normalizedStage = mode === 'dub_only' && rawStage === 'lip_sync' ? 'export' : rawStage;
-  const isFailed = status === 'failed';
-  const isCompleted = status === 'completed';
+  const normalizedStatus = normalizePipelineStatus(status);
+  const isFailed = normalizedStatus === 'failed';
+  const isCompleted = normalizedStatus === 'completed';
   const progress = Math.max(0, Math.min(100, progressPercent));
   const prerequisites = {
     upload: hasMedia,
     transcribe: hasTranscript && segmentCount > 0,
     translate: segmentCount > 0 && translationCount >= segmentCount,
   };
-  const activityLabel = stageActivityLabel(normalizedStage, status);
+  const activityLabel = stageActivityLabel(normalizedStage, normalizedStatus);
   const visibleStages = mode === 'dub_only' ? stages.filter((stage) => stage.id !== 'lip_sync') : stages;
 
   return (
-    <section className="rounded-xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 shadow-lg shadow-slate-950/20" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={status === 'queued' || status === 'in_progress' || status === 'processing'}>
+    <section className="rounded-xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 shadow-lg shadow-slate-950/20" aria-labelledby="pipeline-status-heading" aria-live="polite" aria-busy={normalizedStatus === 'queued' || normalizedStatus === 'in_progress'}>
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
         <div className="flex min-w-[13rem] items-center justify-between gap-3 xl:block">
           <div>
