@@ -129,6 +129,8 @@ describe('ProjectBrowser', () => {
     expect(screen.getByText('Opening GlobeSync')).toBeInTheDocument();
     expect(await screen.findByTestId('public-landing')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
+    expect(auth.listAvailableWorkspaces).not.toHaveBeenCalled();
+    expect(auth.listWorkspaceMembers).not.toHaveBeenCalled();
   });
 
   it('signs in from the public landing and loads remote projects', async () => {

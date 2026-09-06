@@ -114,6 +114,9 @@ export default function ProjectBrowser() {
   useEffect(() => {
     const unsubscribe = authService.subscribeToAuthState((nextContext) => {
       if (!nextContext) {
+        setAuthContext(null);
+        setAvailableWorkspaces([]);
+        setWorkspaceMembers([]);
         return;
       }
 
@@ -146,8 +149,13 @@ export default function ProjectBrowser() {
         }
 
         setAuthContext(context);
-        setAvailableWorkspaces(await authService.listAvailableWorkspaces().catch(() => []));
-        setWorkspaceMembers(await authService.listWorkspaceMembers().catch(() => []));
+        if (context) {
+          setAvailableWorkspaces(await authService.listAvailableWorkspaces().catch(() => []));
+          setWorkspaceMembers(await authService.listWorkspaceMembers().catch(() => []));
+        } else {
+          setAvailableWorkspaces([]);
+          setWorkspaceMembers([]);
+        }
         setGoogleSignInReady(!context && await authService.isGoogleSignInAvailable().catch(() => false));
       } catch (error) {
         console.error('Failed to initialize auth context:', error);
