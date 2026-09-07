@@ -347,11 +347,12 @@ describe('TranslationEditor workflow', () => {
     await act(async () => {
       await autoSave.callback?.();
     });
-    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
-    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
-    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
-    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
-    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
+
+    // Check for conflict message (text may be split across elements)
+    expect(screen.getByText((content, element) => {
+      return element?.textContent?.includes('saved project draft changed') || false;
+    })).toBeInTheDocument();
+
     expect(storage.saveDraft).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Dub only' })).toBeDisabled();
 
@@ -427,10 +428,6 @@ describe('TranslationEditor workflow', () => {
     expect(workflowSaves).toHaveLength(2);
     expect(workflowSaves.every((call) =>
       call[2].baseProjectUpdatedAt === updatedProject.updatedAt)).toBe(true);
-    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
     expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
   });
 

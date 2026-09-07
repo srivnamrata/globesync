@@ -239,7 +239,10 @@ describe('PipelineStatus', () => {
       />,
     );
 
-    expect(screen.getByText(new RegExp(expected, 'i'))).toBeInTheDocument();
+    // Use flexible text matcher for text that may be split across elements
+    expect(screen.getByText((content, element) => {
+      return element?.textContent?.match(new RegExp(expected, 'i')) ? true : false;
+    })).toBeInTheDocument();
     expect(screen.getByText(/Last successful checkpoint: Upload/)).toBeInTheDocument();
     unmount();
   });
