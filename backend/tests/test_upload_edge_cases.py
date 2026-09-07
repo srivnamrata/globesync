@@ -14,10 +14,12 @@ from app.routers.upload import (
     complete_resumable_upload,
     get_media_file,
     get_resumable_upload_status,
+    init_resumable_upload,
     init_signed_resumable_upload,
     upload_resumable_chunk,
 )
 from app.schemas.media_schema import InitSignedUploadRequest
+from app.core.config import settings
 from app.utils.error_codes import (
     ChecksumMismatchException,
     ErrorCode,
@@ -181,7 +183,7 @@ async def test_signed_resumable_initialization_uses_request_origin_and_persists_
 
 
 @pytest.mark.asyncio
-async def test_upload_chunk_rejects_missing_expired_empty_and_bad_checksum():
+async def test_upload_chunk_rejects_missing_expired_empty_oversized_and_bad_checksum():
     upload_id = uuid.uuid4()
     context = _context()
 
@@ -225,6 +227,22 @@ async def test_upload_chunk_rejects_missing_expired_empty_and_bad_checksum():
         )
     assert empty.value.error_code == ErrorCode.CHUNK_TOO_SMALL
 
+    oversized = _session(
+        workspace_id=context.workspace_id,
+        chunk_size_bytes=settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES + 1024,
+    )
+    with pytest.raises(MediaAppException) as too_large:
+        await upload_resumable_chunk(
+            oversized.id,
+            f"bytes 0-{settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES}/8",
+            0,
+            None,
+            _request(b"a" * (settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES + 1)),
+            context,
+            _QueueDatabase(oversized),
+        )
+    assert too_large.value.error_code == ErrorCode.CHUNK_TOO_LARGE
+
     with pytest.raises(ChecksumMismatchException):
         await upload_resumable_chunk(
             active.id,
@@ -235,6 +253,21 @@ async def test_upload_chunk_rejects_missing_expired_empty_and_bad_checksum():
             context,
             _QueueDatabase(active),
         )
+
+
+@pytest.mark.asyncio
+async def test_init_resumable_upload_rejects_requested_chunk_sizes_above_server_limit():
+    request = SimpleNamespace(
+        filename="clip.mp4",
+        filesize_bytes=settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES * 4,
+        mime_type="video/mp4",
+        chunk_size_bytes=settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES + 1,
+    )
+
+    with pytest.raises(MediaAppException) as error:
+        await init_resumable_upload(request, _context(), _QueueDatabase())
+
+    assert error.value.error_code == ErrorCode.CHUNK_TOO_LARGE
 
 
 @pytest.mark.asyncio

@@ -427,7 +427,7 @@ export class MockBackend {
           media_type: 'video/mp4',
           filesize_bytes: 1024,
           duration_seconds: 4,
-          media_url: null,
+          media_url: 'https://media.globesync.test/launch.mp4',
           status: 'ready',
           storage_path: 'e2e/launch.mp4',
           thumbnail_url: null,

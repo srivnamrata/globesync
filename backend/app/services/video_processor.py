@@ -1,6 +1,7 @@
 import asyncio
 import os
 import subprocess
+from fractions import Fraction
 from typing import List, Optional, Tuple
 from app.core.config import settings
 from app.utils.error_codes import ErrorCode, MediaAppException
@@ -8,6 +9,19 @@ from app.utils.error_codes import ErrorCode, MediaAppException
 
 class VideoProcessor:
     """Handles high-performance video slicing, frame extraction, and lossless concatenation via FFmpeg."""
+
+    @staticmethod
+    def _parse_frame_rate(fps_str: str) -> float:
+        candidate = (fps_str or "").strip()
+        if not candidate:
+            return 30.0
+
+        try:
+            fps = float(Fraction(candidate)) if "/" in candidate else float(candidate)
+        except (ValueError, ZeroDivisionError):
+            return 30.0
+
+        return fps if fps > 0 else 30.0
 
     @classmethod
     async def extract_video_segment(
@@ -94,7 +108,7 @@ class VideoProcessor:
             width = int(parts[0]) if len(parts) > 0 and parts[0] else 1920
             height = int(parts[1]) if len(parts) > 1 and parts[1] else 1080
             fps_str = parts[2] if len(parts) > 2 else "30/1"
-            fps = eval(fps_str) if "/" in fps_str else float(fps_str)
+            fps = cls._parse_frame_rate(fps_str)
             duration = float(parts[3]) if len(parts) > 3 and parts[3] else 60.0
             return width, height, round(fps, 3), round(duration, 3)
         except Exception:

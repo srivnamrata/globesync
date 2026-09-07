@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import Response
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from app import main
@@ -27,6 +28,20 @@ def _request(headers=None):
 
 def test_translation_provider_defaults_to_google():
     assert Settings.model_fields["TRANSLATION_PROVIDER"].default == "google"
+
+
+def test_settings_allow_development_defaults():
+    settings = Settings(DEPLOYMENT_ENV="development")
+
+    assert settings.JWT_SECRET_KEY == "replace-with-super-secret-hex-key-in-production"
+
+
+def test_settings_reject_production_placeholder_secrets():
+    with pytest.raises(ValidationError) as error:
+        Settings(DEPLOYMENT_ENV="production")
+
+    assert "JWT_SECRET_KEY" in str(error.value)
+    assert "DATABASE_URL" in str(error.value)
 
 
 @pytest.mark.asyncio
@@ -134,6 +149,12 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
     assert response.status_code == 503
     assert b'"detail":"database unavailable"' in response.body
     assert b"password" not in response.body
+
+
+def test_export_router_is_mounted_under_v1_prefix():
+    route_paths = {route.path for route in main.app.routes}
+
+    assert f"{main.settings.API_V1_STR}/export/render" in route_paths
 
 
 @pytest.mark.asyncio

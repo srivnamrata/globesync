@@ -17,6 +17,10 @@ test('loads authenticated media, transcript, translation, and readiness state', 
   await expect(page.getByLabel(/Source transcript for Speaker 1/)).toHaveValue('Welcome to GlobeSync');
   await expect(page.getByLabel(/Translation in ES for Speaker 1/)).toHaveValue('Bienvenido a GlobeSync');
   await expect(page.getByText('1 segments loaded')).toBeVisible();
+  await expect(page.getByText('Downloading original media as `launch.mp4`.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Original' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Dub only' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Dub + Lip-Sync' })).toBeEnabled();
 
   await page.getByRole('button', { name: 'Readiness' }).click();
   await expect(page.getByText('Ready to build')).toBeVisible();
@@ -43,9 +47,9 @@ test('upload, transcription, and first translation save complete without a false
     buffer: Buffer.from('deterministic-e2e-media'),
   });
 
-  await expect(page.getByText('Translation complete — 1 segments loaded.')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByLabel(/Source transcript for Speaker 1/)).toHaveValue('Welcome to GlobeSync');
+  await expect(page.getByLabel(/Source transcript for Speaker 1/)).toHaveValue('Welcome to GlobeSync', { timeout: 10_000 });
   await expect(page.getByLabel(/Translation in ES for Speaker 1/)).toHaveValue('Bienvenido a GlobeSync');
+  await expect(page.getByText('Translation complete — 1 segments loaded.')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole('button', { name: 'Keep editor edits' })).toHaveCount(0);
   expect(backend.draftWriteVersions).toEqual([1, 2]);
 });
@@ -61,9 +65,10 @@ test('a genuine draft conflict supports keeping edits and loading the saved draf
   backend.rejectDraftWrites = true;
   await translation.fill('Edición local');
   await page.getByRole('button', { name: 'Save (1)' }).click();
-  await expect(page.getByRole('button', { name: 'Keep editor edits' })).toBeVisible();
+  await expect(page.getByText(/A newer saved draft is available/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Load saved draft' })).toBeVisible();
 
+  await expect(page.getByRole('button', { name: 'Keep editor edits' })).toBeVisible();
   await page.getByRole('button', { name: 'Keep editor edits' }).click();
   await expect(page.getByRole('button', { name: 'Keep editor edits' })).toHaveCount(0);
   await expect(translation).toHaveValue('Edición local');

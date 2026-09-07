@@ -1,8 +1,40 @@
+import json
 import os
-from typing import List, Optional
+from typing import Any, List, Optional, get_origin
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+from pydantic import ConfigDict, BaseModel, model_validator
+
+load_dotenv()
+
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+except ModuleNotFoundError:
+    SettingsConfigDict = ConfigDict
+
+    def _coerce_env_value(annotation: Any, raw_value: str) -> Any:
+        origin = get_origin(annotation)
+        if origin in {list, List}:
+            try:
+                parsed = json.loads(raw_value)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                return [item.strip() for item in raw_value.split(",") if item.strip()]
+        return raw_value
+
+    class BaseSettings(BaseModel):
+        def __init__(self, **values: Any):
+            merged_values = dict(values)
+            for field_name, field_info in self.__class__.model_fields.items():
+                if field_name in merged_values:
+                    continue
+                env_value = os.getenv(field_name)
+                if env_value is None:
+                    continue
+                merged_values[field_name] = _coerce_env_value(field_info.annotation, env_value)
+            super().__init__(**merged_values)
+
 
 class Settings(BaseSettings):
     # App Settings
@@ -49,6 +81,7 @@ class Settings(BaseSettings):
     # Media File Handling & Limits
     MAX_FILE_SIZE_BYTES: int = 4 * 1024 * 1024 * 1024  # 4 GB
     MULTIPART_CHUNK_SIZE_BYTES: int = 8 * 1024 * 1024  # 8 MB default chunk size
+    MAX_RESUMABLE_CHUNK_SIZE_BYTES: int = 32 * 1024 * 1024  # 32 MB hard server-side ceiling
     MAX_CONCURRENT_UPLOADS: int = 20
     TEMP_UPLOAD_DIR: str = os.path.join(os.getcwd(), "tmp", "uploads")
     PROCESSED_MEDIA_DIR: str = os.path.join(os.getcwd(), "tmp", "processed")
@@ -102,6 +135,32 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="allow"
     )
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        environment = (self.DEPLOYMENT_ENV or "development").lower()
+        if environment in {"development", "test"}:
+            return self
+
+        insecure_defaults = {
+            "DATABASE_URL": "postgresql+asyncpg://postgres:postgres_secure_pass@localhost:5432/translation_db",
+            "SYNC_DATABASE_URL": "postgresql://postgres:postgres_secure_pass@localhost:5432/translation_db",
+            "REPLICATE_API_TOKEN": "test_replicate_token_placeholder",
+            "JWT_SECRET_KEY": "replace-with-super-secret-hex-key-in-production",
+            "WEBHOOK_SECRET": "shared_webhook_secret_key_32bytes_hex",
+        }
+        invalid_fields = [
+            field_name
+            for field_name, placeholder in insecure_defaults.items()
+            if getattr(self, field_name) == placeholder
+        ]
+        if invalid_fields:
+            joined = ", ".join(invalid_fields)
+            raise ValueError(
+                f"Production settings must override insecure defaults for: {joined}."
+            )
+
+        return self
 
 
 settings = Settings()

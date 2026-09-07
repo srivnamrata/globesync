@@ -62,6 +62,29 @@ from app.utils.file_validators import (
 router = APIRouter(prefix="/media", tags=["Media Upload & Ingestion"])
 
 
+def _effective_resumable_chunk_size_limit(session_chunk_size: Optional[int] = None) -> int:
+    configured_limit = settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES
+    if session_chunk_size is None:
+        return configured_limit
+    return min(session_chunk_size, configured_limit)
+
+
+async def _read_bounded_chunk_payload(request: Request, max_bytes: int) -> bytes:
+    chunk_data = bytearray()
+    async for body_chunk in request.stream():
+        if not body_chunk:
+            continue
+        chunk_data.extend(body_chunk)
+        if len(chunk_data) > max_bytes:
+            raise MediaAppException(
+                status_code=413,
+                error_code=ErrorCode.CHUNK_TOO_LARGE,
+                message=f"Chunk exceeds the maximum allowed size of {max_bytes} bytes.",
+                details={"max_bytes": max_bytes, "received_bytes": len(chunk_data)},
+            )
+    return bytes(chunk_data)
+
+
 # =============================================================================
 # 1. DIRECT MULTIPART UPLOAD (For files < 100MB)
 # =============================================================================
@@ -213,7 +236,17 @@ async def init_resumable_upload(
     """Initializes a resumable chunked upload session for massive video/audio files."""
     validate_file_metadata(req.filename, req.filesize_bytes, req.mime_type, settings.MAX_FILE_SIZE_BYTES)
 
-    chunk_size = req.chunk_size_bytes or settings.MULTIPART_CHUNK_SIZE_BYTES
+    requested_chunk_size = req.chunk_size_bytes or settings.MULTIPART_CHUNK_SIZE_BYTES
+    max_chunk_size = _effective_resumable_chunk_size_limit()
+    if requested_chunk_size > max_chunk_size:
+        raise MediaAppException(
+            status_code=413,
+            error_code=ErrorCode.CHUNK_TOO_LARGE,
+            message=f"Requested chunk size exceeds the server-side maximum of {max_chunk_size} bytes.",
+            details={"max_bytes": max_chunk_size, "requested_bytes": requested_chunk_size},
+        )
+
+    chunk_size = requested_chunk_size
     total_chunks = math.ceil(req.filesize_bytes / chunk_size)
     storage_key = media_service.generate_storage_key(req.filename)
 
@@ -477,8 +510,9 @@ async def upload_resumable_chunk(
     if session.status != "in_progress" or session.expires_at < datetime.now(timezone.utc):
         raise UploadSessionExpiredException(str(upload_id))
 
-    # Read chunk data
-    chunk_data = await request.body()
+    # Read chunk data with a hard server-side cap before buffering the full payload.
+    max_chunk_size = _effective_resumable_chunk_size_limit(session.chunk_size_bytes)
+    chunk_data = await _read_bounded_chunk_payload(request, max_chunk_size)
     chunk_size = len(chunk_data)
 
     if chunk_size == 0:

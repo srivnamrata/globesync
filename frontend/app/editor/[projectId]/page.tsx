@@ -38,14 +38,29 @@ function deriveFilenameFromUrl(url?: string | null): string | null {
   }
 }
 
-function ensureMp4Filename(name: string): string {
-  return /\.mp4$/i.test(name) ? name : `${name}.mp4`;
+function hasFileExtension(name: string): boolean {
+  return /\.[^./]+$/i.test(name);
+}
+
+function ensureFilenameExtension(name: string, extension: string): string {
+  return hasFileExtension(name) ? name : `${name}${extension}`;
 }
 
 export default function TranslationEditor() {
   const params = useParams();
   const router = useRouter();
-  const projectId = params?.projectId as string;
+  const rawProjectId = params?.projectId;
+  const projectId = typeof rawProjectId === 'string' && rawProjectId.trim().length > 0
+    ? rawProjectId
+    : null;
+
+  if (!projectId) {
+    return (
+      <div className="h-full flex items-center justify-center bg-slate-950 text-slate-400">
+        Invalid project URL.
+      </div>
+    );
+  }
 
   const { currentProject, setCurrentProject } = useProjectStore();
   const { segments, setSegments, updateSegmentText } = useMediaStore();
@@ -81,6 +96,14 @@ export default function TranslationEditor() {
     onRequestClose: closeOpenDialogs,
   });
 
+  const handleRedirectHome = useCallback(() => {
+    router.push('/');
+  }, [router]);
+
+  const handleReplaceProject = useCallback((nextProjectId: string) => {
+    router.replace(`/editor/${nextProjectId}`);
+  }, [router]);
+
   const {
     applyProjectPatch,
     applyProjectStatus,
@@ -111,12 +134,8 @@ export default function TranslationEditor() {
     setDirtySegments,
     setUploadMessage,
     setUploadState,
-    onRedirectHome: () => {
-      router.push('/');
-    },
-    onReplaceProject: (nextProjectId) => {
-      router.replace(`/editor/${nextProjectId}`);
-    },
+    onRedirectHome: handleRedirectHome,
+    onReplaceProject: handleReplaceProject,
   });
 
   useEffect(() => {
@@ -604,14 +623,15 @@ export default function TranslationEditor() {
 
   const previewUrl = comparisonMode === 'original' ? sourceMediaUrl : renderedVideoUrl;
   const previewDownloadName = comparisonMode === 'original'
-    ? ensureMp4Filename(
+    ? (
       currentProject.mediaFilename
       ?? deriveFilenameFromUrl(sourceMediaUrl)
-      ?? `${currentProject.name}-original`,
+      ?? `${currentProject.name}-original`
     )
-    : ensureMp4Filename(
+    : ensureFilenameExtension(
       deriveFilenameFromUrl(renderedVideoUrl)
       ?? `${currentProject.name}-${currentProject.targetLanguage}`,
+      '.mp4',
     );
 
   return (

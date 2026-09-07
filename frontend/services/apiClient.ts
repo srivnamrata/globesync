@@ -10,21 +10,27 @@ export class ApiError extends Error {
   }
 }
 
-function getErrorMessage(errData: any, status: number): string {
-  if (typeof errData?.message === 'string' && errData.message.length > 0) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getErrorMessage(errData: unknown, status: number): string {
+  if (isRecord(errData) && typeof errData.message === 'string' && errData.message.length > 0) {
     return errData.message;
   }
 
-  if (typeof errData?.detail === 'string' && errData.detail.length > 0) {
+  if (isRecord(errData) && typeof errData.detail === 'string' && errData.detail.length > 0) {
     return errData.detail;
   }
 
-  if (typeof errData?.error?.message === 'string' && errData.error.message.length > 0) {
+  if (isRecord(errData.error) && typeof errData.error.message === 'string' && errData.error.message.length > 0) {
     return errData.error.message;
   }
 
   return `HTTP error! Status: ${status}`;
 }
+
+const RETRY_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export class ApiClient {
   private baseUrl: string;
@@ -58,7 +64,7 @@ export class ApiClient {
     delayMs: number = 1000
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
+
     // Default headers
     const headers = new Headers(this.defaultHeaders);
     const requestHeaders = new Headers(options.headers || {});
@@ -79,13 +85,18 @@ export class ApiClient {
       ...options,
       headers,
     };
+    const method = (config.method || 'GET').toUpperCase();
+    const isRetryableRequest =
+      RETRY_SAFE_METHODS.has(method) ||
+      headers.has('Idempotency-Key') ||
+      headers.has('X-Idempotency-Key');
 
     try {
       const response = await fetch(url, config);
 
       if (!response.ok) {
-        // Retry logic on temporary server overloading (429 or 503)
-        if ((response.status === 429 || response.status === 503) && retries > 0) {
+        // Retry only safe/idempotent requests on temporary server overloading.
+        if (isRetryableRequest && (response.status === 429 || response.status === 503) && retries > 0) {
           console.warn(`API Overloaded (${response.status}). Retrying in ${delayMs}ms...`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           return this.request<T>(endpoint, options, retries - 1, delayMs * 2);
@@ -97,7 +108,12 @@ export class ApiClient {
 
       return (await response.json()) as T;
     } catch (error: unknown) {
-      if (retries > 0 && error instanceof Error && error.message.includes('Fetch failed')) {
+      if (
+        isRetryableRequest &&
+        retries > 0 &&
+        error instanceof Error &&
+        error.message.includes('Fetch failed')
+      ) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         return this.request<T>(endpoint, options, retries - 1, delayMs * 2);
       }
@@ -109,7 +125,7 @@ export class ApiClient {
     return this.request<T>(endpoint, { ...options, method: 'GET' });
   }
 
-  async post<T>(endpoint: string, body: any, options?: RequestInit): Promise<T> {
+  async post<T>(endpoint: string, body: FormData | unknown, options?: RequestInit): Promise<T> {
     const isFormData = body instanceof FormData;
     return this.request<T>(endpoint, {
       ...options,
@@ -118,7 +134,7 @@ export class ApiClient {
     });
   }
 
-  async put<T>(endpoint: string, body: any, options?: RequestInit): Promise<T> {
+  async put<T>(endpoint: string, body: unknown, options?: RequestInit): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
@@ -126,7 +142,7 @@ export class ApiClient {
     });
   }
 
-  async patch<T>(endpoint: string, body: any, options?: RequestInit): Promise<T> {
+  async patch<T>(endpoint: string, body: unknown, options?: RequestInit): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PATCH',

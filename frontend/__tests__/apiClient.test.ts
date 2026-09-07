@@ -65,7 +65,7 @@ describe('ApiClient', () => {
     });
   });
 
-  it('retries temporary overloads and succeeds', async () => {
+  it('retries temporary overloads for safe reads and succeeds', async () => {
     let attempts = 0;
     server.use(http.get('http://api.test/retry', () => {
       attempts += 1;
@@ -79,7 +79,40 @@ describe('ApiClient', () => {
     expect(attempts).toBe(2);
   });
 
-  it('retries explicit fetch failures and preserves exhausted errors', async () => {
+  it('does not retry non-idempotent writes on overload responses', async () => {
+    let attempts = 0;
+    server.use(http.post('http://api.test/retry-write', () => {
+      attempts += 1;
+      return HttpResponse.json({ message: 'Busy' }, { status: 503 });
+    }));
+    const client = new ApiClient('http://api.test');
+
+    await expect(client.request('/retry-write', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Demo' }),
+    }, 1, 0)).rejects.toMatchObject({ status: 503, message: 'Busy' });
+    expect(attempts).toBe(1);
+  });
+
+  it('retries writes only when an idempotency key is present', async () => {
+    let attempts = 0;
+    server.use(http.post('http://api.test/retry-idempotent', () => {
+      attempts += 1;
+      return attempts === 1
+        ? HttpResponse.json({ message: 'Busy' }, { status: 503 })
+        : HttpResponse.json({ ok: true });
+    }));
+    const client = new ApiClient('http://api.test');
+
+    await expect(client.request('/retry-idempotent', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'upload-123' },
+      body: JSON.stringify({ name: 'Demo' }),
+    }, 1, 0)).resolves.toEqual({ ok: true });
+    expect(attempts).toBe(2);
+  });
+
+  it('retries explicit fetch failures only for retryable requests', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('Fetch failed'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
@@ -91,6 +124,13 @@ describe('ApiClient', () => {
     await expect(client.request('/network', {}, 1, 0)).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValueOnce(new Error('Fetch failed'));
+    await expect(client.request('/network-write', { method: 'POST' }, 1, 0))
+      .rejects.toThrow('Fetch failed');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset();
     fetchMock.mockRejectedValueOnce(new Error('Fetch failed permanently'));
     await expect(client.request('/network', {}, 0, 0))
       .rejects.toThrow('Fetch failed permanently');

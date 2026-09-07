@@ -84,6 +84,8 @@ async def test_video_processor_segment_failure_surfaces_subprocess_error(tmp_pat
     [
         (b"1920,1080,30000/1001,12.3456\n", (1920, 1080, 29.97, 12.346)),
         (b",,,\n", (1920, 1080, 30.0, 60.0)),
+        (b"1920,1080,__import__('os').system('whoami'),12.3456\n", (1920, 1080, 30.0, 12.346)),
+        (b"1920,1080,30/0,12.3456\n", (1920, 1080, 30.0, 12.346)),
     ],
 )
 async def test_video_processor_reads_properties_and_defaults(stdout, expected):

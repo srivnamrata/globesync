@@ -12,7 +12,7 @@ from sqlalchemy import ARRAY, String, bindparam, text
 
 from app.core.config import settings
 from app.core.database import Base, async_engine
-from app.routers import auth, internal_tasks, lipsync, projects, transcription, translation, tts, upload
+from app.routers import auth, export, internal_tasks, lipsync, projects, transcription, translation, tts, upload
 from app.utils.error_codes import ErrorCode, MediaAppException
 
 
@@ -229,4 +229,5 @@ app.include_router(translation.router, prefix=settings.API_V1_STR)
 app.include_router(tts.router, prefix=settings.API_V1_STR)
 app.include_router(lipsync.router, prefix=settings.API_V1_STR)
 app.include_router(projects.router, prefix=settings.API_V1_STR)
+app.include_router(export.router, prefix=settings.API_V1_STR)
 app.include_router(internal_tasks.router, prefix=settings.API_V1_STR)
