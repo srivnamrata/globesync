@@ -5,42 +5,27 @@ import { useParams, useRouter } from 'next/navigation';
 import { useProjectStore, type Project } from '../../../store/projectStore';
 import { useMediaStore, type TranscriptSegment } from '../../../store/mediaStore';
 import { useTranslationStore, type TranslatedSegment } from '../../../store/translationStore';
-import { storageService, type HeygenXFile } from '../../../services/storageService';
 import { useProjectAutoSave } from '../../../hooks/useProject';
 import { useTimeline } from '../../../hooks/useTimeline';
 import { useHistory } from '../../../hooks/useHistory';
-import { ApiError } from '../../../services/apiClient';
-import { getProjectDraftConflictDetail, projectService, type PipelineOperationStatus, type ProjectVersionSummary } from '../../../services/projectService';
+import { useBuildPipeline } from '../../../hooks/useBuildPipeline';
+import { useDialogAccessibility } from '../../../hooks/useDialogAccessibility';
+import { useEditorProjectData } from '../../../hooks/useEditorProjectData';
+import { useSegmentActions } from '../../../hooks/useSegmentActions';
+import { projectService, type ProjectVersionSummary } from '../../../services/projectService';
 import { mapUserFacingError } from '../../../services/userFacingErrors';
-import WaveformCanvas from '../../../components/WaveformRenderer/WaveformCanvas';
 import type { WaveformData } from '../../../utils/waveformProcessing';
 import { Button, StatePanel, StatusBadge } from '../../../components/ui';
 import ExportHistory from '../../../components/ExportHub/ExportHistory';
 import { ExportReadiness } from '../../../components/ExportHub/ExportReadiness';
 import { PipelineStatus } from '../../../components/ExportHub/PipelineStatus';
+import MediaPreviewPanel from '../../../components/editor/MediaPreviewPanel';
+import SegmentCard from '../../../components/editor/SegmentCard';
 import { formatDateTime } from '../../../utils/formatDateTime';
-import { getTextDirection, normalizeLanguageTag } from '../../../utils/textDirection';
 import {
-  buildDraftSaveOptions,
-  buildProjectFromDraft,
-  enqueueSerialized,
   formatTranslationCompletionMessage,
-  mergeDraftWithProject,
   pollForTranslations,
-  sanitizeDraftArtifactReferences,
-  saveDraftWithRecovery,
-  toPersistableFilename,
 } from '../../../utils/editorWorkflow';
-
-type ActiveBuildJob = {
-  job_id: string;
-  render_mode?: 'dub_only' | 'dub_and_lipsync';
-  status: string;
-  progress_percent: number;
-  current_stage: string;
-  last_successful_stage?: string | null;
-  error_message?: string | null;
-};
 
 function deriveFilenameFromUrl(url?: string | null): string | null {
   if (!url) return null;
@@ -67,25 +52,11 @@ export default function TranslationEditor() {
   const { translations, setTranslations, updateTranslationText } = useTranslationStore();
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'transcribing' | 'translating'>('idle');
   const [uploadProgressPercent, setUploadProgressPercent] = useState(0);
-  const [buildState, setBuildState] = useState<'idle' | 'syncing' | 'building'>('idle');
-  const [buildMode, setBuildMode] = useState<'dub_only' | 'dub_and_lipsync' | null>(null);
-  const [activeBuildJob, setActiveBuildJob] = useState<ActiveBuildJob | null>(null);
-  const [pipelineOperation, setPipelineOperation] = useState<PipelineOperationStatus | null>(null);
-  const [isRetryingPipelineOperation, setIsRetryingPipelineOperation] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [sourceMediaUrl, setSourceMediaUrl] = useState<string | null>(null);
-  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
-  const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
-  const [hasRemoteDraftConflict, setHasRemoteDraftConflict] = useState(false);
-  const [isReloadingProject, setIsReloadingProject] = useState(false);
   const [dirtySegments, setDirtySegments] = useState<Set<string>>(new Set());
-  const [activeActionMenu, setActiveActionMenu] = useState<string | null>(null);
-  const [segmentBusy, setSegmentBusy] = useState<Record<string, 'retranslating' | 'synthesizing'>>({});
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [originalTranslations, setOriginalTranslations] = useState<Record<string, string>>({});
   const [loopSegmentId, setLoopSegmentId] = useState<string | null>(null);
   const [waveformData, setWaveformData] = useState<WaveformData | null>(null);
-  const [lipSyncStatuses, setLipSyncStatuses] = useState<Record<string, string>>({});
   const [comparisonMode, setComparisonMode] = useState<'original' | 'dubbed'>('original');
   const [projectVersions, setProjectVersions] = useState<ProjectVersionSummary[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -93,309 +64,62 @@ export default function TranslationEditor() {
   const [isExportReadinessOpen, setIsExportReadinessOpen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isScrubbingRef = useRef(false);
-  const comparisonAudioRef = useRef<HTMLAudioElement | null>(null);
-  const dialogFocusOriginRef = useRef<HTMLElement | null>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const remoteDraftVersionRef = useRef<number | null>(null);
-  const remoteDraftConflictRef = useRef(false);
-  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const timeline = useTimeline();
   const history = useHistory();
+  const isAnyDialogOpen = isHistoryOpen || isExportHistoryOpen || isExportReadinessOpen;
+  const closeOpenDialogs = useCallback(() => {
+    setIsHistoryOpen(false);
+    setIsExportHistoryOpen(false);
+    setIsExportReadinessOpen(false);
+  }, []);
 
-  const ensureCanonicalProjectForWrite = useCallback(async (): Promise<Project | null> => {
-    if (!currentProject || !projectService.hasProjectApiScope()) {
-      return currentProject;
-    }
+  useDialogAccessibility({
+    isOpen: isAnyDialogOpen,
+    onRequestClose: closeOpenDialogs,
+  });
 
-    try {
-      await projectService.bootstrapAuthContext();
-      return await projectService.getProject(currentProject.id);
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 404) {
-        throw error;
-      }
-
-      const localDraft = mergeDraftWithProject(
-        {
-          version: '1.2.0',
-          projectMetadata: {
-            id: currentProject.id,
-            name: currentProject.name,
-            sourceLanguage: currentProject.sourceLanguage,
-            targetLanguage: currentProject.targetLanguage,
-            createdAt: currentProject.createdAt,
-            updatedAt: currentProject.updatedAt,
-          },
-          mediaReferences: {
-            videoFilename: currentProject.mediaFilename ?? 'source_video.mp4',
-            durationSeconds: segments.reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
-            originalTranscriptSegments: segments,
-            transcriptId: currentProject.transcriptId,
-            mediaId: currentProject.mediaId,
-          },
-          translations: Object.values(translations),
-          timelineState: undefined,
-        },
-        currentProject,
-      );
-
-      const canonicalProject = await projectService.createProjectShell(
-        currentProject.name,
-        currentProject.sourceLanguage,
-        currentProject.targetLanguage,
-      );
-      const canonicalDraft = mergeDraftWithProject(localDraft, canonicalProject);
-      const seededDraft = await projectService.saveProjectDraft(canonicalProject.id, canonicalDraft, {
-        version: 1,
-        baseProjectUpdatedAt: canonicalProject.updatedAt,
-      });
-      const hydratedProject = buildProjectFromDraft(canonicalDraft, canonicalProject);
-
-      if (currentProject.transcriptId || currentProject.mediaId) {
-        const patchedProject = await projectService.updateProject(canonicalProject.id, {
-          ...(currentProject.transcriptId ? { transcriptId: currentProject.transcriptId } : {}),
-          ...(currentProject.mediaId ? { mediaId: currentProject.mediaId } : {}),
-        });
-        hydratedProject.transcriptId = patchedProject.transcriptId;
-        hydratedProject.mediaId = patchedProject.mediaId;
-        hydratedProject.updatedAt = patchedProject.updatedAt;
-      }
-
-      setCurrentProject(hydratedProject);
-      remoteDraftVersionRef.current = seededDraft.version;
-      setBaseProjectUpdatedAt(seededDraft.base_project_updated_at ?? hydratedProject.updatedAt);
-      remoteDraftConflictRef.current = false;
-      setHasRemoteDraftConflict(false);
-      await storageService.saveDraft(canonicalDraft);
-      if (currentProject.id !== canonicalProject.id) {
-        await storageService.deleteDraft(currentProject.id);
-        router.replace(`/editor/${canonicalProject.id}`);
-      }
-      setUploadMessage('This project was restored into your cloud workspace so uploads and transcription can continue.');
-      return hydratedProject;
-    }
-  }, [currentProject, router, segments, setCurrentProject, translations]);
-
-  const loadProjectData = useCallback(async () => {
-    if (!projectId) {
-      return;
-    }
-
-    setIsReloadingProject(true);
-    setSourceMediaUrl(null);
-    setRenderedVideoUrl(null);
-    try {
-      let draft: HeygenXFile | null = null;
-      let backendProject: Project | null = null;
-      let pipelineOperation: PipelineOperationStatus | null = null;
-      let nextBaseProjectUpdatedAt: string | null = null;
-
-      if (projectService.hasProjectApiScope()) {
-        try {
-          await projectService.bootstrapAuthContext();
-          backendProject = await projectService.getProject(projectId);
-          pipelineOperation = backendProject.currentPipelineOperationId === null
-            ? null
-            : await projectService.getPipelineOperation(projectId).catch(() => null);
-          setPipelineOperation(pipelineOperation);
-          if (backendProject.mediaId) {
-            const media = await projectService.getMedia(backendProject.mediaId);
-            backendProject = {
-              ...backendProject,
-              mediaFilename: media.filename,
-              mediaDurationSeconds: media.duration_seconds,
-            };
-            setSourceMediaUrl(media.media_url ?? null);
-          }
-          if (backendProject.currentLipsyncJobId) {
-            const job = await projectService.getExportStatus(backendProject.currentLipsyncJobId).catch(() => null);
-            if (job?.output_video_url) {
-              setRenderedVideoUrl(job.output_video_url);
-            }
-          }
-          nextBaseProjectUpdatedAt = backendProject.updatedAt;
-
-          try {
-            const remoteDraft = await projectService.getProjectDraft(projectId);
-            draft = mergeDraftWithProject(remoteDraft.draft, backendProject);
-            remoteDraftVersionRef.current = remoteDraft.version;
-            nextBaseProjectUpdatedAt = remoteDraft.baseProjectUpdatedAt ?? backendProject.updatedAt;
-          } catch (draftError) {
-            draft = projectService.buildLocalDraftFromProject(backendProject);
-            remoteDraftVersionRef.current = null;
-            nextBaseProjectUpdatedAt = backendProject.updatedAt;
-            console.warn('No server-side draft found yet, seeding canonical draft from project metadata:', draftError);
-
-            try {
-              const seededDraft = await projectService.seedProjectDraft(backendProject);
-              remoteDraftVersionRef.current = seededDraft.version;
-              nextBaseProjectUpdatedAt = seededDraft.base_project_updated_at ?? backendProject.updatedAt;
-            } catch (seedError) {
-              console.warn('Failed to seed canonical backend draft; keeping local fallback cache:', seedError);
-            }
-          }
-
-        } catch (projectError) {
-          console.warn('Failed to load project from backend, falling back to local IndexedDB draft:', projectError);
-        }
-      }
-
-      if (!draft) {
-        draft = await storageService.getDraft(projectId);
-      }
-
-      if (!draft) {
-        router.push('/');
-        return;
-      }
-
-      draft = sanitizeDraftArtifactReferences(draft);
-      await storageService.saveDraft(draft);
-
-      const hydratedProject = buildProjectFromDraft(draft, backendProject);
-
-      setCurrentProject(hydratedProject);
-      // Clear conflict state and stale upload message together before
-      // updating segments/translations so the banner disappears atomically.
-      remoteDraftConflictRef.current = false;
-      setHasRemoteDraftConflict(false);
-      setUploadMessage(
-        pipelineOperation && pipelineOperation.status !== 'completed'
-          ? pipelineOperation.error_message || pipelineOperation.message
-          : null,
-      );
-      if (pipelineOperation?.operation_type === 'transcription' && pipelineOperation.status === 'in_progress') {
-        setUploadState('transcribing');
-      } else if (pipelineOperation?.operation_type === 'translation' && pipelineOperation.status === 'in_progress') {
-        setUploadState('translating');
-      } else if (!pipelineOperation || pipelineOperation.status === 'completed' || pipelineOperation.status === 'failed') {
-        setUploadState('idle');
-      }
-      setBaseProjectUpdatedAt(nextBaseProjectUpdatedAt ?? hydratedProject.updatedAt);
-
-      const draftSegments = draft.mediaReferences.originalTranscriptSegments || [];
-      const draftTranslations = draft.translations || [];
-
-      setSegments(draftSegments);
-
-      // Resolve the best available translations before updating UI so the
-      // translation pane never flashes blank during a reload.
-      // Priority: backend API fetch > draft blob > keep whatever is already in store.
-      let resolvedTranslations = draftTranslations;
-
-      if (
-        draft.mediaReferences.transcriptId &&
-        draftSegments.length > 0
-      ) {
-        try {
-          const fetchedTranslations = await projectService.fetchTranslations(
-            draft.mediaReferences.transcriptId,
-            hydratedProject.targetLanguage,
-          );
-
-          if (fetchedTranslations.length > 0) {
-            resolvedTranslations = fetchedTranslations;
-            await storageService.saveDraft({
-              ...draft,
-              translations: fetchedTranslations,
-            });
-          }
-        } catch (translationErr) {
-          console.warn('Could not fetch translations from API; using draft copy if available:', translationErr);
-        }
-      }
-
-      // Only call setTranslations once, with the fully resolved set.
-      // If nothing was found anywhere, keep the existing store state rather
-      // than replacing it with an empty array.
-      if (resolvedTranslations.length > 0) {
-        setTranslations(resolvedTranslations);
-        // Snapshot original translations for "Reset to original" action.
-        const snapshot: Record<string, string> = {};
-        resolvedTranslations.forEach((t) => { snapshot[t.transcriptSegmentId] = t.translatedText; });
-        setOriginalTranslations(snapshot);
-      } else {
-        // No translations found from API or draft (e.g. fresh upload with new segment IDs).
-        // Wipe the translation store so stale translations from a previous
-        // transcript don't linger against the new segments.
-        setTranslations([]);
-        setOriginalTranslations({});
-      }
-    } catch (err) {
-      console.error('Failed to load project draft in editor:', err);
-    } finally {
-      setIsReloadingProject(false);
-    }
-  }, [projectId, router, setCurrentProject, setSegments, setTranslations]);
+  const {
+    applyProjectPatch,
+    applyProjectStatus,
+    ensureCanonicalProjectForWrite,
+    hasRemoteDraftConflict,
+    isReloadingProject,
+    lastSavedAt,
+    persistDraft,
+    pipelineOperation: initialPipelineOperation,
+    refreshRenderedVideoUrl,
+    refreshSourceMediaUrl,
+    renderedVideoUrl,
+    setPipelineOperation,
+    setRenderedVideoUrl,
+    setSourceMediaUrl,
+    sourceMediaUrl,
+  } = useEditorProjectData({
+    projectId,
+    currentProject,
+    segments,
+    translations,
+    setCurrentProject,
+    setSegments,
+    setTranslations,
+    setOriginalTranslations,
+    setDirtySegments,
+    setUploadMessage,
+    setUploadState,
+    onRedirectHome: () => {
+      router.push('/');
+    },
+    onReplaceProject: (nextProjectId) => {
+      router.replace(`/editor/${nextProjectId}`);
+    },
+  });
 
   useEffect(() => {
     setComparisonMode('original');
-    setActiveBuildJob(null);
-    setLipSyncStatuses({});
   }, [projectId]);
-
-  useEffect(() => {
-    void loadProjectData();
-  }, [loadProjectData]);
-
-  const retryFailedTranslation = async () => {
-    if (!pipelineOperation || pipelineOperation.operation_type !== 'translation' || pipelineOperation.status !== 'failed') {
-      return;
-    }
-
-    setIsRetryingPipelineOperation(true);
-    try {
-      const retry = await projectService.retryPipelineOperation(pipelineOperation.id);
-      const queuedOperation: PipelineOperationStatus = {
-        ...pipelineOperation,
-        id: retry.operation_id,
-        status: retry.status,
-        progress_percent: 0,
-        current_stage: 'queued',
-        last_successful_stage: null,
-        message: retry.message,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      };
-      setPipelineOperation(queuedOperation);
-      setUploadState('translating');
-      setUploadMessage(retry.message);
-    } catch (error) {
-      setUploadMessage(error instanceof Error ? error.message : 'Translation retry could not be queued.');
-    } finally {
-      setIsRetryingPipelineOperation(false);
-    }
-  };
-
-  const retryFailedTranscription = async () => {
-    if (!pipelineOperation || pipelineOperation.operation_type !== 'transcription' || pipelineOperation.status !== 'failed') {
-      return;
-    }
-
-    setIsRetryingPipelineOperation(true);
-    try {
-      const retry = await projectService.retryTranscriptionOperation(pipelineOperation.id);
-      setPipelineOperation({
-        ...pipelineOperation,
-        id: retry.operation_id,
-        status: retry.status,
-        progress_percent: 0,
-        current_stage: 'queued',
-        last_successful_stage: null,
-        message: retry.message,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      });
-      setUploadState('transcribing');
-      setUploadMessage(retry.message);
-    } catch (error) {
-      setUploadMessage(error instanceof Error ? error.message : 'Transcription retry could not be queued.');
-    } finally {
-      setIsRetryingPipelineOperation(false);
-    }
-  };
 
   useEffect(() => {
     const videoElement = videoRef.current;
@@ -477,100 +201,6 @@ export default function TranslationEditor() {
     };
   }, [currentProject?.mediaId]);
 
-  const persistDraft = useCallback(async ({
-    projectOverride,
-    segmentsOverride,
-    translationsOverride,
-    videoFilename,
-    durationSeconds,
-    transcriptId,
-    mediaId,
-    baseProjectUpdatedAtOverride,
-    checkpointReason,
-  }: {
-    projectOverride?: typeof currentProject;
-    segmentsOverride?: TranscriptSegment[];
-    translationsOverride?: TranslatedSegment[];
-    videoFilename?: string;
-    durationSeconds?: number;
-    transcriptId?: string;
-    mediaId?: string;
-    baseProjectUpdatedAtOverride?: string | null;
-    checkpointReason?: string;
-  } = {}) => {
-    const project = projectOverride ?? currentProject;
-    if (!project) {
-      return;
-    }
-
-    const nextDraft: HeygenXFile = {
-      version: '1.2.0',
-      projectMetadata: {
-        id: project.id,
-        name: project.name,
-        sourceLanguage: project.sourceLanguage,
-        targetLanguage: project.targetLanguage,
-        createdAt: project.createdAt,
-        updatedAt: new Date().toISOString(),
-      },
-      mediaReferences: {
-        videoFilename: toPersistableFilename(videoFilename ?? project.mediaFilename),
-        durationSeconds:
-          durationSeconds ??
-          (segmentsOverride ?? segments).reduce((acc, segment) => Math.max(acc, segment.endTimeSeconds), 0),
-        originalTranscriptSegments: segmentsOverride ?? segments,
-        transcriptId: transcriptId ?? project.transcriptId,
-        mediaId: mediaId ?? project.mediaId,
-      },
-      translations: translationsOverride ?? Object.values(translations),
-    };
-
-    const saveDraft = async () => {
-      const outcome = await saveDraftWithRecovery({
-        draft: nextDraft,
-        hasProjectApiScope: projectService.hasProjectApiScope(),
-        hasActiveConflict: remoteDraftConflictRef.current,
-        saveRemote: async () => {
-          await projectService.bootstrapAuthContext();
-          return projectService.saveProjectDraft(
-            project.id,
-            nextDraft,
-            buildDraftSaveOptions(
-              remoteDraftVersionRef.current,
-              baseProjectUpdatedAt,
-              baseProjectUpdatedAtOverride,
-              checkpointReason,
-            ),
-          );
-        },
-        saveLocal: (draft) => storageService.saveDraft(draft),
-        getConflictDetail: getProjectDraftConflictDetail,
-      });
-
-      if (outcome.status === 'remote') {
-        remoteDraftVersionRef.current = outcome.version;
-        setBaseProjectUpdatedAt(outcome.baseProjectUpdatedAt ?? project.updatedAt);
-        remoteDraftConflictRef.current = false;
-        setHasRemoteDraftConflict(false);
-        setDirtySegments(new Set());
-        return;
-      }
-
-      if (outcome.status === 'conflict') {
-        remoteDraftVersionRef.current = outcome.detail.server_version;
-        remoteDraftConflictRef.current = true;
-        setHasRemoteDraftConflict(true);
-        setUploadMessage('The saved project draft changed while this editor was working. Autosave is paused until you choose which draft to keep. Your translated segments remain saved.');
-        console.warn('Project draft save hit a version conflict; kept the local IndexedDB draft for recovery:', outcome.detail);
-        return;
-      }
-
-      setDirtySegments(new Set());
-      setLastSavedAt(new Date());
-    };
-
-    await enqueueSerialized(draftSaveQueueRef, saveDraft);
-  }, [currentProject, segments, translations, baseProjectUpdatedAt]);
 
   const selectedSegment = segments.find((segment) => segment.id === timeline.selectedSegmentId) ?? null;
   const totalDurationSeconds = useMemo(
@@ -578,29 +208,6 @@ export default function TranslationEditor() {
     [segments],
   );
 
-  const refreshSourceMediaUrl = useCallback(async () => {
-    if (!currentProject?.mediaId) return;
-    try {
-      const media = await projectService.getMedia(currentProject.mediaId);
-      setSourceMediaUrl(media.media_url ?? null);
-      if (!media.media_url) setUploadMessage('A fresh source-media preview is not available yet.');
-    } catch (error) {
-      setSourceMediaUrl(null);
-      setUploadMessage(mapUserFacingError(error, 'Unable to refresh the source-media preview. Your project data is unchanged.'));
-    }
-  }, [currentProject?.mediaId]);
-
-  const refreshRenderedVideoUrl = useCallback(async () => {
-    if (!currentProject?.currentLipsyncJobId) return;
-    try {
-      const job = await projectService.getExportStatus(currentProject.currentLipsyncJobId);
-      setRenderedVideoUrl(job?.output_video_url ?? null);
-      if (!job?.output_video_url) setUploadMessage('A fresh rendered-video preview is not available yet.');
-    } catch (error) {
-      setRenderedVideoUrl(null);
-      setUploadMessage(mapUserFacingError(error, 'Unable to refresh the rendered-video preview. Your project data is unchanged.'));
-    }
-  }, [currentProject?.currentLipsyncJobId]);
 
   const seekToTime = useCallback((seconds: number, segmentId?: string) => {
     timeline.setCurrentTimeSeconds(seconds);
@@ -628,6 +235,40 @@ export default function TranslationEditor() {
     void videoRef.current.play();
   }, [selectedSegment]);
 
+  const handleTogglePreviewPlayback = useCallback(() => {
+    if (!videoRef.current) {
+      timeline.setPlaying(!timeline.isPlaying);
+      return;
+    }
+
+    if (videoRef.current.paused) {
+      void videoRef.current.play();
+    } else {
+      videoRef.current.pause();
+    }
+  }, [timeline]);
+
+  const handleTimelinePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromTrackPointer(event.clientX, event.currentTarget);
+  }, [seekFromTrackPointer]);
+
+  const handleTimelinePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (isScrubbingRef.current) {
+      seekFromTrackPointer(event.clientX, event.currentTarget);
+    }
+  }, [seekFromTrackPointer]);
+
+  const handleTimelinePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = false;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }, []);
+
+  const handleTimelinePointerCancel = useCallback(() => {
+    isScrubbingRef.current = false;
+  }, []);
+
   const handleOpenVersionHistory = useCallback(async () => {
     if (!currentProject) return;
     setIsHistoryOpen((isOpen) => !isOpen);
@@ -645,120 +286,36 @@ export default function TranslationEditor() {
     }
   }, [currentProject, isLoadingHistory, projectVersions.length]);
 
-  useEffect(() => {
-    if (!isHistoryOpen) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsHistoryOpen(false);
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isHistoryOpen]);
 
-  useEffect(() => {
-    if (!isExportHistoryOpen && !isExportReadinessOpen) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setIsExportHistoryOpen(false);
-      setIsExportReadinessOpen(false);
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isExportHistoryOpen, isExportReadinessOpen]);
 
-  useEffect(() => {
-    const isDialogOpen = isHistoryOpen || isExportHistoryOpen || isExportReadinessOpen;
-    if (isDialogOpen && !dialogFocusOriginRef.current && document.activeElement instanceof HTMLElement) {
-      dialogFocusOriginRef.current = document.activeElement;
-    }
-    if (!isDialogOpen && dialogFocusOriginRef.current) {
-      dialogFocusOriginRef.current.focus();
-      dialogFocusOriginRef.current = null;
-    }
-  }, [isHistoryOpen, isExportHistoryOpen, isExportReadinessOpen]);
-
-  useEffect(() => {
-    if (!isHistoryOpen && !isExportHistoryOpen && !isExportReadinessOpen) return;
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
-    if (!dialog) return;
-    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const handleTab = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    dialog.addEventListener('keydown', handleTab);
-    return () => dialog.removeEventListener('keydown', handleTab);
-  }, [isHistoryOpen, isExportHistoryOpen, isExportReadinessOpen]);
-
-  const applyProjectPatch = useCallback(async ({
-    name,
-    sourceLanguage,
-    targetLanguage,
-    status,
-    transcriptId,
-    mediaId,
-  }: {
-    name?: string;
-    sourceLanguage?: string;
-    targetLanguage?: string;
-    status?: Project['status'];
-    transcriptId?: string;
-    mediaId?: string;
-  }): Promise<Project | null> => {
-    if (!currentProject) {
-      return null;
-    }
-
-    if (projectService.hasProjectApiScope()) {
-      if (hasRemoteDraftConflict) {
-        throw new Error('Reload the latest backend draft before updating project metadata.');
-      }
-
-      const updatedProject = await projectService.updateProject(currentProject.id, {
-        ...(name !== undefined ? { name } : {}),
-        ...(status !== undefined ? { status } : {}),
-        ...(sourceLanguage !== undefined ? { sourceLanguage } : {}),
-        ...(targetLanguage !== undefined
-          ? {
-            targetLanguage,
-            activeTranslationLanguage: targetLanguage,
-          }
-          : {}),
-        ...(mediaId !== undefined ? { mediaId } : {}),
-        ...(transcriptId !== undefined ? { transcriptId } : {}),
-      });
-
-      const hydratedProject: Project = updatedProject;
-
-      setCurrentProject(hydratedProject);
-      setBaseProjectUpdatedAt(updatedProject.updatedAt);
-      return hydratedProject;
-    }
-
-    const hydratedProject: Project = {
-      ...currentProject,
-      ...(name !== undefined ? { name } : {}),
-      ...(sourceLanguage !== undefined ? { sourceLanguage } : {}),
-      ...(targetLanguage !== undefined ? { targetLanguage } : {}),
-      ...(status !== undefined ? { status } : {}),
-      ...(transcriptId !== undefined ? { transcriptId } : {}),
-      ...(mediaId !== undefined ? { mediaId } : {}),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setCurrentProject(hydratedProject);
-    setBaseProjectUpdatedAt(hydratedProject.updatedAt);
-    return hydratedProject;
-  }, [currentProject, hasRemoteDraftConflict, setCurrentProject]);
+  const {
+    activeBuildJob,
+    buildMode,
+    buildState,
+    handleBuildDubAndLipSync,
+    handleBuildDubOnly,
+    isRetryingPipelineOperation,
+    lipSyncStatuses,
+    pipelineOperation,
+    retryFailedTranscription,
+    retryFailedTranslation,
+  } = useBuildPipeline({
+    projectId,
+    currentProject,
+    segments,
+    translations,
+    persistDraft,
+    applyProjectStatus,
+    ensureCanonicalProjectForWrite,
+    pipelineOperation: initialPipelineOperation,
+    setPipelineOperation,
+    setCurrentProject,
+    setTranslations,
+    setRenderedVideoUrl,
+    setComparisonMode,
+    setUploadMessage,
+    setUploadState,
+  });
 
   const handleSwapProjectLanguages = useCallback(async () => {
     if (!currentProject) {
@@ -820,67 +377,25 @@ export default function TranslationEditor() {
     }
   }, [applyProjectPatch, currentProject, persistDraft, segments.length, translations]);
 
-  const handleRetranslateSegment = useCallback(async (segId: string) => {
-    if (!currentProject) return;
-    const seg = segments.find((s) => s.id === segId);
-    if (!seg) return;
-    setSegmentBusy((prev) => ({ ...prev, [segId]: 'retranslating' }));
-    setActiveActionMenu(null);
-    setUploadMessage('Retranslating segment…');
-    try {
-      const idx = segments.indexOf(seg);
-      const result = await projectService.retranslateSegment({
-        segmentId: seg.id,
-        sourceText: seg.text,
-        originalDurationMs: Math.round(seg.durationSeconds * 1000),
-        sourceLanguage: currentProject.sourceLanguage,
-        targetLanguage: currentProject.targetLanguage,
-        speakerTag: seg.speakerTag,
-        previousContext: idx > 0 ? segments[idx - 1].text : undefined,
-        nextContext: idx < segments.length - 1 ? segments[idx + 1].text : undefined,
-      });
-      setTranslations(Object.values({
-        ...translations,
-        [segId]: { ...result, generatedAudioStatus: undefined },
-      }));
-      setDirtySegments((prev) => new Set(prev).add(segId));
-      setUploadMessage('Segment retranslated. Regenerate its audio before export.');
-    } catch (err) {
-      console.error('Retranslate failed:', err);
-      setUploadMessage(mapUserFacingError(err, 'Unable to retranslate this segment.'));
-    } finally {
-      setSegmentBusy((prev) => { const n = { ...prev }; delete n[segId]; return n; });
-    }
-  }, [currentProject, segments, setTranslations, translations]);
-
-  const handleSynthesizeSegment = useCallback(async (segId: string) => {
-    const trans = translations[segId];
-    if (!trans?.id) return;
-    setSegmentBusy((prev) => ({ ...prev, [segId]: 'synthesizing' }));
-    setActiveActionMenu(null);
-    try {
-      await projectService.synthesizeSegment(trans.id);
-      setTranslations(Object.values({
-        ...translations,
-        [segId]: { ...trans, generatedAudioStatus: 'ready' },
-      }));
-      setUploadMessage('Segment audio regenerated successfully.');
-    } catch (err) {
-      console.error('Synthesize segment failed:', err);
-      setUploadMessage(mapUserFacingError(err, 'Unable to regenerate audio for this segment.'));
-    } finally {
-      setSegmentBusy((prev) => { const n = { ...prev }; delete n[segId]; return n; });
-    }
-  }, [setTranslations, translations]);
-
-  const handleResetTranslation = useCallback((segId: string) => {
-    const original = originalTranslations[segId];
-    if (original !== undefined) {
-      updateTranslationText(segId, original);
-      setDirtySegments((prev) => { const n = new Set(prev); n.delete(segId); return n; });
-    }
-    setActiveActionMenu(null);
-  }, [originalTranslations, updateTranslationText]);
+  const {
+    activeActionMenu,
+    handleResetTranslation,
+    handleRetranslateSegment,
+    handleSynthesizeSegment,
+    registerActionMenuContainer,
+    segmentBusy,
+    toggleActionMenu,
+  } = useSegmentActions({
+    currentProject,
+    segments,
+    translations,
+    originalTranslations,
+    setTranslations,
+    getLatestTranslations: () => useTranslationStore.getState().translations,
+    updateTranslationText,
+    setDirtySegments,
+    setUploadMessage,
+  });
 
   const handleManualSave = useCallback(async () => {
     await persistDraft({ checkpointReason: 'manual_save' });
@@ -918,21 +433,6 @@ export default function TranslationEditor() {
   }, [handleManualSave, seekToTime, segments, timeline.selectedSegmentId]);
 
   useEffect(() => {
-    if (!activeActionMenu) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActiveActionMenu(null);
-    };
-    const handleOutsideClick = () => setActiveActionMenu(null);
-    window.addEventListener('keydown', handleEscape);
-    // Capture phase so this runs before the menu toggle button's own click handler.
-    window.addEventListener('click', handleOutsideClick, true);
-    return () => {
-      window.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('click', handleOutsideClick, true);
-    };
-  }, [activeActionMenu]);
-
-  useEffect(() => {
     if (timeline.selectedSegmentId && transcriptContainerRef.current) {
       const activeEl = transcriptContainerRef.current.querySelector(`[data-segment-id="${timeline.selectedSegmentId}"]`);
       if (activeEl) {
@@ -943,178 +443,6 @@ export default function TranslationEditor() {
 
   // Keep the existing local cache, but also push draft changes to the backend when scope is configured.
   useProjectAutoSave(persistDraft);
-
-  const syncTranslationsBeforeBuild = async (): Promise<TranslatedSegment[]> => {
-    const localTranslations = Object.values(translations).filter(
-      (translation) => translation.id && translation.translatedText.trim().length > 0,
-    );
-
-    const persistedTranslations = await Promise.all(
-      localTranslations.map((translation) =>
-        projectService.updateTranslationSegment(translation.id, translation.translatedText),
-      ),
-    );
-
-    setTranslations(persistedTranslations);
-    await persistDraft({ translationsOverride: persistedTranslations, checkpointReason: 'pre_build' });
-    return persistedTranslations;
-  };
-
-  const pollForLipSyncCompletion = async (jobId: string, withLipSync: boolean) => {
-    const buildLabel = withLipSync ? 'Dub & Lip-Sync' : 'Dub only';
-    let latestStatus: any = null;
-
-    for (let attempt = 0; attempt < 180; attempt += 1) {
-      latestStatus = await projectService.getExportStatus(jobId);
-      setActiveBuildJob(latestStatus as ActiveBuildJob);
-
-      if (latestStatus?.status === 'failed') {
-        throw new Error(latestStatus?.error_message || `${buildLabel} failed. Check the backend logs for details.`);
-      }
-
-      if (latestStatus?.status === 'completed') {
-        return latestStatus;
-      }
-
-      setUploadMessage(
-        `${buildLabel} ${String(latestStatus?.status || 'in progress').replace('_', ' ')}…`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-
-    return latestStatus;
-  };
-
-  const runBuildPipeline = async (withLipSync: boolean) => {
-    if (!currentProject?.id || !currentProject.mediaId || !currentProject.transcriptId) {
-      setUploadMessage('Upload and transcribe media before building.');
-      return;
-    }
-    if (segments.length === 0) {
-      setUploadMessage('Transcript segments are required before building.');
-      return;
-    }
-    if (Object.keys(translations).length < segments.length) {
-      setUploadMessage('Wait until all translated segments are available before building.');
-      return;
-    }
-
-    try {
-      const nextRenderMode = withLipSync ? 'dub_and_lipsync' : 'dub_only';
-      setBuildMode(nextRenderMode);
-      setBuildState('syncing');
-      setLipSyncStatuses({});
-      setActiveBuildJob({
-        job_id: 'pending',
-        render_mode: nextRenderMode,
-        status: 'queued',
-        progress_percent: 0,
-        current_stage: 'queued',
-        last_successful_stage: null,
-        error_message: null,
-      });
-      setUploadMessage('Saving translated segment edits…');
-      const persistedTranslations = await syncTranslationsBeforeBuild();
-
-      if (persistedTranslations.length < segments.length) {
-        throw new Error('Not all translated segments are ready yet.');
-      }
-
-      const projectForBuild = (await applyProjectPatch({ status: 'processing' })) ?? currentProject;
-      const canonicalProjectForBuild = await ensureCanonicalProjectForWrite();
-      const effectiveProjectForBuild = canonicalProjectForBuild ?? projectForBuild;
-
-      if (canonicalProjectForBuild) {
-        setCurrentProject(canonicalProjectForBuild);
-      }
-
-      if (!effectiveProjectForBuild.mediaId || !effectiveProjectForBuild.transcriptId) {
-        throw new Error('Reload the latest workspace draft before building the dubbed preview.');
-      }
-
-      setBuildState('building');
-      setUploadMessage(withLipSync ? 'Checking Dub + Lip-Sync availability…' : 'Queuing dub-only pipeline…');
-
-      const trigger = withLipSync ? projectService.triggerLipSync : projectService.triggerDubOnly;
-      const job = await trigger.call(
-        projectService,
-        effectiveProjectForBuild.mediaId,
-        effectiveProjectForBuild.transcriptId,
-        effectiveProjectForBuild.targetLanguage,
-        effectiveProjectForBuild.id,
-      );
-      setActiveBuildJob({
-        job_id: job.job_id,
-        render_mode: nextRenderMode,
-        status: 'queued',
-        progress_percent: 0,
-        current_stage: 'queued',
-        last_successful_stage: null,
-        error_message: null,
-      });
-
-      setUploadMessage(withLipSync ? 'Starting Dub + Lip-Sync build…' : 'Queuing dub-only pipeline…');
-      const completedJob = await pollForLipSyncCompletion(job.job_id, withLipSync);
-      if (withLipSync && Array.isArray(completedJob?.segments_metadata)) {
-        setLipSyncStatuses(
-          Object.fromEntries(
-            completedJob.segments_metadata
-              .filter((metadata: { segment_id?: string; render_status?: string }) => metadata.segment_id && metadata.render_status)
-              .map((metadata: { segment_id: string; render_status: string }) => [metadata.segment_id, metadata.render_status]),
-          ),
-        );
-      }
-
-      if (completedJob?.output_video_url) {
-        setRenderedVideoUrl(completedJob.output_video_url);
-        setComparisonMode('dubbed');
-        const refreshedProject = await projectService.getProject(effectiveProjectForBuild.id).catch(() => null);
-        if (refreshedProject) {
-          setCurrentProject(refreshedProject);
-        } else {
-          await applyProjectPatch({ status: 'completed' });
-        }
-
-        // The build generates new audio per segment; refresh translations so
-        // "No audio" badges reflect the audio the backend just produced.
-        if (effectiveProjectForBuild.transcriptId) {
-          const refreshedTranslations = await projectService
-            .fetchTranslations(effectiveProjectForBuild.transcriptId, effectiveProjectForBuild.targetLanguage)
-            .catch(() => null);
-          if (refreshedTranslations && refreshedTranslations.length > 0) {
-            setTranslations(refreshedTranslations);
-          }
-        }
-
-        if (!withLipSync) {
-          setUploadMessage('Dub complete. Preview is ready.');
-        } else {
-          const skippedSegments = Array.isArray(completedJob?.segments_metadata)
-            ? completedJob.segments_metadata.filter((s: { render_status?: string }) => s.render_status && s.render_status !== 'completed')
-            : [];
-          if (skippedSegments.length === 0) {
-            setUploadMessage('Dub & Lip-Sync complete. Preview is ready.');
-          } else if (skippedSegments.length === segments.length) {
-            setUploadMessage('Dub completed, but lip-sync could not be applied because no usable face was detected in the source footage. You can still preview and download the dubbed video.');
-          } else {
-            setUploadMessage(`Dub completed. Lip-sync was skipped for ${skippedSegments.length} segment${skippedSegments.length === 1 ? '' : 's'}, so parts of the video may keep the original facial motion.`);
-          }
-        }
-      } else {
-        await applyProjectPatch({ status: 'completed' });
-        setUploadMessage('Build completed successfully, but the preview link is not available yet. Reload the project in a few moments to fetch the latest export.');
-      }
-    } catch (error) {
-      setActiveBuildJob((job) => (job?.job_id === 'pending' ? null : job));
-      setUploadMessage(mapUserFacingError(error, withLipSync ? 'Unable to build dub and lip-sync output.' : 'Unable to build dubbed output.'));
-    } finally {
-      setBuildState('idle');
-      setBuildMode(null);
-    }
-  };
-
-  const handleBuildDubOnly = () => runBuildPipeline(false);
-  const handleBuildDubAndLipSync = () => runBuildPipeline(true);
 
   const handleTextChange = (segId: string, text: string) => {
     const oldText = segments.find((s) => s.id === segId)?.text || '';
@@ -1271,7 +599,6 @@ export default function TranslationEditor() {
     );
   }
 
-  const previewLabel = comparisonMode === 'original' ? 'original' : 'dubbed';
   const previewUrl = comparisonMode === 'original' ? sourceMediaUrl : renderedVideoUrl;
   const previewDownloadName = comparisonMode === 'original'
     ? ensureMp4Filename(
@@ -1532,7 +859,7 @@ export default function TranslationEditor() {
         <div className="border-b border-amber-700/40 bg-amber-950/40 px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-sm text-amber-100">
-              The saved project draft changed while this editor was working. Autosave is paused to prevent an overwrite. Choose whether to keep the edits in this editor or load the saved draft; translated segments already stored by the service remain safe.
+              A newer saved draft is available. Autosave is paused to avoid overwriting it. Keep current edits to continue here, or load the latest saved draft to refresh the editor. Saved translated segments are safe.
             </p>
             <div className="flex shrink-0 gap-2">
               <Button
@@ -1543,7 +870,7 @@ export default function TranslationEditor() {
                 variant="secondary"
                 size="sm"
               >
-                Keep editor edits
+                Keep current edits
               </Button>
               <Button
                 onClick={() => void loadProjectData()}
@@ -1552,7 +879,7 @@ export default function TranslationEditor() {
                 size="sm"
                 className="shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
               >
-                {isReloadingProject ? 'Reloading…' : 'Load saved draft'}
+                {isReloadingProject ? 'Reloading…' : 'Load latest saved draft'}
               </Button>
             </div>
           </div>
@@ -1650,197 +977,44 @@ export default function TranslationEditor() {
             ) : (
               segments.map((seg) => {
                 const trans = translations[seg.id];
-                const busy = segmentBusy[seg.id];
-
-                // Risk indicators
-                const isMissingTranslation = !trans;
-                const isDurationOverflow = trans && trans.durationRatio > 1.15;
-                const isDurationUnderflow = trans && trans.durationRatio < 0.75;
-                const isLowConfidence = trans && trans.qualityScore < 0.5;
-                const isMissingGeneratedAudio = trans && trans.generatedAudioStatus !== 'ready';
-                const lipSyncStatus = lipSyncStatuses[seg.id];
-                const hasLipSyncFailure = lipSyncStatus === 'failed';
-                const hasRisk = isMissingTranslation || isDurationOverflow || isDurationUnderflow || isLowConfidence || isMissingGeneratedAudio || hasLipSyncFailure;
 
                 return (
-                  <div
+                  <SegmentCard
                     key={seg.id}
-                    data-segment-id={seg.id}
-                    onClick={() => timeline.setSelectedSegmentId(seg.id)}
-                    role="group"
-                    aria-label={`Segment by ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                    className={`border rounded-xl p-4 transition grid grid-cols-1 md:grid-cols-2 gap-4 cursor-pointer ${timeline.selectedSegmentId === seg.id
-                        ? 'border-indigo-500 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
-                        : dirtySegments.has(seg.id)
-                          ? 'border-amber-500/50 bg-amber-950/20'
-                          : hasRisk
-                            ? 'border-red-800/50 bg-red-950/10'
-                            : 'border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50'
-                      }`}
-                  >
-                    {/* Left column: source transcript */}
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              seekToTime(seg.startTimeSeconds, seg.id);
-                              if (videoRef.current && videoRef.current.paused) {
-                                void videoRef.current.play();
-                              }
-                            }}
-                            className="text-[10px] bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500 hover:text-white px-2 py-0.5 rounded transition flex items-center gap-1 font-semibold uppercase tracking-wider"
-                          >
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z" /></svg>
-                            Play
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setLoopSegmentId((current) => current === seg.id ? null : seg.id);
-                              seekToTime(seg.startTimeSeconds, seg.id);
-                              if (videoRef.current?.paused) {
-                                void videoRef.current.play();
-                              }
-                            }}
-                            className={`text-[10px] px-2 py-0.5 rounded transition font-semibold uppercase tracking-wider ${loopSegmentId === seg.id
-                                ? 'bg-amber-500/30 text-amber-200'
-                                : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-200'
-                              }`}
-                            aria-pressed={loopSegmentId === seg.id}
-                            title="Loop this segment"
-                          >
-                            Loop
-                          </button>
-                          <span className="text-xs font-bold text-slate-500 uppercase">{seg.speakerTag}</span>
-                          <span className="text-[10px] text-slate-600">{seg.durationSeconds.toFixed(1)}s</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            seekToTime(seg.startTimeSeconds, seg.id);
-                          }}
-                          className="text-xs font-mono text-slate-500 transition hover:text-white"
-                        >
-                          {timeline.formatTimecode(seg.startTimeSeconds)}
-                        </button>
-                      </div>
-                      <textarea
-                        lang={normalizeLanguageTag(currentProject.sourceLanguage)}
-                        dir={getTextDirection(currentProject.sourceLanguage)}
-                        aria-label={`Source transcript for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                        className="w-full break-words bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-indigo-700 resize-none h-16"
-                        value={seg.text}
-                        onChange={(e) => handleTextChange(seg.id, e.target.value)}
-                      />
-                    </div>
-
-                    {/* Right column: translation + risk + actions */}
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-indigo-400 uppercase">Translation ({currentProject.targetLanguage})</span>
-                          {/* Risk badges */}
-                          {isMissingTranslation && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold">Missing</span>
-                          )}
-                          {isDurationOverflow && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold" title="Translation is too long — will be sped up">
-                              Too long · {trans!.durationRatio.toFixed(2)}x
-                            </span>
-                          )}
-                          {isDurationUnderflow && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-semibold" title="Translation is too short — may have silence gaps">
-                              Too short · {trans!.durationRatio.toFixed(2)}x
-                            </span>
-                          )}
-                          {isLowConfidence && !isMissingTranslation && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-semibold" title="Low translation confidence score">
-                              Low confidence
-                            </span>
-                          )}
-                          {hasLipSyncFailure && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold" title="Lip-sync rendering failed for this segment">
-                              Lip-sync failed
-                            </span>
-                          )}
-                          {isMissingGeneratedAudio && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-semibold" title="Generated dubbed audio is not ready for this segment">
-                              No audio
-                            </span>
-                          )}
-                          {trans && !hasRisk && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-950 text-green-400 font-semibold">OK</span>
-                          )}
-                        </div>
-
-                        {/* ⋯ Action menu */}
-                        <div className="relative" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setActiveActionMenu(activeActionMenu === seg.id ? null : seg.id)}
-                            disabled={!!busy}
-                            className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded transition text-sm disabled:opacity-40"
-                            aria-label="Segment actions"
-                            aria-haspopup="menu"
-                            aria-expanded={activeActionMenu === seg.id}
-                            aria-controls={`segment-actions-${seg.id}`}
-                            title="Segment actions"
-                          >
-                            {busy === 'retranslating' ? 'Translating…' : busy === 'synthesizing' ? 'Synthesizing…' : '⋯'}
-                          </button>
-                          {activeActionMenu === seg.id && (
-                            <div id={`segment-actions-${seg.id}`} className="absolute right-0 top-6 z-20 w-44 rounded-xl border border-slate-700 bg-slate-900 shadow-xl py-1 text-sm" role="menu">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => void handleRetranslateSegment(seg.id)}
-                                className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5" /><path d="M20 4v7h-7" /></svg>
-                                Retranslate
-                              </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => void handleSynthesizeSegment(seg.id)}
-                                disabled={!trans?.id}
-                                className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 transition disabled:opacity-40"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
-                                Regenerate audio
-                              </button>
-                              <div className="my-1 border-t border-slate-800" />
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => handleResetTranslation(seg.id)}
-                                disabled={!originalTranslations[seg.id]}
-                                className="w-full text-left px-3 py-2 text-red-400 hover:bg-slate-800 transition disabled:opacity-40"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-                                Reset to original
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <textarea
-                        lang={normalizeLanguageTag(currentProject.targetLanguage)}
-                        dir={getTextDirection(currentProject.targetLanguage)}
-                        aria-label={`Translation in ${currentProject.targetLanguage.toUpperCase()} for ${seg.speakerTag} at ${timeline.formatTimecode(seg.startTimeSeconds)}`}
-                        className={`w-full break-words bg-slate-950 border rounded-lg p-2 text-sm text-indigo-100 focus:outline-none resize-none h-16 ${dirtySegments.has(seg.id) ? 'border-amber-600/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-700'
-                          }`}
-                        value={trans?.translatedText || ''}
-                        onChange={(e) => handleTranslationChange(seg.id, e.target.value)}
-                        placeholder={isMissingTranslation ? 'No translation yet — use ⋯ to retranslate' : 'Edit translation…'}
-                      />
-                    </div>
-                  </div>
+                    currentProject={currentProject}
+                    segment={seg}
+                    translation={trans}
+                    lipSyncStatus={lipSyncStatuses[seg.id]}
+                    isDirty={dirtySegments.has(seg.id)}
+                    isLooping={loopSegmentId === seg.id}
+                    isSelected={timeline.selectedSegmentId === seg.id}
+                    isActionMenuOpen={activeActionMenu === seg.id}
+                    isBusy={segmentBusy[seg.id]}
+                    canResetTranslation={originalTranslations[seg.id] !== undefined}
+                    formatTimecode={timeline.formatTimecode}
+                    actionMenuContainerRef={registerActionMenuContainer(seg.id)}
+                    onSelect={() => timeline.setSelectedSegmentId(seg.id)}
+                    onSeek={() => seekToTime(seg.startTimeSeconds, seg.id)}
+                    onPlay={() => {
+                      seekToTime(seg.startTimeSeconds, seg.id);
+                      if (videoRef.current?.paused) {
+                        void videoRef.current.play();
+                      }
+                    }}
+                    onToggleLoop={() => {
+                      setLoopSegmentId((current) => current === seg.id ? null : seg.id);
+                      seekToTime(seg.startTimeSeconds, seg.id);
+                      if (videoRef.current?.paused) {
+                        void videoRef.current.play();
+                      }
+                    }}
+                    onSourceTextChange={(text) => handleTextChange(seg.id, text)}
+                    onTranslationTextChange={(text) => handleTranslationChange(seg.id, text)}
+                    onToggleActionMenu={() => toggleActionMenu(seg.id)}
+                    onRetranslate={() => void handleRetranslateSegment(seg.id)}
+                    onSynthesize={() => void handleSynthesizeSegment(seg.id)}
+                    onResetTranslation={() => handleResetTranslation(seg.id)}
+                  />
                 );
               })
             )}
@@ -1853,241 +1027,37 @@ export default function TranslationEditor() {
         </div>
 
         {/* Right Grid: Video Preview Player */}
-        <aside className="order-first flex min-h-0 min-w-0 flex-col overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 md:order-last xl:p-5" aria-label="Media preview and timeline">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-400">Media monitor</p>
-              <h2 className="mt-1 text-sm font-semibold text-white">Project preview</h2>
-            </div>
-            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-1">
-              <button
-                type="button"
-                onClick={() => setComparisonMode('original')}
-                disabled={!sourceMediaUrl?.startsWith('http')}
-                aria-pressed={comparisonMode === 'original'}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'original' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-              >
-                Original
-              </button>
-              <button
-                type="button"
-                onClick={() => setComparisonMode('dubbed')}
-                disabled={!renderedVideoUrl}
-                aria-pressed={comparisonMode === 'dubbed'}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${comparisonMode === 'dubbed' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-              >
-                Dubbed
-              </button>
-            </div>
-          </div>
-
-          <div className="relative flex aspect-video min-h-[240px] w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-black text-slate-500 shadow-lg shadow-black/30">
-            {comparisonMode === 'dubbed' && !renderedVideoUrl && sourceMediaUrl ? (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 p-4 text-center backdrop-blur-[2px]">
-                <p className="text-sm font-semibold text-slate-200">Dubbed preview not ready yet. Click Original to keep reviewing the source video.</p>
-                <p className="mt-2 text-xs text-slate-400">Run Build when you're ready to generate the dubbed preview.</p>
-              </div>
-            ) : null}
-
-            {(comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)) ? (
-              <video
-                key={comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)}
-                ref={videoRef}
-                src={(comparisonMode === 'original' ? sourceMediaUrl : (renderedVideoUrl || sourceMediaUrl)) ?? undefined}
-                controls
-                aria-label={`${comparisonMode === 'original' ? currentProject.sourceLanguage.toUpperCase() : currentProject.targetLanguage.toUpperCase()} video preview`}
-                className={`h-full w-full object-contain ${comparisonMode === 'dubbed' && !renderedVideoUrl ? 'opacity-50' : ''}`}
-                onError={() => {
-                  if (comparisonMode === 'original') { void refreshSourceMediaUrl(); }
-                  else { void refreshRenderedVideoUrl(); }
-                }}
-              >
-                Your browser does not support embedded video playback.
-              </video>
-            ) : (
-              'Preview Media Player Placeholder'
-            )}
-          </div>
-
-          <div className="mt-4 shrink-0 rounded-xl border border-slate-700/70 bg-slate-900 p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Export Output</h3>
-                <p className="mt-2 text-sm text-slate-300">
-                  {renderedVideoUrl
-                    ? comparisonMode === 'original'
-                      ? 'The original source video is selected in Media monitor.'
-                      : `Your ${currentProject.targetLanguage.toUpperCase()} dubbed video preview is ready.`
-                    : 'Run Dub only or Dub & Lip-Sync to generate a preview and downloadable output.'}
-                </p>
-              </div>
-              {previewUrl && (
-                <div className="flex shrink-0 gap-2">
-                  <a
-                    href={previewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
-                  >
-                    {comparisonMode === 'original' ? 'Open original' : 'Open dubbed'}
-                  </a>
-                  <button
-                    type="button"
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={async () => {
-                      try {
-                        const response = await fetch(previewUrl);
-                        const blob = await response.blob();
-                        const objectUrl = URL.createObjectURL(blob);
-                        const anchor = document.createElement('a');
-                        anchor.href = objectUrl;
-                        anchor.download = previewDownloadName;
-                        document.body.appendChild(anchor);
-                        anchor.click();
-                        document.body.removeChild(anchor);
-                        URL.revokeObjectURL(objectUrl);
-                      } catch {
-                        window.open(previewUrl, '_blank');
-                      }
-                    }}
-                  >
-                    {comparisonMode === 'original' ? 'Download original' : 'Download dubbed'}
-                  </button>
-                </div>
-              )}
-            </div>
-            {previewUrl && (
-              <p className="mt-3 text-xs text-slate-500">
-                Downloading {previewLabel} media as `{previewDownloadName}`.
-              </p>
-            )}
-          </div>
-
-          <div className="mt-4 flex min-h-[310px] flex-1 shrink-0 flex-col justify-between gap-4 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Segment Timeline</h3>
-              <span className="text-xs text-slate-500">Click a segment bar to seek the preview player.</span>
-            </div>
-            <label className="flex items-center gap-3 text-xs text-slate-500">
-              <span className="shrink-0">Fine seek</span>
-              <input
-                type="range"
-                aria-label="Fine seek preview timeline"
-                min={0}
-                max={totalDurationSeconds || 1}
-                step={0.1}
-                value={Math.min(timeline.currentTimeSeconds, totalDurationSeconds || 1)}
-                onChange={(event) => seekToTime(Number(event.target.value))}
-                disabled={segments.length === 0 || totalDurationSeconds === 0}
-                className="w-full accent-indigo-500 disabled:opacity-40"
-              />
-            </label>
-            <div
-              className="relative h-32 rounded-lg border border-slate-800 bg-slate-950 p-3"
-              onPointerDown={(event) => {
-                isScrubbingRef.current = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                seekFromTrackPointer(event.clientX, event.currentTarget);
-              }}
-              onPointerMove={(event) => {
-                if (isScrubbingRef.current) {
-                  seekFromTrackPointer(event.clientX, event.currentTarget);
-                }
-              }}
-              onPointerUp={(event) => {
-                isScrubbingRef.current = false;
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }}
-              onPointerCancel={() => {
-                isScrubbingRef.current = false;
-              }}
-            >
-              {segments.length === 0 || totalDurationSeconds === 0 ? (
-                <div className="flex h-full items-center justify-center text-xs text-slate-600">
-                  Upload media to populate the review timeline.
-                </div>
-              ) : (
-                <div className="relative flex h-full items-end gap-1">
-                  <div className="pointer-events-none absolute inset-0 opacity-70">
-                    <WaveformCanvas
-                      data={waveformData}
-                      viewStart={0}
-                      viewEnd={totalDurationSeconds}
-                      width={1200}
-                      height={96}
-                    />
-                  </div>
-                  {segments.map((segment) => {
-                    const widthPercent = Math.max(8, (segment.durationSeconds / totalDurationSeconds) * 100);
-                    const isActive = timeline.selectedSegmentId === segment.id;
-                    return (
-                      <button
-                        key={segment.id}
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          seekToTime(segment.startTimeSeconds, segment.id);
-                        }}
-                        aria-label={`Seek to segment ${timeline.formatTimecode(segment.startTimeSeconds)} by ${segment.speakerTag}`}
-                        aria-current={isActive ? 'true' : undefined}
-                        title={`${timeline.formatTimecode(segment.startTimeSeconds)} • ${segment.speakerTag}`}
-                        className={`min-w-[2rem] rounded-md border transition ${isActive
-                            ? 'border-indigo-400 bg-indigo-500/40'
-                            : 'border-slate-700 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'
-                          }`}
-                        style={{ width: `${widthPercent}%`, height: `${Math.max(30, Math.min(96, 28 + segment.durationSeconds * 18))}px` }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="sticky bottom-0 z-10 -mx-3 flex items-center justify-between border-t border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
-              <div>
-                <span className="text-sm font-mono text-slate-400">{timeline.formatTimecode(timeline.currentTimeSeconds)}</span>
-                {selectedSegment && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Focused segment: {selectedSegment.speakerTag} at {timeline.formatTimecode(selectedSegment.startTimeSeconds)}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!videoRef.current) {
-                    timeline.setPlaying(!timeline.isPlaying);
-                    return;
-                  }
-
-                  if (videoRef.current.paused) {
-                    void videoRef.current.play();
-                  } else {
-                    videoRef.current.pause();
-                  }
-                }}
-                aria-label={timeline.isPlaying ? 'Pause preview' : 'Play preview'}
-                aria-pressed={timeline.isPlaying}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition"
-              >
-                {timeline.isPlaying ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z" /></svg>
-                )}
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={playComparisonSegment}
-                disabled={!selectedSegment || (!sourceMediaUrl && !renderedVideoUrl)}
-                className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Play selected segment
-              </button>
-            </div>
-          </div>
-        </aside>
+        <MediaPreviewPanel
+          currentProject={currentProject}
+          comparisonMode={comparisonMode}
+          sourceMediaUrl={sourceMediaUrl}
+          renderedVideoUrl={renderedVideoUrl}
+          previewUrl={previewUrl}
+          previewDownloadName={previewDownloadName}
+          waveformData={waveformData}
+          totalDurationSeconds={totalDurationSeconds}
+          segments={segments}
+          selectedSegment={selectedSegment}
+          selectedSegmentId={timeline.selectedSegmentId}
+          currentTimeSeconds={timeline.currentTimeSeconds}
+          isPlaying={timeline.isPlaying}
+          videoRef={videoRef}
+          formatTimecode={timeline.formatTimecode}
+          onComparisonModeChange={setComparisonMode}
+          onRefreshSourceMediaUrl={() => {
+            void refreshSourceMediaUrl();
+          }}
+          onRefreshRenderedVideoUrl={() => {
+            void refreshRenderedVideoUrl();
+          }}
+          onSeek={seekToTime}
+          onTogglePlayback={handleTogglePreviewPlayback}
+          onPlaySelectedSegment={playComparisonSegment}
+          onTimelinePointerDown={handleTimelinePointerDown}
+          onTimelinePointerMove={handleTimelinePointerMove}
+          onTimelinePointerUp={handleTimelinePointerUp}
+          onTimelinePointerCancel={handleTimelinePointerCancel}
+        />
       </div>
     </div>
   );

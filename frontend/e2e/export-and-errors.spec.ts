@@ -11,7 +11,7 @@ test('dub build exposes progress, readiness, partial history failure, and downlo
   await expect(page.getByLabel(/Translation in ES for Speaker 1/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Dub only' }).click();
-  await expect(page.getByText('48%')).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Build progress' })).toHaveAttribute('aria-valuenow', '48');
   await expect(page.getByText('Dub complete. Preview is ready — download the dubbed video below.')).toBeVisible();
   expect(backend.renderRequests).toEqual([
     expect.objectContaining({ enable_lipsync: false, project_id: PROJECT_ID }),

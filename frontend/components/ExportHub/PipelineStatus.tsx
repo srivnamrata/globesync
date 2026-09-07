@@ -2,6 +2,14 @@ import { StatePanel, StatusBadge } from '../ui';
 
 type PipelineStage = 'upload' | 'transcribe' | 'translate' | 'voice' | 'lip_sync' | 'export';
 
+type RawPipelineStage =
+  | PipelineStage
+  | 'audio_retiming'
+  | 'voice_synthesis'
+  | 'lipsync_render'
+  | 'mux_export'
+  | 'completed';
+
 type PipelineStatusProps = {
   mode: 'upstream' | 'dub_only' | 'dub_and_lipsync';
   status: string;
@@ -60,6 +68,29 @@ function normalizePipelineStatus(status: string): 'queued' | 'in_progress' | 'co
   return normalized === 'queued' ? 'queued' : 'in_progress';
 }
 
+function normalizeStageId(stage: string, mode: PipelineStatusProps['mode']): PipelineStage {
+  const normalized = stage.replace(/-/g, '_').toLowerCase() as RawPipelineStage;
+
+  switch (normalized) {
+    case 'upload':
+    case 'transcribe':
+    case 'translate':
+    case 'voice':
+    case 'lip_sync':
+    case 'export':
+      return normalized;
+    case 'voice_synthesis':
+    case 'audio_retiming':
+      return 'voice';
+    case 'lipsync_render':
+      return mode === 'dub_only' ? 'export' : 'lip_sync';
+    case 'mux_export':
+    case 'completed':
+    default:
+      return 'export';
+  }
+}
+
 function stageActivityLabel(stage: PipelineStage, status: string): string {
   if (status === 'queued') {
     return 'Queued';
@@ -95,8 +126,7 @@ export function PipelineStatus({
   translationCount,
   segmentCount,
 }: PipelineStatusProps) {
-  const rawStage = currentStage.replace(/-/g, '_').toLowerCase() as PipelineStage;
-  const normalizedStage = mode === 'dub_only' && rawStage === 'lip_sync' ? 'export' : rawStage;
+  const normalizedStage = normalizeStageId(currentStage, mode);
   const normalizedStatus = normalizePipelineStatus(status);
   const isFailed = normalizedStatus === 'failed';
   const isCompleted = normalizedStatus === 'completed';
@@ -145,8 +175,14 @@ export function PipelineStatus({
           </ol>
 
           {!isCompleted && !isFailed && (
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuetext={`${progress}% during ${stageLabel(normalizedStage)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-              <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-[width] duration-interface ease-interface" style={{ width: `${Math.max(4, progress)}%` }} />
+            <div className="mt-2">
+              <div className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <span>{stageLabel(normalizedStage)}</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Build progress" aria-valuetext={`${progress}% during ${stageLabel(normalizedStage)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+                <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-[width] duration-interface ease-interface" style={{ width: `${Math.max(4, progress)}%` }} />
+              </div>
             </div>
           )}
         </div>
