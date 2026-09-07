@@ -21,7 +21,7 @@ export const mergeDraftWithProject = (
     ...draft.mediaReferences,
     transcriptId: project ? project.transcriptId : draft.mediaReferences.transcriptId,
     mediaId: project ? project.mediaId : draft.mediaReferences.mediaId,
-    videoFilename: project ? project.mediaFilename : draft.mediaReferences.videoFilename,
+    videoFilename: project?.mediaFilename ?? draft.mediaReferences.videoFilename,
   },
 });
 
@@ -45,23 +45,25 @@ export function buildProjectFromDraft(
   };
 }
 
-export function toPersistableFilename(value?: string): string {
-  if (!value) return 'source_video.mp4';
+export function toPersistableFilename(value?: string): string | undefined {
+  if (!value) return undefined;
   try {
     const url = new URL(value);
     const filename = url.pathname.split('/').filter(Boolean).pop();
-    return filename || 'source_video.mp4';
+    return filename || undefined;
   } catch {
     return value;
   }
 }
 
 export function sanitizeDraftArtifactReferences(draft: HeygenXFile): HeygenXFile {
+  const videoFilename = toPersistableFilename(draft.mediaReferences.videoFilename);
+  const { videoFilename: _ignoredVideoFilename, ...mediaReferences } = draft.mediaReferences;
   return {
     ...draft,
     mediaReferences: {
-      ...draft.mediaReferences,
-      videoFilename: toPersistableFilename(draft.mediaReferences.videoFilename),
+      ...mediaReferences,
+      ...(videoFilename ? { videoFilename } : {}),
     },
   };
 }

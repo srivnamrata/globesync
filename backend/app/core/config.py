@@ -149,6 +149,9 @@ class Settings(BaseSettings):
             "SYNC_DATABASE_URL": "postgresql://postgres:postgres_secure_pass@localhost:5432/translation_db",
             "JWT_SECRET_KEY": "replace-with-super-secret-hex-key-in-production",
         }
+        # Feature-specific secrets are validated by the code paths that use them
+        # so admin-only entrypoints such as Alembic migrations can boot with a
+        # minimal production environment.
         invalid_fields = [
             field_name
             for field_name, placeholder in insecure_defaults.items()

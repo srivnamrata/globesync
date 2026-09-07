@@ -9,7 +9,7 @@ export interface HeygenXFile {
     updatedAt: string;
   };
   mediaReferences: {
-    videoFilename: string;
+    videoFilename?: string;
     durationSeconds: number;
     originalTranscriptSegments: any[];
     transcriptId?: string;

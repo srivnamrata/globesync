@@ -153,6 +153,56 @@ async def test_bootstrap_selects_requested_workspace_and_repairs_default_members
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_falls_back_to_default_workspace_when_requested_workspace_is_stale():
+    user_id = uuid.uuid4()
+    default_id = uuid.uuid4()
+    requested_id = uuid.uuid4()
+    user = SimpleNamespace(
+        id=user_id,
+        email="user@example.com",
+        display_name="Updated User",
+        auth_provider="identity_platform",
+        auth_subject="subject-1",
+        is_active=True,
+        last_login_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    default_workspace = SimpleNamespace(
+        id=default_id,
+        name="Personal",
+        slug="personal",
+        owner_user_id=user_id,
+        is_personal=True,
+        archived_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    default_membership = SimpleNamespace(
+        workspace_id=default_id,
+        user_id=user_id,
+        role="owner",
+        invited_by_user_id=user_id,
+        joined_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    session = _Session(
+        _Result(scalar=user),
+        _Result(scalar=default_workspace),
+        _Result(scalar=default_membership),
+        _Result(scalar=None),
+    )
+    service = AuthService()
+    service._utcnow = lambda: NOW
+
+    response = await service.bootstrap_actor_context(session, _identity(), requested_id)
+
+    assert response.workspace.id == default_id
+    assert response.membership.role == "owner"
+
+
+@pytest.mark.asyncio
 async def test_workspace_resolution_rejects_missing_membership_and_archived_workspace():
     service = AuthService()
     with pytest.raises(WorkspaceAccessError, match="not available"):

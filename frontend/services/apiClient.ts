@@ -23,7 +23,12 @@ function getErrorMessage(errData: unknown, status: number): string {
     return errData.detail;
   }
 
-  if (isRecord(errData.error) && typeof errData.error.message === 'string' && errData.error.message.length > 0) {
+  if (
+    isRecord(errData)
+    && isRecord(errData.error)
+    && typeof errData.error.message === 'string'
+    && errData.error.message.length > 0
+  ) {
     return errData.error.message;
   }
 
@@ -64,7 +69,7 @@ export class ApiClient {
     delayMs: number = 1000
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-
+    
     // Default headers
     const headers = new Headers(this.defaultHeaders);
     const requestHeaders = new Headers(options.headers || {});

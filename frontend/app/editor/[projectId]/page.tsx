@@ -189,11 +189,12 @@ export default function TranslationEditor() {
       return;
     }
 
+    const mediaId = currentProject.mediaId;
     let isMounted = true;
     let audioContext: AudioContext | null = null;
     async function decodeWaveform() {
       try {
-        const audioDetails = await projectService.getMediaAudio(currentProject.mediaId!);
+        const audioDetails = await projectService.getMediaAudio(mediaId);
         if (!isMounted) return;
         audioContext = new AudioContext();
         const response = await fetch(audioDetails.audio_url);
@@ -700,10 +701,11 @@ export default function TranslationEditor() {
               onClick={handleManualSave}
               variant="secondary"
               size="sm"
-              className={`${dirtySegments.size > 0
+              className={`${
+                dirtySegments.size > 0
                   ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
                   : 'text-slate-400'
-                }`}
+              }`}
               title="Save changes (Ctrl+S)"
             >
               {dirtySegments.size > 0 ? `Save (${dirtySegments.size})` : 'Saved'}
@@ -771,45 +773,45 @@ export default function TranslationEditor() {
           role="presentation"
           onClick={() => setIsHistoryOpen(false)}
         >
-          <aside
-            className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="version-history-heading"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
-              <Button
-                onClick={() => setIsHistoryOpen(false)}
-                variant="quiet"
-                size="sm"
-                className="min-h-7 px-2 text-slate-400"
-                aria-label="Close version history"
-                autoFocus
-              >
-                Close
-              </Button>
-            </div>
-            {isLoadingHistory ? (
-              <p className="mt-4 text-sm text-slate-400">Loading versions...</p>
-            ) : projectVersions.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-400">No saved versions yet.</p>
-            ) : (
-              <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto">
-                {projectVersions.map((version) => (
-                  <li key={version.version} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                    <div className="flex items-center justify-between text-sm text-slate-200">
-                      <span>Version {version.version}</span>
-                      <span className="text-xs text-slate-500">
-                        {formatDateTime(version.created_at)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </aside>
+        <aside
+          className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="version-history-heading"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            <h2 id="version-history-heading" className="text-sm font-bold text-white">Version history</h2>
+            <Button
+              onClick={() => setIsHistoryOpen(false)}
+              variant="quiet"
+              size="sm"
+              className="min-h-7 px-2 text-slate-400"
+              aria-label="Close version history"
+              autoFocus
+            >
+              Close
+            </Button>
+          </div>
+          {isLoadingHistory ? (
+            <p className="mt-4 text-sm text-slate-400">Loading versions...</p>
+          ) : projectVersions.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">No saved versions yet.</p>
+          ) : (
+            <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+              {projectVersions.map((version) => (
+                <li key={version.version} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                  <div className="flex items-center justify-between text-sm text-slate-200">
+                    <span>Version {version.version}</span>
+                    <span className="text-xs text-slate-500">
+                      {formatDateTime(version.created_at)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
         </div>
       )}
 
@@ -827,17 +829,17 @@ export default function TranslationEditor() {
             aria-label="Project outputs"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-2 flex justify-end">
-              <Button
-                onClick={() => setIsExportHistoryOpen(false)}
-                variant="secondary"
-                size="sm"
-                autoFocus
-              >
-                Close exports
-              </Button>
-            </div>
-            <ExportHistory projectId={currentProject.id} />
+          <div className="mb-2 flex justify-end">
+            <Button
+              onClick={() => setIsExportHistoryOpen(false)}
+              variant="secondary"
+              size="sm"
+              autoFocus
+            >
+              Close exports
+            </Button>
+          </div>
+          <ExportHistory projectId={currentProject.id} />
           </aside>
         </div>
       )}
@@ -856,24 +858,24 @@ export default function TranslationEditor() {
             aria-label="Export readiness"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-2 flex justify-end">
-              <Button
-                onClick={() => setIsExportReadinessOpen(false)}
-                variant="secondary"
-                size="sm"
-                autoFocus
-              >
-                Close readiness
-              </Button>
-            </div>
-            <ExportReadiness
-              hasDraftConflict={hasRemoteDraftConflict}
-              hasMedia={Boolean(currentProject.mediaId)}
-              hasTranscript={Boolean(currentProject.transcriptId)}
-              dirtySegmentCount={dirtySegments.size}
-              segments={segments}
-              translations={translations}
-            />
+          <div className="mb-2 flex justify-end">
+            <Button
+              onClick={() => setIsExportReadinessOpen(false)}
+              variant="secondary"
+              size="sm"
+              autoFocus
+            >
+              Close readiness
+            </Button>
+          </div>
+          <ExportReadiness
+            hasDraftConflict={hasRemoteDraftConflict}
+            hasMedia={Boolean(currentProject.mediaId)}
+            hasTranscript={Boolean(currentProject.transcriptId)}
+            dirtySegmentCount={dirtySegments.size}
+            segments={segments}
+            translations={translations}
+          />
           </aside>
         </div>
       )}
@@ -1079,7 +1081,7 @@ export default function TranslationEditor() {
           onTimelinePointerUp={handleTimelinePointerUp}
           onTimelinePointerCancel={handleTimelinePointerCancel}
         />
+        </div>
       </div>
-    </div>
   );
 }

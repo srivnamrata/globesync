@@ -349,9 +349,7 @@ describe('TranslationEditor workflow', () => {
     });
 
     // Check for conflict message (text may be split across elements)
-    expect(screen.getByText((content, element) => {
-      return element?.textContent?.includes('saved project draft changed') || false;
-    })).toBeInTheDocument();
+    expect(screen.getByText(/a newer saved draft is available/i)).toBeInTheDocument();
 
     expect(storage.saveDraft).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Dub only' })).toBeDisabled();

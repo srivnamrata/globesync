@@ -213,16 +213,12 @@ describe('AuthService', () => {
     const listener = vi.fn();
     const disableAutoSelect = vi.fn();
     service.subscribeToAuthState(listener);
-    window.google = {
-      accounts: {
-        id: {
-          initialize: vi.fn(),
-          renderButton: vi.fn(),
-          prompt: vi.fn(),
-          disableAutoSelect,
-        }
-      }
-    };
+    window.google = { accounts: { id: {
+      initialize: vi.fn(),
+      renderButton: vi.fn(),
+      prompt: vi.fn(),
+      disableAutoSelect,
+    } } };
     localStorage.setItem('globesync.auth_token', 'token');
     localStorage.setItem('globesync.auth_context', '{}');
     localStorage.setItem('globesync.active_workspace_id', 'workspace-1');
@@ -239,16 +235,12 @@ describe('AuthService', () => {
     vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'google-client');
     const initialize = vi.fn();
     const renderButton = vi.fn();
-    window.google = {
-      accounts: {
-        id: {
-          initialize,
-          renderButton,
-          prompt: vi.fn(),
-          disableAutoSelect: vi.fn(),
-        }
-      }
-    };
+    window.google = { accounts: { id: {
+      initialize,
+      renderButton,
+      prompt: vi.fn(),
+      disableAutoSelect: vi.fn(),
+    } } };
     const service = new AuthService();
     const container = document.createElement('div');
     container.textContent = 'stale';
@@ -283,16 +275,12 @@ describe('AuthService', () => {
       latestCallback = options.callback;
     });
     const prompt = vi.fn(() => latestCallback({ credential: 'google-credential' }));
-    window.google = {
-      accounts: {
-        id: {
-          initialize,
-          renderButton: vi.fn(),
-          prompt,
-          disableAutoSelect: vi.fn(),
-        }
-      }
-    };
+    window.google = { accounts: { id: {
+      initialize,
+      renderButton: vi.fn(),
+      prompt,
+      disableAutoSelect: vi.fn(),
+    } } };
     const service = new AuthService();
 
     await expect(service.signInWithGoogle()).resolves.toEqual(authContextFixture);
@@ -304,18 +292,14 @@ describe('AuthService', () => {
   it('rejects an empty Google identity response', async () => {
     vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'google-client');
     let latestCallback!: (response: { credential?: string }) => void;
-    window.google = {
-      accounts: {
-        id: {
-          initialize: vi.fn((options) => {
-            latestCallback = options.callback;
-          }),
-          renderButton: vi.fn(),
-          prompt: vi.fn(() => latestCallback({})),
-          disableAutoSelect: vi.fn(),
-        }
-      }
-    };
+    window.google = { accounts: { id: {
+      initialize: vi.fn((options) => {
+        latestCallback = options.callback;
+      }),
+      renderButton: vi.fn(),
+      prompt: vi.fn(() => latestCallback({})),
+      disableAutoSelect: vi.fn(),
+    } } };
 
     await expect(new AuthService().signInWithGoogle())
       .rejects.toThrow('did not return an identity token');
@@ -324,16 +308,12 @@ describe('AuthService', () => {
   it('loads the Google identity script once and detects availability', async () => {
     vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'google-client');
     const append = vi.spyOn(document.head, 'appendChild').mockImplementation((node) => {
-      window.google = {
-        accounts: {
-          id: {
-            initialize: vi.fn(),
-            renderButton: vi.fn(),
-            prompt: vi.fn(),
-            disableAutoSelect: vi.fn(),
-          }
-        }
-      };
+      window.google = { accounts: { id: {
+        initialize: vi.fn(),
+        renderButton: vi.fn(),
+        prompt: vi.fn(),
+        disableAutoSelect: vi.fn(),
+      } } };
       queueMicrotask(() => (node as HTMLScriptElement).onload?.(new Event('load')));
       return node;
     });

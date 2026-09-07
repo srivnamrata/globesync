@@ -53,10 +53,17 @@ class AuthService:
         requested_workspace_id: uuid.UUID | None = None,
     ) -> AuthBootstrapResponse:
         user = await self._get_or_create_user(db, identity)
-        workspace, membership = await self._get_or_create_default_workspace(db, user)
+        default_workspace, default_membership = await self._get_or_create_default_workspace(db, user)
+        workspace, membership = default_workspace, default_membership
 
-        if requested_workspace_id is not None and requested_workspace_id != workspace.id:
-            workspace, membership = await self._resolve_workspace_membership(db, user.id, requested_workspace_id)
+        if requested_workspace_id is not None and requested_workspace_id != default_workspace.id:
+            workspace, membership = await self._resolve_bootstrap_workspace(
+                db=db,
+                user_id=user.id,
+                default_workspace=default_workspace,
+                default_membership=default_membership,
+                requested_workspace_id=requested_workspace_id,
+            )
 
         await db.flush()
         return self._build_bootstrap_response(user, workspace, membership)
@@ -197,6 +204,19 @@ class AuthService:
 
         membership = await self._ensure_membership(db, workspace.id, user.id, role="owner", invited_by_user_id=user.id)
         return workspace, membership
+
+    async def _resolve_bootstrap_workspace(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        default_workspace: Workspace,
+        default_membership: WorkspaceMember,
+        requested_workspace_id: uuid.UUID,
+    ) -> tuple[Workspace, WorkspaceMember]:
+        try:
+            return await self._resolve_workspace_membership(db, user_id, requested_workspace_id)
+        except WorkspaceAccessError:
+            return default_workspace, default_membership
 
     async def _resolve_workspace_membership(
         self,
