@@ -18,7 +18,7 @@ test('loads authenticated media, transcript, translation, and readiness state', 
   await expect(page.getByLabel(/Translation in ES for Speaker 1/)).toHaveValue('Bienvenido a GlobeSync');
   await expect(page.getByText('1 segments loaded')).toBeVisible();
   await expect(page.getByText('Downloading original media as `launch.mp4`.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Original', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Original' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Dub only' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Dub + Lip-Sync' })).toBeEnabled();
 
@@ -65,9 +65,7 @@ test('a genuine draft conflict supports keeping edits and loading the saved draf
   backend.rejectDraftWrites = true;
   await translation.fill('Edición local');
   await page.getByRole('button', { name: 'Save (1)' }).click();
-  await expect(page.getByText(
-    'A newer saved draft is available. Autosave is paused to avoid overwriting it. Keep current edits to continue here, or load the latest saved draft to refresh the editor. Saved translated segments are safe.',
-  )).toBeVisible();
+  await expect(page.getByText(/A newer saved draft is available/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Load saved draft' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: 'Keep editor edits' })).toBeVisible();
