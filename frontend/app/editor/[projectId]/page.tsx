@@ -84,10 +84,12 @@ export default function TranslationEditor() {
   const {
     applyProjectPatch,
     applyProjectStatus,
+    dismissRemoteDraftConflict,
     ensureCanonicalProjectForWrite,
     hasRemoteDraftConflict,
     isReloadingProject,
     lastSavedAt,
+    loadProjectData,
     persistDraft,
     pipelineOperation: initialPipelineOperation,
     refreshRenderedVideoUrl,
@@ -503,13 +505,13 @@ export default function TranslationEditor() {
       const job = await projectService.startTranscription(media.media_id, projectForUpload.sourceLanguage);
 
       while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
         const transcript = await projectService.getTranscription(job.transcript_id);
         if (transcript.status === 'failed') {
           throw new Error('Transcription failed. Check the backend and Celery worker logs.');
         }
         if (transcript.status !== 'completed') {
           setUploadMessage(`Transcription ${transcript.status.replace('_', ' ')}…`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           continue;
         }
 
@@ -563,6 +565,7 @@ export default function TranslationEditor() {
           targetLanguage: updatedProject.targetLanguage,
           expectedCount: loadedSegments.length,
           fetchTranslations: (id, language) => projectService.fetchTranslations(id, language),
+          intervalMs: 1000,
         });
 
         if (fetchedTranslations.length > 0) {
@@ -863,14 +866,11 @@ export default function TranslationEditor() {
             </p>
             <div className="flex shrink-0 gap-2">
               <Button
-                onClick={() => {
-                  remoteDraftConflictRef.current = false;
-                  setHasRemoteDraftConflict(false);
-                }}
+                onClick={dismissRemoteDraftConflict}
                 variant="secondary"
                 size="sm"
               >
-                Keep current edits
+                Keep editor edits
               </Button>
               <Button
                 onClick={() => void loadProjectData()}
@@ -879,7 +879,7 @@ export default function TranslationEditor() {
                 size="sm"
                 className="shrink-0 border-amber-500/60 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
               >
-                {isReloadingProject ? 'Reloading…' : 'Load latest saved draft'}
+                {isReloadingProject ? 'Reloading…' : 'Load saved draft'}
               </Button>
             </div>
           </div>
@@ -968,6 +968,12 @@ export default function TranslationEditor() {
             </div>
           </div>
 
+          {uploadMessage && (
+            <div className="border-b border-slate-800 px-6 py-4" aria-live="polite" aria-atomic="true">
+              <StatePanel title="Project update">{uploadMessage}</StatePanel>
+            </div>
+          )}
+
           <div ref={transcriptContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
             {segments.length === 0 ? (
               <div className="text-center text-slate-600 py-12">
@@ -1019,11 +1025,6 @@ export default function TranslationEditor() {
               })
             )}
           </div>
-          {uploadMessage && (
-            <div className="px-6 pb-4" aria-live="polite" aria-atomic="true">
-              <StatePanel title="Project update">{uploadMessage}</StatePanel>
-            </div>
-          )}
         </div>
 
         {/* Right Grid: Video Preview Player */}

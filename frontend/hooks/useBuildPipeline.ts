@@ -103,7 +103,10 @@ export function useBuildPipeline({
             setUploadMessage(
                 `${buildLabel} ${String(latestStatus?.status || 'in progress').replace('_', ' ')}…`,
             );
-            await new Promise((resolve) => setTimeout(resolve, 5000));
+
+            if (attempt < 179) {
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
         }
 
         return latestStatus;

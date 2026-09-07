@@ -21,3 +21,4 @@ frontend/test-results/
 coverage.xml
 coverage.json
 htmlcov/
+frontend/tsconfig.tsbuildinfo

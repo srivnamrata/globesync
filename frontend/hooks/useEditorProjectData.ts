@@ -84,6 +84,11 @@ export function useEditorProjectData({
     const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
     const [baseProjectUpdatedAt, setBaseProjectUpdatedAt] = useState<string | null>(null);
 
+    const dismissRemoteDraftConflict = useCallback(() => {
+        remoteDraftConflictRef.current = false;
+        setHasRemoteDraftConflict(false);
+    }, []);
+
     const ensureCanonicalProjectForWrite = useCallback(async (): Promise<Project | null> => {
         if (!currentProject || !projectService.hasProjectApiScope()) {
             return currentProject;
@@ -491,10 +496,12 @@ export function useEditorProjectData({
     return {
         applyProjectPatch,
         applyProjectStatus,
+        dismissRemoteDraftConflict,
         ensureCanonicalProjectForWrite,
         hasRemoteDraftConflict,
         isReloadingProject,
         lastSavedAt,
+        loadProjectData,
         persistDraft,
         pipelineOperation,
         refreshRenderedVideoUrl,

@@ -1,4 +1,4 @@
-import { apiClient } from './apiClient';
+import { ApiError, apiClient } from './apiClient';
 
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
 
@@ -115,6 +115,16 @@ function isJwtExpired(token: string): boolean {
   return (exp * 1000) <= (Date.now() + AUTH_TOKEN_EXPIRY_SKEW_MS);
 }
 
+function hasEnvironmentBearerToken(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_AUTH_TOKEN?.trim());
+}
+
+function clearStoredBearerToken() {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+}
+
 function getConfiguredBearerToken(): string | null {
   const envToken = process.env.NEXT_PUBLIC_AUTH_TOKEN?.trim();
   if (envToken) {
@@ -127,9 +137,7 @@ function getConfiguredBearerToken(): string | null {
   }
 
   if (isJwtExpired(storedToken)) {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-    }
+    clearStoredBearerToken();
     return null;
   }
 
@@ -286,6 +294,14 @@ export class AuthService {
       .catch((error) => {
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY);
+        }
+        if (
+          error instanceof ApiError
+          && (error.status === 401 || error.status === 403)
+          && !hasEnvironmentBearerToken()
+        ) {
+          clearStoredBearerToken();
+          this.configureApiClient();
         }
         this.bootstrappedContext = null;
         this.notifyAuthStateListeners(null);

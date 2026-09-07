@@ -148,10 +148,30 @@ gcloud run services update $ApiService `
 if ($LASTEXITCODE -ne 0) { throw "API runtime environment update failed with exit $LASTEXITCODE" }
 
 Write-Host "==> Building web image with NEXT_PUBLIC_API_URL=$ApiUrl and NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
+$WebBuildArgs = @(
+  'build',
+  '--build-arg', "NEXT_PUBLIC_API_URL=$ApiUrl",
+  '--build-arg', "NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId"
+)
+if ($env:NEXT_PUBLIC_DEBUG_USER_EMAIL) {
+  $WebBuildArgs += @('--build-arg', "NEXT_PUBLIC_DEBUG_USER_EMAIL=$($env:NEXT_PUBLIC_DEBUG_USER_EMAIL)")
+}
+if ($env:NEXT_PUBLIC_DEBUG_USER_SUBJECT) {
+  $WebBuildArgs += @('--build-arg', "NEXT_PUBLIC_DEBUG_USER_SUBJECT=$($env:NEXT_PUBLIC_DEBUG_USER_SUBJECT)")
+}
+if ($env:NEXT_PUBLIC_DEBUG_USER_NAME) {
+  $WebBuildArgs += @('--build-arg', "NEXT_PUBLIC_DEBUG_USER_NAME=$($env:NEXT_PUBLIC_DEBUG_USER_NAME)")
+}
+if ($env:NEXT_PUBLIC_DEBUG_WORKSPACE_ID) {
+  $WebBuildArgs += @('--build-arg', "NEXT_PUBLIC_DEBUG_WORKSPACE_ID=$($env:NEXT_PUBLIC_DEBUG_WORKSPACE_ID)")
+}
+$WebBuildArgs += @('-t', $WebImage, '-f', 'frontend/Dockerfile', '.')
+# Intentionally do not inject NEXT_PUBLIC_AUTH_TOKEN into the production web build.
+$CloudbuildArgs = ($WebBuildArgs | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ', '
 $Cloudbuild = @"
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ['build', '--build-arg', 'NEXT_PUBLIC_API_URL=$ApiUrl', '--build-arg', 'NEXT_PUBLIC_GOOGLE_CLIENT_ID=$GoogleWebClientId', '-t', '$WebImage', '-f', 'frontend/Dockerfile', '.']
+    args: [$CloudbuildArgs]
 images:
   - $WebImage
 "@
