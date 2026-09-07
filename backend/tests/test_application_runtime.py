@@ -152,7 +152,14 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    route_paths = {route.path for route in main.app.routes}
+    # Test doubles used by other application-runtime tests may add objects to
+    # ``app.routes`` that are not Starlette Route instances.  Only concrete
+    # routes expose a path, so ignore the non-route bookkeeping entries.
+    route_paths = {
+        route.path
+        for route in main.app.routes
+        if isinstance(getattr(route, "path", None), str)
+    }
 
     assert f"{main.settings.API_V1_STR}/export/render" in route_paths
 
