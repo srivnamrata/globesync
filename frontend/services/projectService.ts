@@ -328,7 +328,9 @@ function mapDraftPayloadToLocalDraft(projectId: string, payload: Partial<HeygenX
       updatedAt: payload.projectMetadata?.updatedAt || fallbackProject?.updatedAt || new Date().toISOString(),
     },
     mediaReferences: {
-      videoFilename: payload.mediaReferences?.videoFilename || fallbackProject?.mediaFilename || 'source_video.mp4',
+      ...((payload.mediaReferences?.videoFilename || fallbackProject?.mediaFilename)
+        ? { videoFilename: payload.mediaReferences?.videoFilename || fallbackProject?.mediaFilename }
+        : {}),
       durationSeconds: payload.mediaReferences?.durationSeconds || 0,
       originalTranscriptSegments: payload.mediaReferences?.originalTranscriptSegments || [],
       transcriptId: payload.mediaReferences?.transcriptId || fallbackProject?.transcriptId,
