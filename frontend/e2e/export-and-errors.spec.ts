@@ -17,7 +17,7 @@ test('dub build exposes progress, readiness, partial history failure, and downlo
     expect.objectContaining({ enable_lipsync: false, project_id: PROJECT_ID }),
   ]);
   await expect(page.getByRole('region', { name: 'Dub build status' }).getByText('Completed')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Download video' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download dubbed' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Exports' }).click();
   const outputs = page.getByRole('dialog', { name: 'Project outputs' });

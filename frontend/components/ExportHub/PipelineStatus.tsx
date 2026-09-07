@@ -76,9 +76,10 @@ function normalizeStageId(stage: string, mode: PipelineStatusProps['mode']): Pip
     case 'transcribe':
     case 'translate':
     case 'voice':
-    case 'lip_sync':
     case 'export':
       return normalized;
+    case 'lip_sync':
+      return mode === 'dub_only' ? 'export' : 'lip_sync';
     case 'voice_synthesis':
     case 'audio_retiming':
       return 'voice';
@@ -127,6 +128,22 @@ export function PipelineStatus({
   segmentCount,
 }: PipelineStatusProps) {
   const normalizedStage = normalizeStageId(currentStage, mode);
+  const rawStage = currentStage.replace(/-/g, '_').toLowerCase() as RawPipelineStage;
+  const recoveryStage = [
+    'upload',
+    'transcribe',
+    'translate',
+    'voice',
+    'lip_sync',
+    'export',
+    'audio_retiming',
+    'voice_synthesis',
+    'lipsync_render',
+    'mux_export',
+    'completed',
+  ].includes(rawStage)
+    ? normalizedStage
+    : undefined;
   const normalizedStatus = normalizePipelineStatus(status);
   const isFailed = normalizedStatus === 'failed';
   const isCompleted = normalizedStatus === 'completed';
@@ -191,7 +208,7 @@ export function PipelineStatus({
       {isFailed && (
         <div className="mt-3">
           <StatePanel title={`Safe recovery from ${stageLabel(normalizedStage)}`} tone="error">
-            {errorMessage ? `${errorMessage} ` : ''}{recoveryMessage(normalizedStage)}
+            {errorMessage ? `${errorMessage} ` : ''}{recoveryMessage(recoveryStage)}
             {lastSuccessfulStage ? ` Last successful checkpoint: ${stageLabel(lastSuccessfulStage)}.` : ''}
           </StatePanel>
         </div>

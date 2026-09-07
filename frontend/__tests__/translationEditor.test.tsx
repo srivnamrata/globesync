@@ -347,7 +347,11 @@ describe('TranslationEditor workflow', () => {
     await act(async () => {
       await autoSave.callback?.();
     });
-    expect(screen.getAllByText(/saved project draft changed/)).toHaveLength(2);
+    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
+    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
+    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
+    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
+    expect(screen.getAllByText(/newer saved draft is available/)).toHaveLength(2);
     expect(storage.saveDraft).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Dub only' })).toBeDisabled();
 
@@ -423,7 +427,11 @@ describe('TranslationEditor workflow', () => {
     expect(workflowSaves).toHaveLength(2);
     expect(workflowSaves.every((call) =>
       call[2].baseProjectUpdatedAt === updatedProject.updatedAt)).toBe(true);
-    expect(screen.queryByText(/saved project draft changed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer saved draft is available/)).not.toBeInTheDocument();
   });
 
   it('rejects unsupported uploads without touching network services', async () => {

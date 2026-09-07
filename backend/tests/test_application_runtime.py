@@ -152,16 +152,25 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    # Test doubles used by other application-runtime tests may add objects to
-    # ``app.routes`` that are not Starlette Route instances.  Only concrete
-    # routes expose a path, so ignore the non-route bookkeeping entries.
-    route_paths = {
-        route.path
-        for route in main.app.routes
-        if isinstance(getattr(route, "path", None), str)
-    }
+    def route_paths(routes, prefix=""):
+        for route in routes:
+            path = getattr(route, "path", None)
+            if isinstance(path, str):
+                yield f"{prefix}{path}"
+                continue
 
-    assert f"{main.settings.API_V1_STR}/export/render" in route_paths
+            # Newer FastAPI versions may retain included routers as internal
+            # wrappers instead of flattening them into Route instances.
+            nested_routes = getattr(route, "routes", None)
+            if nested_routes is None:
+                nested_routes = getattr(getattr(route, "router", None), "routes", None)
+            if nested_routes:
+                yield from route_paths(
+                    nested_routes,
+                    f"{prefix}{getattr(route, 'prefix', '')}",
+                )
+
+    assert f"{main.settings.API_V1_STR}/export/render" in set(route_paths(main.app.routes))
 
 
 @pytest.mark.asyncio
