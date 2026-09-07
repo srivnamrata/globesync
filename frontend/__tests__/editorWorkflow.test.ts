@@ -67,7 +67,9 @@ describe('editor draft mapping', () => {
     expect(canonicalWithoutLinks.mediaReferences).toEqual(expect.objectContaining({
       mediaId: undefined,
       transcriptId: undefined,
-      videoFilename: undefined,
+      videoFilename: 'launch.mp4',
+      durationSeconds: 42,
+      originalTranscriptSegments: [],
     }));
     expect(mergeDraftWithProject(draftFixture)).toEqual(draftFixture);
   });
@@ -99,11 +101,11 @@ describe('editor draft mapping', () => {
   });
 
   it('keeps only persistable artifact filenames', () => {
-    expect(toPersistableFilename()).toBe('source_video.mp4');
+    expect(toPersistableFilename()).toBeUndefined();
     expect(toPersistableFilename('plain.mp4')).toBe('plain.mp4');
     expect(toPersistableFilename('https://storage.test/folder/video.mp4?token=secret'))
       .toBe('video.mp4');
-    expect(toPersistableFilename('https://storage.test/')).toBe('source_video.mp4');
+    expect(toPersistableFilename('https://storage.test/')).toBeUndefined();
     expect(sanitizeDraftArtifactReferences({
       ...draftFixture,
       mediaReferences: {
