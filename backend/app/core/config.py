@@ -110,7 +110,9 @@ class Settings(BaseSettings):
     GOOGLE_TTS_PITCH: float = 0.0
 
     # Lip-Sync Engine (Replicate / LivePortrait / Wav2Lip)
-    REPLICATE_API_TOKEN: str = "test_replicate_token_placeholder"
+    # Optional at process start: Dub + Lip-Sync routes reject requests when no
+    # real provider token is configured, but the rest of the API can still run.
+    REPLICATE_API_TOKEN: str = ""
     LIPSYNC_MODEL_PRIMARY: str = "arc144/liveportrait:9d19a2b535d4ad784534a7fb9539401217e914022a1bb18b4566ecb75ec58d11"
     LIPSYNC_MODEL_FALLBACK: str = "devxpy/wav2lip:8d65e3f4f4298520e079198b493c25adfc43c058ffec924f204403842630eb68"
     LIPSYNC_SMOOTHING_WINDOW: int = 5
@@ -145,9 +147,7 @@ class Settings(BaseSettings):
         insecure_defaults = {
             "DATABASE_URL": "postgresql+asyncpg://postgres:postgres_secure_pass@localhost:5432/translation_db",
             "SYNC_DATABASE_URL": "postgresql://postgres:postgres_secure_pass@localhost:5432/translation_db",
-            "REPLICATE_API_TOKEN": "test_replicate_token_placeholder",
             "JWT_SECRET_KEY": "replace-with-super-secret-hex-key-in-production",
-            "WEBHOOK_SECRET": "shared_webhook_secret_key_32bytes_hex",
         }
         invalid_fields = [
             field_name
