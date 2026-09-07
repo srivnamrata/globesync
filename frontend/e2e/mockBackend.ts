@@ -226,7 +226,7 @@ export class MockBackend {
       contentType: 'audio/wav',
       body: silentWav(),
     }));
-    await page.route('http://127.0.0.1:8000/v1/**', async (route) => {
+    await page.route('**/v1/**', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
       const path = url.pathname.replace('/v1', '');

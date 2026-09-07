@@ -152,7 +152,16 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    route_paths = {route.path for route in main.app.routes}
+    def iter_route_paths(routes):
+        for route in routes:
+            path = getattr(route, "path", None)
+            if path is not None:
+                yield path
+            nested_routes = getattr(route, "routes", None)
+            if nested_routes:
+                yield from iter_route_paths(nested_routes)
+
+    route_paths = set(iter_route_paths(main.app.routes))
 
     assert f"{main.settings.API_V1_STR}/export/render" in route_paths
 
