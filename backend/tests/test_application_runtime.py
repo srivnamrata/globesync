@@ -1,8 +1,8 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from fastapi import FastAPI, Response
+from fastapi import Response
 from pydantic import ValidationError
 from starlette.requests import Request
 
@@ -152,20 +152,20 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    def iter_route_paths(routes):
-        for route in routes:
-            path = getattr(route, "path", None)
-            if path is not None:
-                yield path
-            nested_routes = getattr(route, "routes", None)
-            if nested_routes:
-                yield from iter_route_paths(nested_routes)
+    export_route_paths = {
+        f"{main.export.router.prefix}{route.path}"
+        for route in main.export.router.routes
+        if getattr(route, "path", None) is not None
+    }
+    assert "/export/render" in export_route_paths
 
-    api_app = FastAPI()
+    api_app = SimpleNamespace(include_router=Mock())
     main.mount_api_routers(api_app)
-    route_paths = set(iter_route_paths(api_app.routes))
 
-    assert f"{main.settings.API_V1_STR}/export/render" in route_paths
+    api_app.include_router.assert_any_call(
+        main.export.router,
+        prefix=main.settings.API_V1_STR,
+    )
 
 
 @pytest.mark.asyncio

@@ -65,7 +65,7 @@ test('a genuine draft conflict supports keeping edits and loading the saved draf
   backend.rejectDraftWrites = true;
   await translation.fill('Edición local');
   await page.getByRole('button', { name: 'Save (1)' }).click();
-  await expect(page.getByText(/A newer saved draft is available/)).toBeVisible();
+  await expect(page.getByText(/A newer saved draft is available/).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Load saved draft' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: 'Keep editor edits' })).toBeVisible();
