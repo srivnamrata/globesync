@@ -35,7 +35,7 @@ test.describe('deployed staging browser validation', () => {
           window.localStorage.setItem('globesync.active_workspace_id', workspaceId);
         }
       },
-      { token: stagingAuthToken, workspaceId: stagingWorkspaceId ?? '' },
+      { token: stagingAuthToken ?? '', workspaceId: stagingWorkspaceId ?? '' },
     );
 
     await page.goto('/');

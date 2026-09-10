@@ -29,12 +29,15 @@ def _request(headers=None):
 
 
 async def _dummy_request_context():
+    runtime_user_id = "00000000-0000-0000-0000-000000000001"
+    runtime_workspace_id = "00000000-0000-0000-0000-000000000002"
+
     return SimpleNamespace(
-        user_id="runtime-user-1",
-        workspace_id="runtime-workspace-1",
+        user_id=runtime_user_id,
+        workspace_id=runtime_workspace_id,
         bootstrap={
             "user": {
-                "id": "runtime-user-1",
+                "id": runtime_user_id,
                 "email": "runtime@globesync.test",
                 "display_name": "Runtime Test User",
                 "auth_provider": "test",
@@ -45,18 +48,18 @@ async def _dummy_request_context():
                 "updated_at": "2026-09-01T00:00:00Z",
             },
             "workspace": {
-                "id": "runtime-workspace-1",
+                "id": runtime_workspace_id,
                 "name": "Runtime Test Workspace",
                 "slug": "runtime-test-workspace",
-                "owner_user_id": "runtime-user-1",
+                "owner_user_id": runtime_user_id,
                 "is_personal": False,
                 "archived_at": None,
                 "created_at": "2026-09-01T00:00:00Z",
                 "updated_at": "2026-09-01T00:00:00Z",
             },
             "membership": {
-                "workspace_id": "runtime-workspace-1",
-                "user_id": "runtime-user-1",
+                "workspace_id": runtime_workspace_id,
+                "user_id": runtime_user_id,
                 "role": "owner",
                 "invited_by_user_id": None,
                 "joined_at": "2026-09-01T00:00:00Z",
@@ -194,19 +197,19 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    expected_router_endpoints = {
-        main.auth.router: "/auth/bootstrap",
-        main.upload.router: "/media/uploads/direct",
-        main.transcription.router: "/transcription/start",
-        main.translation.router: "/translation/translate-project",
-        main.tts.router: "/tts/synthesize-project",
-        main.lipsync.router: "/lipsync/render-project",
-        main.projects.router: "/projects",
-        main.export.router: "/export/render",
-        main.internal_tasks.router: "/internal/tasks/transcribe",
-    }
+    expected_router_endpoints = [
+        (main.auth.router, "/auth/bootstrap"),
+        (main.upload.router, "/media/uploads/direct"),
+        (main.transcription.router, "/transcription/start"),
+        (main.translation.router, "/translation/translate-project"),
+        (main.tts.router, "/tts/synthesize-project"),
+        (main.lipsync.router, "/lipsync/render-project"),
+        (main.projects.router, "/projects"),
+        (main.export.router, "/export/render"),
+        (main.internal_tasks.router, "/internal/tasks/transcribe"),
+    ]
 
-    for router, expected_path in expected_router_endpoints.items():
+    for router, expected_path in expected_router_endpoints:
         router_paths = {
             f"{router.prefix}{route.path}"
             for route in router.routes
@@ -217,7 +220,7 @@ def test_export_router_is_mounted_under_v1_prefix():
     api_app = SimpleNamespace(include_router=Mock())
     main.mount_api_routers(api_app)
 
-    for router in expected_router_endpoints:
+    for router, _ in expected_router_endpoints:
         api_app.include_router.assert_any_call(
             router,
             prefix=main.settings.API_V1_STR,
@@ -236,7 +239,7 @@ async def test_mounted_app_bootstrap_route_uses_global_middleware():
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "runtime-request-1"
-    assert response.json()["workspace"]["id"] == "runtime-workspace-1"
+    assert response.json()["workspace"]["id"] == "00000000-0000-0000-0000-000000000002"
 
 
 @pytest.mark.asyncio
