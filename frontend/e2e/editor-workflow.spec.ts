@@ -7,7 +7,7 @@ import {
   makeProject,
 } from './mockBackend';
 
-test('loads authenticated media, transcript, translation, and readiness state', async ({ page }) => {
+test('loads authenticated media, transcript, translation, and readiness state @smoke', async ({ page }) => {
   const backend = new MockBackend();
   await backend.install(page);
 
@@ -27,7 +27,7 @@ test('loads authenticated media, transcript, translation, and readiness state', 
   await expect(page.getByText('All checks passed')).toBeVisible();
 });
 
-test('upload, transcription, and first translation save complete without a false conflict', async ({ page }) => {
+test('upload, transcription, and first translation save complete without a false conflict @smoke', async ({ page }) => {
   const project = makeProject({
     media_file_id: null,
     media_filename: null,

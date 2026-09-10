@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { MockBackend, PROJECT_ID } from './mockBackend';
 
-test('dub build exposes progress, readiness, partial history failure, and download state', async ({ page }) => {
+test('dub build exposes progress, readiness, partial history failure, and download state @smoke', async ({ page }) => {
   const backend = new MockBackend();
   backend.formatHistoryStatus = 500;
   await backend.install(page);

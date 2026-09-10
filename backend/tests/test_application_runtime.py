@@ -3,10 +3,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import Response
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from starlette.requests import Request
 
 from app import main
+from app.core.auth import get_request_context
 from app.core.config import Settings
 from app.utils.error_codes import ErrorCode, MediaAppException
 
@@ -23,6 +25,46 @@ def _request(headers=None):
             "headers": encoded,
             "query_string": b"",
         }
+    )
+
+
+async def _dummy_request_context():
+    return SimpleNamespace(
+        user_id="runtime-user-1",
+        workspace_id="runtime-workspace-1",
+        bootstrap={
+            "user": {
+                "id": "runtime-user-1",
+                "email": "runtime@globesync.test",
+                "display_name": "Runtime Test User",
+                "auth_provider": "test",
+                "auth_subject": "runtime-user-1",
+                "is_active": True,
+                "last_login_at": "2026-09-01T00:00:00Z",
+                "created_at": "2026-09-01T00:00:00Z",
+                "updated_at": "2026-09-01T00:00:00Z",
+            },
+            "workspace": {
+                "id": "runtime-workspace-1",
+                "name": "Runtime Test Workspace",
+                "slug": "runtime-test-workspace",
+                "owner_user_id": "runtime-user-1",
+                "is_personal": False,
+                "archived_at": None,
+                "created_at": "2026-09-01T00:00:00Z",
+                "updated_at": "2026-09-01T00:00:00Z",
+            },
+            "membership": {
+                "workspace_id": "runtime-workspace-1",
+                "user_id": "runtime-user-1",
+                "role": "owner",
+                "invited_by_user_id": None,
+                "joined_at": "2026-09-01T00:00:00Z",
+                "created_at": "2026-09-01T00:00:00Z",
+                "updated_at": "2026-09-01T00:00:00Z",
+            },
+            "bootstrap_completed": True,
+        },
     )
 
 
@@ -152,20 +194,63 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 
 def test_export_router_is_mounted_under_v1_prefix():
-    export_route_paths = {
-        route.path
-        for route in main.export.router.routes
-        if getattr(route, "path", None) is not None
+    expected_router_endpoints = {
+        main.auth.router: "/auth/bootstrap",
+        main.upload.router: "/media/uploads/direct",
+        main.transcription.router: "/transcription/start",
+        main.translation.router: "/translation/translate-project",
+        main.tts.router: "/tts/synthesize-project",
+        main.lipsync.router: "/lipsync/render-project",
+        main.projects.router: "/projects",
+        main.export.router: "/export/render",
+        main.internal_tasks.router: "/internal/tasks/transcribe",
     }
-    assert f"{main.export.router.prefix}/render" in export_route_paths
+
+    for router, expected_path in expected_router_endpoints.items():
+        router_paths = {
+            f"{router.prefix}{route.path}"
+            for route in router.routes
+            if getattr(route, "path", None) is not None
+        }
+        assert expected_path in router_paths
 
     api_app = SimpleNamespace(include_router=Mock())
     main.mount_api_routers(api_app)
 
-    api_app.include_router.assert_any_call(
-        main.export.router,
-        prefix=main.settings.API_V1_STR,
-    )
+    for router in expected_router_endpoints:
+        api_app.include_router.assert_any_call(
+            router,
+            prefix=main.settings.API_V1_STR,
+        )
+
+
+@pytest.mark.asyncio
+async def test_mounted_app_bootstrap_route_uses_global_middleware():
+    main.app.dependency_overrides[get_request_context] = _dummy_request_context
+    try:
+        transport = ASGITransport(app=main.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/v1/auth/bootstrap", headers={"X-Request-ID": "runtime-request-1"})
+    finally:
+        main.app.dependency_overrides.pop(get_request_context, None)
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "runtime-request-1"
+    assert response.json()["workspace"]["id"] == "runtime-workspace-1"
+
+
+@pytest.mark.asyncio
+async def test_mounted_app_supported_languages_route_returns_expected_payload():
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/v1/translation/languages", headers={"X-Request-ID": "runtime-request-2"})
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "runtime-request-2"
+    payload = response.json()
+    assert "languages" in payload
+    assert any(language["code"] == "en" for language in payload["languages"])
+    assert any(language["code"] == "es" for language in payload["languages"])
 
 
 @pytest.mark.asyncio

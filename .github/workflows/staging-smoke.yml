@@ -1,0 +1,116 @@
+name: Staging smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  staging-smoke-preflight:
+    name: GCP staging smoke preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-794c406e-c0ab-4a50-8e9' }}
+      REGION: ${{ vars.GCP_REGION || 'asia-south1' }}
+      API_SERVICE: ${{ vars.GCP_API_SERVICE || 'translation-api' }}
+      WEB_SERVICE: ${{ vars.GCP_WEB_SERVICE || 'translation-web' }}
+      CLOUD_TASKS_QUEUE: ${{ vars.GCP_CLOUD_TASKS_QUEUE || 'translation-jobs' }}
+      RAW_BUCKET: ${{ vars.GCP_RAW_BUCKET || 'project-794c406e-c0ab-4a50-8e9-media-raw' }}
+      EXPORTS_BUCKET: ${{ vars.GCP_EXPORTS_BUCKET || 'project-794c406e-c0ab-4a50-8e9-media-exports' }}
+      RUNTIME_SA: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT || 'globesync@project-794c406e-c0ab-4a50-8e9.iam.gserviceaccount.com' }}
+      GOOGLE_WEB_CLIENT_ID: ${{ vars.GCP_GOOGLE_WEB_CLIENT_ID || '164115731533-dmkk078mkekffs11fpj1783no0fm8bsg.apps.googleusercontent.com' }}
+      STAGING_WORKSPACE_ID: ${{ vars.GCP_STAGING_WORKSPACE_ID }}
+      ENABLE_INTERNAL_TASK_AUTH_CHECK: ${{ vars.GCP_ENABLE_INTERNAL_TASK_AUTH_CHECK || 'false' }}
+      ENABLE_UPLOAD_INITIATION_CHECK: ${{ vars.GCP_ENABLE_UPLOAD_INITIATION_CHECK || 'false' }}
+      ENABLE_FIXTURE_UPLOAD_CHECK: ${{ vars.GCP_ENABLE_FIXTURE_UPLOAD_CHECK || 'false' }}
+      ENABLE_PROVIDER_EXECUTION_CHECK: ${{ vars.GCP_ENABLE_PROVIDER_EXECUTION_CHECK || 'false' }}
+      ENABLE_DUB_EXPORT_RETRIEVAL_CHECK: ${{ vars.GCP_ENABLE_DUB_EXPORT_RETRIEVAL_CHECK || 'false' }}
+      ENABLE_BROWSER_STAGING_CHECK: ${{ vars.GCP_ENABLE_BROWSER_STAGING_CHECK || 'false' }}
+      STAGING_UPLOAD_FILENAME: ${{ vars.GCP_STAGING_UPLOAD_FILENAME || 'staging-smoke-sample.mp4' }}
+      STAGING_UPLOAD_MIME_TYPE: ${{ vars.GCP_STAGING_UPLOAD_MIME_TYPE || 'video/mp4' }}
+      STAGING_UPLOAD_FILESIZE_BYTES: ${{ vars.GCP_STAGING_UPLOAD_FILESIZE_BYTES || '1048576' }}
+      STAGING_UPLOAD_ORIGIN: ${{ vars.GCP_STAGING_UPLOAD_ORIGIN }}
+      STAGING_FIXTURE_FILENAME: ${{ vars.GCP_STAGING_FIXTURE_FILENAME || 'staging-smoke-silence.wav' }}
+      STAGING_FIXTURE_MIME_TYPE: ${{ vars.GCP_STAGING_FIXTURE_MIME_TYPE || 'audio/wav' }}
+      STAGING_DUB_FIXTURE_FILENAME: ${{ vars.GCP_STAGING_DUB_FIXTURE_FILENAME || 'staging-smoke-spoken.mp4' }}
+      STAGING_DUB_FIXTURE_MIME_TYPE: ${{ vars.GCP_STAGING_DUB_FIXTURE_MIME_TYPE || 'video/mp4' }}
+      STAGING_FIXTURE_PROJECT_NAME: ${{ vars.GCP_STAGING_FIXTURE_PROJECT_NAME || 'Staging smoke fixture upload' }}
+      STAGING_FIXTURE_SOURCE_LANGUAGE: ${{ vars.GCP_STAGING_FIXTURE_SOURCE_LANGUAGE || 'en' }}
+      STAGING_FIXTURE_TARGET_LANGUAGE: ${{ vars.GCP_STAGING_FIXTURE_TARGET_LANGUAGE || 'es' }}
+      STAGING_TRANSCRIPTION_LANGUAGE: ${{ vars.GCP_STAGING_TRANSCRIPTION_LANGUAGE || 'en' }}
+      STAGING_PROVIDER_EXECUTION_TIMEOUT_SECONDS: ${{ vars.GCP_STAGING_PROVIDER_EXECUTION_TIMEOUT_SECONDS || '180' }}
+      STAGING_PROVIDER_POLL_INTERVAL_SECONDS: ${{ vars.GCP_STAGING_PROVIDER_POLL_INTERVAL_SECONDS || '5' }}
+      STAGING_DUB_EXPORT_TIMEOUT_SECONDS: ${{ vars.GCP_STAGING_DUB_EXPORT_TIMEOUT_SECONDS || '300' }}
+      STAGING_DUB_EXPORT_POLL_INTERVAL_SECONDS: ${{ vars.GCP_STAGING_DUB_EXPORT_POLL_INTERVAL_SECONDS || '5' }}
+      STAGING_TTS_FIXTURE_TEXT: ${{ vars.GCP_STAGING_TTS_FIXTURE_TEXT || 'GlobeSync staging smoke validates dubbed export retrieval.' }}
+      STAGING_TTS_FIXTURE_LANGUAGE_CODE: ${{ vars.GCP_STAGING_TTS_FIXTURE_LANGUAGE_CODE || 'en-US' }}
+      STAGING_WORKSPACE_NAME: ${{ vars.GCP_STAGING_WORKSPACE_NAME }}
+      INTERNAL_TASK_AUDIENCE: ${{ vars.GCP_INTERNAL_TASKS_AUDIENCE }}
+      ARTIFACT_ROOT: .artifacts/staging-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Run staging smoke preflight
+        env:
+          STAGING_AUTH_BEARER_TOKEN: ${{ secrets.STAGING_AUTH_BEARER_TOKEN }}
+        run: |
+          chmod +x deploy/staging-smoke.sh
+          ./deploy/staging-smoke.sh
+
+      - name: Set up Node for browser validation
+        if: ${{ env.ENABLE_BROWSER_STAGING_CHECK == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: ${{ env.ENABLE_BROWSER_STAGING_CHECK == 'true' }}
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium for browser validation
+        if: ${{ env.ENABLE_BROWSER_STAGING_CHECK == 'true' }}
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deployed browser validation
+        if: ${{ env.ENABLE_BROWSER_STAGING_CHECK == 'true' }}
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ vars.GCP_STAGING_WEB_URL }}
+          STAGING_AUTH_BEARER_TOKEN: ${{ secrets.STAGING_AUTH_BEARER_TOKEN }}
+          STAGING_WORKSPACE_ID: ${{ vars.GCP_STAGING_WORKSPACE_ID }}
+          STAGING_WORKSPACE_NAME: ${{ vars.GCP_STAGING_WORKSPACE_NAME }}
+          CI: "true"
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run test:e2e:staging:chromium
+
+      - name: Upload staging smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-smoke-artifacts
+          path: |
+            .artifacts/staging-smoke
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14

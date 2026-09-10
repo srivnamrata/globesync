@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { MockBackend, PROJECT_ID } from './mockBackend';
 
-test('signed-out landing presents Google sign-in and session-expiry guidance', async ({ page }) => {
+test('signed-out landing presents Google sign-in and session-expiry guidance @smoke', async ({ page }) => {
   const backend = new MockBackend();
   backend.authStatus = 401;
   await backend.install(page);
@@ -14,7 +14,7 @@ test('signed-out landing presents Google sign-in and session-expiry guidance', a
   await expect(page.getByText('Your session expired or access could not be verified. Sign in again to continue.')).toBeVisible();
 });
 
-test('authenticated operator can create and open a workspace project', async ({ page }) => {
+test('authenticated operator can create and open a workspace project @smoke', async ({ page }) => {
   const backend = new MockBackend();
   backend.projects = [];
   await backend.install(page);

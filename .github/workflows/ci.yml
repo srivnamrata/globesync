@@ -115,6 +115,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  playwright-firefox-smoke:
+    name: Playwright Firefox smoke coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Install Firefox
+        run: npx playwright install --with-deps firefox
+      - name: Run Firefox smoke suite
+        run: npm run test:e2e:smoke:firefox
+      - name: Upload Firefox Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-firefox-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
   migrations:
     name: PostgreSQL 15 migration gates
     runs-on: ubuntu-latest

@@ -11,6 +11,9 @@
     "test:ci": "vitest run --reporter=verbose --no-file-parallelism",
     "test:coverage": "vitest run --coverage --no-file-parallelism",
     "test:e2e": "playwright test --project=chromium",
+    "test:e2e:smoke:firefox": "playwright test --project=firefox --grep @smoke",
+    "test:e2e:smoke:webkit": "playwright test --project=webkit --grep @smoke",
+    "test:e2e:staging:chromium": "playwright test e2e/staging-browser.spec.ts --project=chromium",
     "test:e2e:all": "playwright test"
   },
   "dependencies": {
