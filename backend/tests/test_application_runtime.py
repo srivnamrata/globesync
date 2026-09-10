@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import Response
+from fastapi import FastAPI, Response
 from pydantic import ValidationError
 from starlette.requests import Request
 
@@ -161,7 +161,9 @@ def test_export_router_is_mounted_under_v1_prefix():
             if nested_routes:
                 yield from iter_route_paths(nested_routes)
 
-    route_paths = set(iter_route_paths(main.app.routes))
+    api_app = FastAPI()
+    main.mount_api_routers(api_app)
+    route_paths = set(iter_route_paths(api_app.routes))
 
     assert f"{main.settings.API_V1_STR}/export/render" in route_paths
 

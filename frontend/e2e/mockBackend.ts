@@ -221,6 +221,11 @@ export class MockBackend {
   }
 
   async install(page: Page) {
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+
     await page.route('http://127.0.0.1:8000/e2e/silence.wav', (route) => route.fulfill({
       status: 200,
       contentType: 'audio/wav',

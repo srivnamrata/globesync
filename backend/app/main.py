@@ -221,13 +221,17 @@ async def readiness_check():
         )
 
 
+def mount_api_routers(api_app: FastAPI) -> None:
+    api_app.include_router(auth.router, prefix=settings.API_V1_STR)
+    api_app.include_router(upload.router, prefix=settings.API_V1_STR)
+    api_app.include_router(transcription.router, prefix=settings.API_V1_STR)
+    api_app.include_router(translation.router, prefix=settings.API_V1_STR)
+    api_app.include_router(tts.router, prefix=settings.API_V1_STR)
+    api_app.include_router(lipsync.router, prefix=settings.API_V1_STR)
+    api_app.include_router(projects.router, prefix=settings.API_V1_STR)
+    api_app.include_router(export.router, prefix=settings.API_V1_STR)
+    api_app.include_router(internal_tasks.router, prefix=settings.API_V1_STR)
+
+
 # Mount API Routers
-app.include_router(auth.router, prefix=settings.API_V1_STR)
-app.include_router(upload.router, prefix=settings.API_V1_STR)
-app.include_router(transcription.router, prefix=settings.API_V1_STR)
-app.include_router(translation.router, prefix=settings.API_V1_STR)
-app.include_router(tts.router, prefix=settings.API_V1_STR)
-app.include_router(lipsync.router, prefix=settings.API_V1_STR)
-app.include_router(projects.router, prefix=settings.API_V1_STR)
-app.include_router(export.router, prefix=settings.API_V1_STR)
-app.include_router(internal_tasks.router, prefix=settings.API_V1_STR)
+mount_api_routers(app)

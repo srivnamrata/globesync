@@ -348,8 +348,8 @@ describe('TranslationEditor workflow', () => {
       await autoSave.callback?.();
     });
 
-    // Check for conflict message (text may be split across elements)
-    expect(screen.getByText(/a newer saved draft is available/i)).toBeInTheDocument();
+    // Conflict messaging is surfaced in both the banner and the project update panel.
+    expect(screen.getAllByText(/a newer saved draft is available/i)[0]).toBeInTheDocument();
 
     expect(storage.saveDraft).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Dub only' })).toBeDisabled();
