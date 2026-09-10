@@ -1,4 +1,5 @@
 import hashlib
+import os
 from datetime import datetime, timezone
 import uuid
 import pytest
@@ -578,7 +579,10 @@ async def test_signed_resumable_upload_complete_registers_media_file(
     assert authenticated_upload_dependencies.upload_session.bytes_received == 10485760
     mock_storage.download_file.assert_awaited_once_with(
         authenticated_upload_dependencies.upload_session.storage_key,
-        f"/tmp/probe_{authenticated_upload_dependencies.upload_session.id.hex}_conference_talk.mp4",
+        os.path.join(
+            settings.TEMP_UPLOAD_DIR,
+            f"probe_{authenticated_upload_dependencies.upload_session.id.hex}_conference_talk.mp4",
+        ),
     )
 
 
