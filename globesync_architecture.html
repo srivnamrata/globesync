@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlobeSync Architecture Diagram</title>
+    <style>
+        :root {
+            --google-blue: #4285F4;
+            --google-red: #EA4335;
+            --google-yellow: #FBBC05;
+            --google-green: #34A853;
+            --bg-color: #f8f9fa;
+            --border-color: #dadce0;
+            --text-main: #3c4043;
+            --text-sub: #70757a;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .diagram-container {
+            width: 1200px;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border: 1px solid var(--border-color);
+        }
+
+        .title-banner {
+            background: var(--google-blue);
+            color: white;
+            padding: 20px;
+            border-radius: 4px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .title-banner h1 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 1px;
+        }
+
+        .title-banner p {
+            margin: 5px 0 0;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .architecture-grid {
+            display: grid;
+            grid-template-columns: 180px 220px 280px 240px 280px;
+            gap: 15px;
+        }
+
+        .column-header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: var(--text-sub);
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 15px;
+        }
+
+        .stage-box {
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            min-height: 300px;
+        }
+
+        .service-item {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .service-item .icon {
+            font-size: 20px;
+            margin-right: 10px;
+        }
+
+        .service-item .name {
+            font: 600 13px sans-serif;
+            display: block;
+        }
+
+        .service-item .type {
+            font-size: 11px;
+            color: var(--text-sub);
+        }
+
+        .col-client { border-color: var(--google-blue); }
+        .col-ingest { border-color: var(--google-red); }
+        .col-process { border-color: var(--google-yellow); }
+        .col-storage { border-color: var(--google-green); }
+        .col-output { border-color: var(--google-blue); }
+
+    </style>
+</head>
+<body>
+
+<div class="diagram-container">
+    <div class="title-banner">
+        <h1>Architecture: GlobeSync</h1>
+        <p>End-to-End Automated Video Dubbing & Translation Pipeline</p>
+    </div>
+
+    <div class="architecture-grid">
+        
+        <!-- STAGE 1: CLIENT / INPUT -->
+        <div class="column-wrapper">
+            <div class="column-header">1. CLIENT / INPUT</div>
+            <div classs="stage-box col-client" style="border: 2px solid var(--google-blue); border-radius: 6px; padding: 15px;">
+                <div class="service-item">
+                    <span class="icon">📱</span>
+                    <div>
+                        <span class="name">Web/Mobile App</span>
+                        <span class="type">User Interface</span>
+                    </div>
+                </div>
+                <div class="service-item">
+                    <span class="icon">🔌</span>
+                    <div>
+                        <span class="name">API Integrations</span>
+                        <span class="type">3rd Party Callers</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 2: INGEST / ENTRY -->
+        <div class="column-wrapper">
+            <div class="column-header">2. INGEST / ENTRY</div>
+            <div class="stage-box col-ingest" style="border: 2px solid var(--google-red); border-radius: 6px; padding: 15px;">
+                <div class="service-item">
+                    <span class="icon">🌐</span>
+                    <div>
+                        <span class="name">Global Load Balancer</span>
+                        <span class="type">Traffic Routing</span>
+                    </div>
+                </div>
+                <div class="service-item">
+                    <span class="icon">⚡</span>
+                    <div>
+                        <span class="name">FastAPI Gateway</span>
+                        <span class="type">API Orchestration</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 3: PROCESSING / PIPELINE -->
+        <div class="column-wrapper">
+            <div class="column-header">3. PROCESSING (Core)</div>
+            <div class="stage-box col-process" style="border: 2px solid var(--google-yellow); border-radius: 6px; padding: 15px;">
+                <div class="service-item" style="border-left: 4px solid var(--google-red);">
+                    <span class="icon">⚙️</span>
+                    <div>
+                        <span class="name">Celery Workers</span>
+                        <span class="type">Distributed Task Engine</span>
+                    </div>
+                </div>
+                <div class="service-item" style="border-left: 4px solid var(--google-red);">
+                    <span class="icon">☁️</span>
+                    <div>
+                        <span class="name">Cloud Run Tasks</span>
+                        <span class="type">Ephemeral Compute</span>
+                    </div>
+                </div>
+                <div class="service-item" style="border-left: 4px solid var(--google-blue);">
+                    <span class="icon">🧠</span>
+                    <div>
+                        <span class="name">AI Inference Services</span>
+                        <span class="type">STT / TTS / Replicate</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 4: STORAGE & STATE -->
+        <div class="column-wrapper">
+            <div class="column-header">4. STORAGE & STATE</div>
+            <div class="stage-box col-storage" style="border: 2px solid var(--google-green); border-radius: 6px; padding: 15px;">
+                <div class="service-item">
+                    <span class="icon">📦</span>
+                    <div>
+                        <span class="name">GCS Bucket</span>
+                        <span class="type">Media Object Store</span>
+                    </div>
+                </div>
+                <div class="service-item">
+                    <span class="icon">🐘</span>
+                    <div>
+                        <span class="name">PostgreSQL</span>
+                        <span class="type">Metadata / DB</span>
+                    </div>
+                </div>
+                <div class="service-item">
+                    <span class="icon">🔴</span>
+                    <div>
+                        <span class="name">Redis</span>
+                        <span class="type">Queue / Cache / State</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 5: PRESENTATION -->
+        <div class="column-wrapper">
+            <div class="column-header">5. PRESENTATION</div>
+            <div class="stage-box col-output" style="border: 2px solid var(--google-blue); border-radius: 6px; padding: 15px;">
+                <div class="service-item">
+                    <span class="icon">🖥️</span>
+                    <div>
+                        <span class="name">Next.js Dashboard</span>
+                        <span class="type">Result Visualization</span>
+                    </div>
+                </div>
+                <div class="service-item">
+                    <span class="icon">📥</span>
+                    <div>
+                        <span class="name">Export/Download Service</span>
+                        <span class="type">Output Delivery</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div style="margin-top: 20px; font-size: 12px; color: var(--text-sub); text-align: center;">
+        <strong style="font-size: 14px;">Logical Data Flow:</strong><br>
+        Client $\rightarrow$ Ingest $\rightarrow$ Processing $\longleftrightarrow$ Storage $\rightarrow$ Presentation
+    </div>
+
+</div>
+
+</body>
+</html>
