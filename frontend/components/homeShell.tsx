@@ -169,7 +169,7 @@ function BrandLockup({ tone = 'light', compact = false }: { tone?: 'light' | 'da
     <span className={`inline-flex items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
       <span className={`relative flex shrink-0 overflow-hidden rounded-2xl ring-1 ${compact ? 'h-10 w-10' : 'h-11 w-11'} ${markToneClass}`}>
         <Image
-          src="/branding/globesync_logo_transparent.png"
+          src="/branding/globesync_logo_transparent.jpg"
           alt=""
           fill
           sizes={compact ? '40px' : '44px'}
@@ -210,7 +210,10 @@ export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 Video localization with human control
               </span>
-              <h1 className="mt-7 text-4xl font-extrabold leading-[1.04] tracking-[-0.04em] text-slate-950 sm:text-6xl lg:text-7xl">
+              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Speak to the world natively
+              </p>
+              <h1 className="mt-4 text-4xl font-extrabold leading-[1.04] tracking-[-0.04em] text-slate-950 sm:text-6xl lg:text-7xl">
                 Translate one video.
                 <span className="mt-2 block bg-gradient-to-r from-indigo-600 to-violet-500 bg-clip-text text-transparent">
                   Reach every audience.

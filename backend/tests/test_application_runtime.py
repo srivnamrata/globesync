@@ -263,3 +263,48 @@ async def test_health_response_identifies_service():
     assert response["status"] == "healthy"
     assert response["service"] == main.settings.PROJECT_NAME
     assert response["version"] == "1.2.0"
+
+
+@pytest.mark.asyncio
+async def test_mounted_app_health_route_includes_runtime_metadata():
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health", headers={"X-Request-ID": "runtime-request-3"})
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "runtime-request-3"
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    assert payload["service"] == main.settings.PROJECT_NAME
+    assert payload["version"] == "1.2.0"
+
+
+@pytest.mark.asyncio
+async def test_mounted_app_readiness_route_redacts_database_error():
+    engine = SimpleNamespace(
+        connect=lambda: _Connection(RuntimeError("database password leaked"))
+    )
+
+    with patch.object(main, "async_engine", engine), patch.object(main.settings, "DEBUG", False):
+        transport = ASGITransport(app=main.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/healthz", headers={"X-Request-ID": "runtime-request-4"})
+
+    assert response.status_code == 503
+    assert response.headers["X-Request-ID"] == "runtime-request-4"
+    assert response.json()["detail"] == "database unavailable"
+
+
+@pytest.mark.asyncio
+async def test_mounted_app_openapi_publishes_critical_paths():
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert "/health" in paths
+    assert "/healthz" in paths
+    assert "/v1/auth/bootstrap" in paths
+    assert "/v1/projects" in paths
+    assert "/v1/translation/languages" in paths
