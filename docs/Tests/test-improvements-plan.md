@@ -85,6 +85,7 @@ Strengthen test coverage so `globesync` catches runtime, browser, integration, a
 * Completed: added an assembled-app integration suite for critical API paths.
 * Completed: added an initial assembled-app auth bootstrap integration test to exercise mounted `/v1/auth/bootstrap` wiring through `main.app`, including dependency overrides and global request middleware behavior.
 * Completed: added mounted `/v1/translation/languages` coverage through `main.app` to verify assembled routing, middleware headers, and supported-language payload shape.
+* Completed: re-ran the backend router/runtime plus assembled-app integration suite in CI and cleared the recent assertion regressions.
 * Completed: began cross-browser smoke planning with Firefox as the first PR-blocking expansion.
 
 ## Workstream 2: cross-browser smoke coverage
@@ -159,8 +160,14 @@ Strengthen test coverage so `globesync` catches runtime, browser, integration, a
 * Completed: extended [staging-smoke.sh](#file-1306546793058167) with an optional low-cost fixture upload path that creates a staging project shell, uploads a deterministic silent WAV fixture through the real GCS resumable flow, completes registration with checksum validation, and archives the project for cleanup.
 * Completed: extended [staging-smoke.sh](#file-1306546793058167) with an optional provider-backed transcription path that starts real staging transcription on the uploaded fixture, polls `/v1/transcription/{transcript_id}` to terminal state, and captures project pipeline-operation artifacts on timeout, failure, and final success confirmation.
 * Completed: extended [staging-smoke.sh](#file-1306546793058167) with an optional dub-only export retrieval path that generates a deterministic spoken MP4 fixture, uploads it into the same staging project, drives transcription plus project translation, runs `/v1/lipsync/render-project` with `enable_lipsync=false`, and downloads the signed dubbed output artifact.
+* Completed: updated [staging-smoke.yml](#file-1306546793058168) to install `ffmpeg` when the dub-only export retrieval branch is enabled, avoiding environment drift between local and GitHub Actions staging runs.
+* Completed: added workflow-level flag dependency validation in [staging-smoke.yml](#file-1306546793058168) so provider execution cannot run without fixture upload enabled, dub export cannot be requested without provider execution enabled, authenticated staging checks cannot be enabled without `STAGING_AUTH_BEARER_TOKEN`, and browser validation cannot be enabled without `GCP_STAGING_WEB_URL`.
+* Completed: added failure-only log capture in [staging-smoke.yml](#file-1306546793058168) so recent `translation-api`, `translation-web`, and Cloud Tasks audit logs are retained with the staging artifacts after failed runs.
 * In progress: stabilize the staging suite so the provider-backed transcription and dub-only export retrieval subset can pass repeatedly within the configured timeout budget before any gating promotion.
 * Next: run the expanded staging lane in GitHub Actions with CI-provisioned secrets and capture the first clean consecutive passes for promotion review.
+* Note: the current staging environment still does not have `webhook-secret` provisioned, so webhook signature verification remains non-blocking and may fail until that secret is created.
+* Note: a recent CI regression fix updated `frontend/e2e/staging-browser.spec.ts` to pass a definite auth token string into Playwright localStorage seeding and updated `backend/tests/test_application_runtime.py` to use valid UUID-shaped bootstrap fixtures plus an ordered router/path expectation list.
+* Completed: expanded `backend/tests/test_application_runtime.py` with assembled-app integration coverage for mounted `/health`, `/healthz`, and `/openapi.json` critical paths, including middleware request ID propagation and redacted readiness failure behavior.
 
 ## Workstream 4: performance and worker stress
 **Status:** Not started
@@ -174,23 +181,28 @@ Strengthen test coverage so `globesync` catches runtime, browser, integration, a
 * Worker and API performance thresholds are documented and enforced.
 
 ## Workstream 5: security and accessibility
-**Status:** Not started
+**Status:** In progress
 
 ### Scope
 * Keep existing CodeQL, dependency review, and secret scanning.
 * Add authorization and IDOR regressions, upload fuzzing, malformed payload tests, and container/image scanning.
 * Add automated accessibility checks and keyboard-only coverage for core frontend flows.
 
+### Completed so far
+* Expanded [test_upload_pipeline.py](#file-1306546793057974) with media-validation regressions that keep the documented supported video/audio MIME types accepted, assert the full supported codec allowlists remain valid, cover additional MOV, M4A, and AVI signature detection paths, and verify API-level rejection of unsupported media types, excessive resumable chunk sizes, missing upload sessions, empty chunk payloads, checksum-mismatched chunk uploads, incomplete resumable-upload completion attempts, missing-session status checks, initial missing-chunk status reporting, abort-session behavior, signed-resumable upload initialization, signed-resumable completion with a missing session, signed-resumable completion before the storage object exists, signed-resumable success-path media registration, and idempotent signed-resumable completion.
+* Existing backend auth coverage in [test_auth_core_boundaries.py](#file-1306546793057944), [test_auth_api.py](#file-1306546793057943), [test_auth_service_identity_binding.py](#file-1306546793057945), and [test_auth_service_workspaces.py](#file-1306546793057946) already provides a strong base for the authorization / workspace-boundary part of this workstream.
+
 ### Acceptance criteria
 * Security-sensitive resource boundaries are regression-tested.
 * Core user journeys pass automated accessibility checks.
 
 ## Immediate execution sequence
-1. Stabilize and finish backend router/runtime tests.
-2. Add one assembled-app integration suite for critical API paths.
-3. Wire a PR-blocking Firefox smoke lane while keeping WebKit in a slower lane first.
-4. Define GCP staging resources, secrets, cost caps, and provider-by-provider checks.
-5. Add security, accessibility, and performance waves after the above are green.
+1. Re-run backend router/runtime plus assembled-app integration coverage in CI and clear any residual failures.
+2. Run the expanded non-blocking [staging-smoke.yml](#file-1306546793058168) lane in GitHub Actions with CI-provisioned secrets until the provider-backed transcription and dub-only export subset passes twice consecutively.
+3. Promote only the lowest-cost stable staging subset after consecutive clean passes.
+4. Add security, accessibility, and performance waves after the above are green, using the already-added media-validation regressions as pre-staging prep rather than as a replacement for the ordered rerun/promotion steps.
+
+Note: while waiting on staging redeploy/reruns, low-risk unit-level media-validation regressions may be added in parallel so they do not block the ordered staging promotion sequence.
 
 ## Risks and controls
 * Keep PR suites deterministic and cost-bounded; move flaky or provider-dependent checks out of the blocking path until stabilized.
