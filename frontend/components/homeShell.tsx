@@ -161,6 +161,7 @@ const languagePillRow = ['Hindi', 'Spanish', 'French', 'Arabic', 'Japanese', 'Po
 function BrandLockup({ tone = 'light', compact = false }: { tone?: 'light' | 'dark'; compact?: boolean }) {
   const textToneClass = tone === 'dark' ? 'text-slate-950' : 'text-white';
   const accentToneClass = tone === 'dark' ? 'text-indigo-600' : 'text-indigo-400';
+  const taglineToneClass = tone === 'dark' ? 'text-slate-500' : 'text-white/70';
   const markToneClass = tone === 'dark'
     ? 'bg-white shadow-lg shadow-indigo-500/10 ring-slate-900/10'
     : 'bg-white/10 ring-white/10 backdrop-blur';
@@ -169,15 +170,18 @@ function BrandLockup({ tone = 'light', compact = false }: { tone?: 'light' | 'da
     <span className={`inline-flex items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
       <span className={`relative flex shrink-0 overflow-hidden rounded-2xl ring-1 ${compact ? 'h-10 w-10' : 'h-11 w-11'} ${markToneClass}`}>
         <Image
-          src="/branding/globesync_logo_transparent.jpg"
+          src="/branding/globesync_logo.jpg"
           alt=""
           fill
           sizes={compact ? '40px' : '44px'}
           className="object-contain p-1.5"
         />
       </span>
-      <span className={`text-xl font-bold tracking-[-0.05em] [font-family:var(--font-brand)] ${textToneClass}`}>
-        Globe<span className={accentToneClass}>Sync</span>
+      <span className={`inline-flex items-center ${compact ? 'gap-2' : 'gap-3'}`}>
+        <span className={`text-xl font-bold tracking-[-0.05em] [font-family:var(--font-brand)] ${textToneClass}`}>
+          Globe<span className={accentToneClass}>Sync</span>
+        </span>
+        <span className={`hidden text-[0.7rem] font-medium tracking-[0.08em] ${taglineToneClass} sm:inline`}>Speak to the world natively</span>
       </span>
     </span>
   );
@@ -210,9 +214,6 @@ export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 Video localization with human control
               </span>
-              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Speak to the world natively
-              </p>
               <h1 className="mt-4 text-4xl font-extrabold leading-[1.04] tracking-[-0.04em] text-slate-950 sm:text-6xl lg:text-7xl">
                 Translate one video.
                 <span className="mt-2 block bg-gradient-to-r from-indigo-600 to-violet-500 bg-clip-text text-transparent">

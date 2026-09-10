@@ -66,6 +66,34 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Validate staging smoke flag dependencies
+        env:
+          STAGING_AUTH_BEARER_TOKEN: ${{ secrets.STAGING_AUTH_BEARER_TOKEN }}
+          PLAYWRIGHT_BASE_URL: ${{ vars.GCP_STAGING_WEB_URL }}
+        run: |
+          if [[ "${ENABLE_PROVIDER_EXECUTION_CHECK}" == "true" && "${ENABLE_FIXTURE_UPLOAD_CHECK}" != "true" ]]; then
+            echo "ENABLE_PROVIDER_EXECUTION_CHECK requires ENABLE_FIXTURE_UPLOAD_CHECK=true" >&2
+            exit 1
+          fi
+          if [[ "${ENABLE_DUB_EXPORT_RETRIEVAL_CHECK}" == "true" && "${ENABLE_PROVIDER_EXECUTION_CHECK}" != "true" ]]; then
+            echo "ENABLE_DUB_EXPORT_RETRIEVAL_CHECK requires ENABLE_PROVIDER_EXECUTION_CHECK=true" >&2
+            exit 1
+          fi
+          if [[ ( "${ENABLE_UPLOAD_INITIATION_CHECK}" == "true" || "${ENABLE_FIXTURE_UPLOAD_CHECK}" == "true" || "${ENABLE_PROVIDER_EXECUTION_CHECK}" == "true" || "${ENABLE_DUB_EXPORT_RETRIEVAL_CHECK}" == "true" ) && -z "${STAGING_AUTH_BEARER_TOKEN}" ]]; then
+            echo "STAGING_AUTH_BEARER_TOKEN is required for authenticated upload and provider staging checks" >&2
+            exit 1
+          fi
+          if [[ "${ENABLE_BROWSER_STAGING_CHECK}" == "true" && -z "${PLAYWRIGHT_BASE_URL}" ]]; then
+            echo "GCP_STAGING_WEB_URL is required when ENABLE_BROWSER_STAGING_CHECK=true" >&2
+            exit 1
+          fi
+
+      - name: Install FFmpeg for dub export smoke
+        if: ${{ env.ENABLE_DUB_EXPORT_RETRIEVAL_CHECK == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Run staging smoke preflight
         env:
           STAGING_AUTH_BEARER_TOKEN: ${{ secrets.STAGING_AUTH_BEARER_TOKEN }}
@@ -102,6 +130,26 @@ jobs:
           CI: "true"
           NEXT_TELEMETRY_DISABLED: "1"
         run: npm run test:e2e:staging:chromium
+
+      - name: Capture Cloud Run logs on failure
+        if: failure()
+        run: |
+          mkdir -p .artifacts/staging-smoke/logs
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="'"$API_SERVICE"'"' \
+            --project="$PROJECT_ID" \
+            --limit=200 \
+            --freshness=2h \
+            --format=json > .artifacts/staging-smoke/logs/translation-api.cloud-run.logs.json || true
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="'"$WEB_SERVICE"'"' \
+            --project="$PROJECT_ID" \
+            --limit=100 \
+            --freshness=2h \
+            --format=json > .artifacts/staging-smoke/logs/translation-web.cloud-run.logs.json || true
+          gcloud logging read 'resource.type="audited_resource" AND protoPayload.serviceName="cloudtasks.googleapis.com"' \
+            --project="$PROJECT_ID" \
+            --limit=100 \
+            --freshness=2h \
+            --format=json > .artifacts/staging-smoke/logs/cloud-tasks.audit.logs.json || true
 
       - name: Upload staging smoke artifacts
         if: always()

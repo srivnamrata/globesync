@@ -5,11 +5,16 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 from app.core.auth import get_request_context, require_workspace_write_context
+from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.models.media import MediaFile, UploadChunk, UploadSession
 from app.schemas.media_schema import MediaMetadata, MediaStreamInfo
 from app.utils.file_validators import (
+    SUPPORTED_AUDIO_CODECS,
+    SUPPORTED_AUDIO_FORMATS,
+    SUPPORTED_VIDEO_CODECS,
+    SUPPORTED_VIDEO_FORMATS,
     calculate_sha256,
     detect_mime_type_from_header,
     validate_codecs,
@@ -173,6 +178,38 @@ def test_codec_validation():
         validate_codecs("h264", "wmapro", is_video=True)
 
 
+@pytest.mark.parametrize(
+    ("header", "filename", "expected_mime_type"),
+    [
+        (b"\x00\x00\x00\x14ftypqt  ", "clip.mov", "video/quicktime"),
+        (b"\x00\x00\x00\x18ftypM4A ", "track.m4a", "audio/mp4"),
+        (b"RIFF\x24\x00\x00\x00AVI LIST", "clip.avi", "video/x-msvideo"),
+    ],
+)
+def test_extended_media_signature_detection(header, filename, expected_mime_type):
+    assert detect_mime_type_from_header(header, filename) == expected_mime_type
+
+
+@pytest.mark.parametrize("mime_type, extensions", sorted(SUPPORTED_VIDEO_FORMATS.items()))
+def test_supported_video_formats_remain_accepted(mime_type, extensions):
+    validate_file_metadata(f"sample{extensions[0]}", 1024, mime_type)
+
+
+@pytest.mark.parametrize("mime_type, extensions", sorted(SUPPORTED_AUDIO_FORMATS.items()))
+def test_supported_audio_formats_remain_accepted(mime_type, extensions):
+    validate_file_metadata(f"sample{extensions[0]}", 1024, mime_type)
+
+
+@pytest.mark.parametrize("video_codec", sorted(SUPPORTED_VIDEO_CODECS))
+def test_supported_video_codecs_remain_accepted(video_codec):
+    validate_codecs(video_codec, "aac", is_video=True)
+
+
+@pytest.mark.parametrize("audio_codec", sorted(SUPPORTED_AUDIO_CODECS))
+def test_supported_audio_codecs_remain_accepted(audio_codec):
+    validate_codecs(None, audio_codec, is_video=False)
+
+
 # =============================================================================
 # 2. FASTAPI ASYNC ENDPOINT TESTS
 # =============================================================================
@@ -183,6 +220,48 @@ async def test_health_check():
         response = await client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_init_rejects_unsupported_media_type(
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "malware.exe",
+                "filesize_bytes": 1024,
+                "mime_type": "application/x-msdownload",
+                "chunk_size_bytes": 5 * 1024 * 1024,
+            },
+        )
+
+    assert response.status_code == 415
+    assert response.json()["detail"]["error_code"] == "INVALID_FORMAT"
+    assert "not supported" in response.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_init_rejects_excessive_chunk_size(
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES + 1,
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["error_code"] == "CHUNK_TOO_LARGE"
+    assert response.json()["detail"]["details"]["max_bytes"] == settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES
 
 
 @pytest.mark.asyncio
