@@ -59,9 +59,9 @@ export default function SegmentCard({
     const isDurationOverflow = Boolean(translation && translation.durationRatio > 1.15);
     const isDurationUnderflow = Boolean(translation && translation.durationRatio < 0.75);
     const isLowConfidence = Boolean(translation && translation.qualityScore < 0.5);
-    const isMissingGeneratedAudio = Boolean(translation && translation.generatedAudioStatus !== 'ready');
+    const hasGeneratedAudioFailure = translation?.generatedAudioStatus === 'failed';
     const hasLipSyncFailure = lipSyncStatus === 'failed';
-    const hasRisk = isMissingTranslation || isDurationOverflow || isDurationUnderflow || isLowConfidence || isMissingGeneratedAudio || hasLipSyncFailure;
+    const hasRisk = isMissingTranslation || isDurationOverflow || isDurationUnderflow || isLowConfidence || hasGeneratedAudioFailure || hasLipSyncFailure;
 
     return (
         <div
@@ -158,9 +158,9 @@ export default function SegmentCard({
                                 Lip-sync failed
                             </span>
                         )}
-                        {isMissingGeneratedAudio && (
-                            <span className="rounded bg-red-950 px-1.5 py-0.5 text-[10px] font-semibold text-red-400" title="Generated dubbed audio is not ready for this segment">
-                                No audio
+                        {hasGeneratedAudioFailure && (
+                            <span className="rounded bg-red-950 px-1.5 py-0.5 text-[10px] font-semibold text-red-400" title="Generated dubbed audio failed for this segment. Use Regenerate audio to try again.">
+                                Audio failed
                             </span>
                         )}
                         {translation && !hasRisk && (
