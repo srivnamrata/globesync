@@ -461,6 +461,165 @@ async def test_abort_resumable_upload_marks_session_aborted(
 
 
 @pytest.mark.asyncio
+async def test_signed_resumable_upload_init_returns_gcs_session(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    mock_storage.create_resumable_upload_url.return_value = "https://storage.googleapis.com/upload-session"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/media/uploads/signed-resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "origin": "https://globesync.example",
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["filename"] == "conference_talk.mp4"
+    assert payload["gcs_resumable_url"] == "https://storage.googleapis.com/upload-session"
+    assert payload["storage_path"] == authenticated_upload_dependencies.upload_session.storage_key
+    mock_storage.create_resumable_upload_url.assert_called_once_with(
+        key=authenticated_upload_dependencies.upload_session.storage_key,
+        mime_type="video/mp4",
+        origin="https://globesync.example",
+        size_bytes=10485760,
+    )
+
+
+@pytest.mark.asyncio
+async def test_signed_resumable_upload_complete_rejects_missing_session(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/v1/media/uploads/signed-resumable/{uuid.uuid4()}/complete",
+            json={},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "UPLOAD_SESSION_NOT_FOUND"
+    mock_storage.download_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_signed_resumable_upload_complete_rejects_missing_storage_object(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    mock_storage.create_resumable_upload_url.return_value = "https://storage.googleapis.com/upload-session"
+    mock_storage.object_exists.return_value = False
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/signed-resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "origin": "https://globesync.example",
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+        response = await client.post(
+            f"/v1/media/uploads/signed-resumable/{upload_id}/complete",
+            json={},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "STORAGE_UPLOAD_FAILED"
+    assert response.json()["details"]["storage_path"] == authenticated_upload_dependencies.upload_session.storage_key
+    mock_storage.download_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_signed_resumable_upload_complete_registers_media_file(
+    mock_storage,
+    mock_media_service,
+    authenticated_upload_dependencies,
+):
+    mock_storage.create_resumable_upload_url.return_value = "https://storage.googleapis.com/upload-session"
+    mock_storage.object_exists.return_value = True
+
+    transport = ASGITransport(app=app)
+    with patch("app.routers.upload.calculate_sha256", return_value="b" * 64):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            init_res = await client.post(
+                "/v1/media/uploads/signed-resumable",
+                json={
+                    "filename": "conference_talk.mp4",
+                    "filesize_bytes": 10485760,
+                    "mime_type": "video/mp4",
+                    "origin": "https://globesync.example",
+                },
+            )
+            upload_id = init_res.json()["upload_id"]
+            response = await client.post(
+                f"/v1/media/uploads/signed-resumable/{upload_id}/complete",
+                json={},
+            )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["filename"] == "conference_talk.mp4"
+    assert payload["resolution"] == "1920x1080"
+    assert payload["video_codec"] == "h264"
+    assert payload["audio_codec"] == "aac"
+    assert payload["status"] == "ready"
+    assert authenticated_upload_dependencies.upload_session.status == "completed"
+    assert authenticated_upload_dependencies.upload_session.bytes_received == 10485760
+    mock_storage.download_file.assert_awaited_once_with(
+        authenticated_upload_dependencies.upload_session.storage_key,
+        f"/tmp/probe_{authenticated_upload_dependencies.upload_session.id.hex}_conference_talk.mp4",
+    )
+
+
+@pytest.mark.asyncio
+async def test_signed_resumable_upload_complete_is_idempotent_for_completed_session(
+    mock_storage,
+    mock_media_service,
+    authenticated_upload_dependencies,
+):
+    mock_storage.create_resumable_upload_url.return_value = "https://storage.googleapis.com/upload-session"
+    mock_storage.object_exists.return_value = True
+
+    transport = ASGITransport(app=app)
+    with patch("app.routers.upload.calculate_sha256", return_value="b" * 64):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            init_res = await client.post(
+                "/v1/media/uploads/signed-resumable",
+                json={
+                    "filename": "conference_talk.mp4",
+                    "filesize_bytes": 10485760,
+                    "mime_type": "video/mp4",
+                    "origin": "https://globesync.example",
+                },
+            )
+            upload_id = init_res.json()["upload_id"]
+            first_response = await client.post(
+                f"/v1/media/uploads/signed-resumable/{upload_id}/complete",
+                json={},
+            )
+            second_response = await client.post(
+                f"/v1/media/uploads/signed-resumable/{upload_id}/complete",
+                json={},
+            )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert second_response.json()["media_id"] == first_response.json()["media_id"]
+    mock_storage.download_file.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_resumable_upload_lifecycle(
     mock_storage,
     mock_media_service,
