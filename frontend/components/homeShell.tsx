@@ -163,18 +163,20 @@ function BrandLockup({ tone = 'light', compact = false }: { tone?: 'light' | 'da
   const accentToneClass = tone === 'dark' ? 'text-indigo-600' : 'text-indigo-400';
   const taglineToneClass = tone === 'dark' ? 'text-slate-500' : 'text-white/70';
   const markToneClass = tone === 'dark'
-    ? 'bg-white shadow-lg shadow-indigo-500/10 ring-slate-900/10'
+    ? compact
+      ? 'bg-white/60 shadow-md shadow-indigo-500/5 ring-slate-900/8'
+      : 'bg-white shadow-lg shadow-indigo-500/10 ring-slate-900/10'
     : 'bg-white/10 ring-white/10 backdrop-blur';
 
   return (
     <span className={`inline-flex items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
-      <span className={`relative flex shrink-0 overflow-hidden rounded-2xl ring-1 ${compact ? 'h-10 w-10' : 'h-11 w-11'} ${markToneClass}`}>
+      <span className={`relative flex shrink-0 overflow-hidden rounded-2xl ring-1 ${compact ? 'h-14 w-14' : 'h-11 w-11'} ${markToneClass}`}>
         <Image
           src="/branding/globesync_logo.jpg"
           alt=""
           fill
-          sizes={compact ? '40px' : '44px'}
-          className="object-contain p-1.5"
+          sizes={compact ? '56px' : '44px'}
+          className={`object-contain ${compact ? 'p-0.5' : 'p-1.5'}`}
         />
       </span>
       <span className={`inline-flex items-center ${compact ? 'gap-2' : 'gap-3'}`}>

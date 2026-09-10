@@ -278,6 +278,7 @@ async def test_resumable_upload_status_rejects_missing_session(
 
 @pytest.mark.asyncio
 async def test_resumable_upload_status_reports_all_missing_chunks_before_upload(
+    mock_storage,
     authenticated_upload_dependencies,
 ):
     transport = ASGITransport(app=app)
