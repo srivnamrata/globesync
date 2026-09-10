@@ -265,6 +265,201 @@ async def test_resumable_upload_init_rejects_excessive_chunk_size(
 
 
 @pytest.mark.asyncio
+async def test_resumable_upload_status_rejects_missing_session(
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/v1/media/uploads/resumable/{uuid.uuid4()}/status")
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "UPLOAD_SESSION_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_status_reports_all_missing_chunks_before_upload(
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+        response = await client.get(f"/v1/media/uploads/resumable/{upload_id}/status")
+
+    assert response.status_code == 200
+    assert response.json()["completed_chunks"] == []
+    assert response.json()["missing_chunks"] == [0, 1]
+    assert response.json()["progress_percent"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_chunk_rejects_missing_session(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/v1/media/uploads/resumable/{uuid.uuid4()}/chunk",
+            content=b"0" * 1024,
+            headers={
+                "Content-Range": "bytes 0-1023/1024",
+                "X-Chunk-Index": "0",
+                "X-Checksum-SHA256": hashlib.sha256(b"0" * 1024).hexdigest(),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "UPLOAD_SESSION_NOT_FOUND"
+    mock_storage.upload_part.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_chunk_rejects_empty_payload(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+
+        response = await client.put(
+            f"/v1/media/uploads/resumable/{upload_id}/chunk",
+            content=b"",
+            headers={
+                "Content-Range": "bytes 0-0/10485760",
+                "X-Chunk-Index": "0",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "CHUNK_TOO_SMALL"
+    mock_storage.upload_part.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_chunk_rejects_checksum_mismatch(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+
+        chunk_data = b"0" * 5242880
+        response = await client.put(
+            f"/v1/media/uploads/resumable/{upload_id}/chunk",
+            content=chunk_data,
+            headers={
+                "Content-Range": "bytes 0-5242879/10485760",
+                "X-Chunk-Index": "0",
+                "X-Checksum-SHA256": "deadbeef",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "CHECKSUM_MISMATCH"
+    mock_storage.upload_part.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resumable_upload_complete_rejects_missing_chunks(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+
+        chunk_0_data = b"0" * 5242880
+        await client.put(
+            f"/v1/media/uploads/resumable/{upload_id}/chunk",
+            content=chunk_0_data,
+            headers={
+                "Content-Range": "bytes 0-5242879/10485760",
+                "X-Chunk-Index": "0",
+                "X-Checksum-SHA256": hashlib.sha256(chunk_0_data).hexdigest(),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        response = await client.post(
+            f"/v1/media/uploads/resumable/{upload_id}/complete",
+            json={},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "CHUNK_OUT_OF_ORDER"
+    assert response.json()["details"]["missing_chunks"] == [1]
+    mock_storage.complete_multipart_upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_abort_resumable_upload_marks_session_aborted(
+    mock_storage,
+    authenticated_upload_dependencies,
+):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        init_res = await client.post(
+            "/v1/media/uploads/resumable",
+            json={
+                "filename": "conference_talk.mp4",
+                "filesize_bytes": 10485760,
+                "mime_type": "video/mp4",
+                "chunk_size_bytes": 5242880,
+            },
+        )
+        upload_id = init_res.json()["upload_id"]
+
+        response = await client.delete(f"/v1/media/uploads/resumable/{upload_id}/abort")
+
+    assert response.status_code == 204
+    assert authenticated_upload_dependencies.upload_session.status == "aborted"
+    mock_storage.abort_multipart_upload.assert_called_once_with(
+        authenticated_upload_dependencies.upload_session.storage_key,
+        authenticated_upload_dependencies.upload_session.s3_upload_id,
+    )
+
+
+@pytest.mark.asyncio
 async def test_resumable_upload_lifecycle(
     mock_storage,
     mock_media_service,
