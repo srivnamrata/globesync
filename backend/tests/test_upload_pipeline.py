@@ -239,8 +239,8 @@ async def test_resumable_upload_init_rejects_unsupported_media_type(
         )
 
     assert response.status_code == 415
-    assert response.json()["detail"]["error_code"] == "INVALID_FORMAT"
-    assert "not supported" in response.json()["detail"]["message"]
+    assert response.json()["error_code"] == "INVALID_FORMAT"
+    assert "not supported" in response.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -260,8 +260,8 @@ async def test_resumable_upload_init_rejects_excessive_chunk_size(
         )
 
     assert response.status_code == 413
-    assert response.json()["detail"]["error_code"] == "CHUNK_TOO_LARGE"
-    assert response.json()["detail"]["details"]["max_bytes"] == settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES
+    assert response.json()["error_code"] == "CHUNK_TOO_LARGE"
+    assert response.json()["details"]["max_bytes"] == settings.MAX_RESUMABLE_CHUNK_SIZE_BYTES
 
 
 @pytest.mark.asyncio
