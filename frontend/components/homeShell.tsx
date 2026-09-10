@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { AuthBootstrapResponse, WorkspaceContext, WorkspaceMember } from '../services/authService';
@@ -157,6 +158,31 @@ function formatPipelineStage(stage?: string): string {
 
 const languagePillRow = ['Hindi', 'Spanish', 'French', 'Arabic', 'Japanese', 'Portuguese', 'German', 'Korean', 'Italian', 'Turkish', 'Dutch', 'Russian'];
 
+function BrandLockup({ tone = 'light', compact = false }: { tone?: 'light' | 'dark'; compact?: boolean }) {
+  const textToneClass = tone === 'dark' ? 'text-slate-950' : 'text-white';
+  const accentToneClass = tone === 'dark' ? 'text-indigo-600' : 'text-indigo-400';
+  const markToneClass = tone === 'dark'
+    ? 'bg-white shadow-lg shadow-indigo-500/10 ring-slate-900/10'
+    : 'bg-white/10 ring-white/10 backdrop-blur';
+
+  return (
+    <span className={`inline-flex items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
+      <span className={`relative flex shrink-0 overflow-hidden rounded-2xl ring-1 ${compact ? 'h-10 w-10' : 'h-11 w-11'} ${markToneClass}`}>
+        <Image
+          src="/branding/globesync_logo_transparent.png"
+          alt=""
+          fill
+          sizes={compact ? '40px' : '44px'}
+          className="object-contain p-1.5"
+        />
+      </span>
+      <span className={`text-xl font-bold tracking-[-0.05em] [font-family:var(--font-brand)] ${textToneClass}`}>
+        Globe<span className={accentToneClass}>Sync</span>
+      </span>
+    </span>
+  );
+}
+
 export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
   return (
     <div className="min-h-screen overflow-hidden bg-[#f8f9ff] text-slate-950">
@@ -164,9 +190,9 @@ export function PublicLanding({ signInSlot, authError }: PublicLandingProps) {
 
       <div className="relative mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
         <nav aria-label="Main navigation" className="flex h-20 items-center justify-between">
-          <a href="#" aria-label="GlobeSync home" className="text-xl font-extrabold tracking-tight text-slate-950">
-            Globe<span className="text-indigo-600">Sync</span>
-          </a>
+          <Link href="/" aria-label="GlobeSync home" className="inline-flex items-center">
+            <BrandLockup tone="dark" compact />
+          </Link>
           <div className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
             <a href="#how-it-works" className="transition hover:text-indigo-600">How it works</a>
             <a href="#features" className="transition hover:text-indigo-600">Features</a>
@@ -580,7 +606,9 @@ export function WorkspaceHome({
       {/* Sidebar Layout */}
       <aside className="hidden w-[260px] shrink-0 flex-col border-r border-white/5 bg-slate-900/40 p-6 lg:flex">
         <div className="mb-10">
-          <span className="text-xl font-bold tracking-tight text-white">Globe<span className="text-indigo-400">Sync</span></span>
+          <Link href="/" aria-label="GlobeSync workspace home" className="inline-flex items-center">
+            <BrandLockup />
+          </Link>
         </div>
         
         <nav className="space-y-1.5">
@@ -648,9 +676,11 @@ export function WorkspaceHome({
         
         <div className="relative mx-auto max-w-6xl p-6 lg:p-12">
           {/* Mobile Header (only visible on small screens) */}
-          <div className="mb-8 flex items-center justify-between lg:hidden">
+          <div className="mb-8 flex items-center justify-between gap-4 lg:hidden">
             <div className="min-w-0">
-              <span className="block text-xl font-bold tracking-tight text-white">Globe<span className="text-indigo-400">Sync</span></span>
+              <Link href="/" aria-label="GlobeSync workspace home" className="inline-flex items-center">
+                <BrandLockup compact />
+              </Link>
               <span className="mt-1 block truncate text-xs text-slate-500">{authContext.workspace.name} · <span className="capitalize">{authContext.membership.role}</span></span>
               {availableWorkspaces.length > 1 ? (
                 <select aria-label="Switch workspace" value={authContext.workspace.id} onChange={(event) => void onWorkspaceChange(event.target.value)} className="mt-2 max-w-[12rem] rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-xs text-slate-300">

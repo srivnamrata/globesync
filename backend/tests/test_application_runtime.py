@@ -211,7 +211,7 @@ def test_export_router_is_mounted_under_v1_prefix():
 
     for router, expected_path in expected_router_endpoints:
         router_paths = {
-            f"{router.prefix}{route.path}"
+            route.path
             for route in router.routes
             if getattr(route, "path", None) is not None
         }
