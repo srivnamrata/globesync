@@ -153,11 +153,11 @@ async def test_readiness_failure_redacts_database_error(monkeypatch):
 
 def test_export_router_is_mounted_under_v1_prefix():
     export_route_paths = {
-        f"{main.export.router.prefix}{route.path}"
+        route.path
         for route in main.export.router.routes
         if getattr(route, "path", None) is not None
     }
-    assert "/export/render" in export_route_paths
+    assert f"{main.export.router.prefix}/render" in export_route_paths
 
     api_app = SimpleNamespace(include_router=Mock())
     main.mount_api_routers(api_app)
